@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 from typing import AsyncGenerator, Generator
 from unittest.mock import MagicMock
+import sys
+print("DEBUG conftest.py sys.path:", sys.path)
 
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
