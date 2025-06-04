@@ -283,3 +283,28 @@ def clean_environment():
 pytest.mark.api = pytest.mark.asyncio
 pytest.mark.database = pytest.mark.asyncio
 pytest.mark.integration = pytest.mark.asyncio
+@pytest.fixture
+def api_headers():
+    """Headers standard per richieste API"""
+    return {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+
+@pytest.fixture
+def auth_headers(api_headers):
+    """Headers con autenticazione (se necessaria)"""
+    # Modifica "test-token" se usi un token reale o generato diversamente
+    # Potrebbe anche essere letto da una variabile d'ambiente o da un file
+    # Se non hai autenticazione, questa fixture potrebbe non essere necessaria
+    # o semplicemente restituire api_headers.
+    from app.middleware.auth import api_key_auth # Importa qui per evitare problemi di import circolari
+    
+    # Usa la chiave locale generata/caricata
+    local_key = list(api_key_auth.api_keys.keys())[0] # Prendi la prima chiave disponibile (locale)
+
+    return {
+        **api_headers,
+        "Authorization": f"Bearer {local_key}" 
+    }
