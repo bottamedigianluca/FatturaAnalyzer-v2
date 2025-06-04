@@ -1,0 +1,15 @@
+{
+  "name": "fatturaanalyzer-v2-monorepo",
+  "version": "0.1.0",
+"private": true,
+  "description": "Main package for FatturaAnalyzer v2.",
+  "scripts": {
+    "dev:backend": "cd backend && python run.py",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "echo \"Run dev scripts or use ./scripts/dev.sh\"",
+    "build": "echo \"Run build scripts or use ./scripts/build.sh\"",
+    "tauri:dev": "cd src-tauri && cargo tauri dev",
+    "tauri:build": "cd src-tauri && cargo tauri build"
+  },
+  "workspaces": ["backend", "frontend"]
+}
