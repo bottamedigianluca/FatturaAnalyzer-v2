@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import AppWrapper from './AppWrapper'; // Invece di App
 import './globals.css';
 
 // Disable right-click context menu in production
@@ -25,6 +25,6 @@ if (import.meta.env.PROD) {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <AppWrapper />
   </React.StrictMode>
 );
