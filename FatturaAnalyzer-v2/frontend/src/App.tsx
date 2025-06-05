@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/tauri';
@@ -7,6 +7,9 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { Layout } from '@/components/layout/Layout';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
+
+// First Run components
+import { FirstRunCheck, SimpleSetupWizard } from '@/components/FirstRunCheck';
 
 // Page components
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -41,19 +44,27 @@ const queryClient = new QueryClient({
   },
 });
 
+// App states
+type AppState = 'loading' | 'setup-needed' | 'setup-complete' | 'error';
+
 function App() {
+  const [appState, setAppState] = useState<AppState>('loading');
   const { setLoading, setError, addNotification } = useUIStore();
 
   useEffect(() => {
-    // Initialize Tauri app
-    const initializeApp = async () => {
-      try {
-        setLoading('app-init', true);
-        
-        // Check if running in Tauri
-        if (window.__TAURI_IPC__) {
+    initializeApp();
+  }, []);
+
+  const initializeApp = async () => {
+    try {
+      setLoading('app-init', true);
+      
+      // Check if running in Tauri
+      if (window.__TAURI_IPC__) {
+        try {
           // Setup Tauri-specific configurations
           await invoke('app_ready');
+          console.log('🖥️ Tauri initialized successfully');
           
           addNotification({
             type: 'success',
@@ -61,57 +72,103 @@ function App() {
             message: 'FatturaAnalyzer è pronto all\'uso',
             duration: 3000,
           });
+        } catch (tauriError) {
+          console.warn('⚠️ Tauri initialization failed, continuing in web mode:', tauriError);
         }
-        
-        // Test API connection
-        try {
-          const response = await fetch('http://127.0.0.1:8000/health');
-          if (!response.ok) {
-            throw new Error('API non raggiungibile');
-          }
-          
-          const health = await response.json();
-          if (health.status !== 'healthy') {
-            throw new Error('API non funzionante');
-          }
-          
-          addNotification({
-            type: 'success',
-            title: 'Connessione API',
-            message: 'Backend collegato correttamente',
-            duration: 2000,
-          });
-        } catch (apiError) {
-          setError('api-connection', 'Impossibile connettersi al backend FastAPI');
-          addNotification({
-            type: 'error',
-            title: 'Errore connessione',
-            message: 'Verificare che il backend sia avviato su porta 8000',
-            duration: 0, // Persistent
-            action: {
-              label: 'Riprova',
-              onClick: () => window.location.reload(),
-            },
-          });
-        }
-        
-      } catch (error) {
-        console.error('App initialization error:', error);
-        setError('app-init', 'Errore durante l\'inizializzazione');
-        addNotification({
-          type: 'error',
-          title: 'Errore inizializzazione',
-          message: 'Si è verificato un errore durante l\'avvio',
-          duration: 0,
-        });
-      } finally {
-        setLoading('app-init', false);
+      } else {
+        console.log('🌐 Running in web mode');
       }
-    };
+      
+      // App initialization completed - FirstRunCheck will handle the rest
+      setAppState('loading'); // FirstRunCheck will change this
+      
+    } catch (error) {
+      console.error('❌ App initialization error:', error);
+      setError('app-init', 'Errore durante l\'inizializzazione');
+      setAppState('error');
+      
+      addNotification({
+        type: 'error',
+        title: 'Errore inizializzazione',
+        message: 'Si è verificato un errore durante l\'avvio',
+        duration: 0,
+      });
+    } finally {
+      setLoading('app-init', false);
+    }
+  };
 
-    initializeApp();
-  }, [setLoading, setError, addNotification]);
+  const handleSetupNeeded = () => {
+    console.log('🎯 Setup needed, showing setup wizard');
+    setAppState('setup-needed');
+  };
 
+  const handleSetupComplete = () => {
+    console.log('✅ Setup completed, showing main app');
+    setAppState('setup-complete');
+    
+    addNotification({
+      type: 'success',
+      title: 'Setup Completato',
+      message: 'Il sistema è ora configurato e pronto all\'uso',
+      duration: 5000,
+    });
+  };
+
+  // Loading state
+  if (appState === 'loading') {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <FirstRunCheck
+            onSetupNeeded={handleSetupNeeded}
+            onSetupComplete={handleSetupComplete}
+          />
+          <Toaster position="top-right" expand={true} richColors closeButton />
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  // Setup needed
+  if (appState === 'setup-needed') {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <SimpleSetupWizard onComplete={handleSetupComplete} />
+          <Toaster position="top-right" expand={true} richColors closeButton />
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  // Error state
+  if (appState === 'error') {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <div className="min-h-screen flex items-center justify-center bg-background">
+            <div className="text-center space-y-4 max-w-md mx-auto p-6">
+              <div className="text-red-500 text-5xl">❌</div>
+              <h2 className="text-lg font-semibold text-red-600">Errore Inizializzazione</h2>
+              <p className="text-muted-foreground">
+                Si è verificato un errore durante l'avvio dell'applicazione
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+              >
+                Riavvia Applicazione
+              </button>
+            </div>
+          </div>
+          <Toaster position="top-right" expand={true} richColors closeButton />
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  // Main app (setup completed)
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
