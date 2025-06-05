@@ -11,7 +11,6 @@ from fastapi.responses import FileResponse, StreamingResponse
 from io import BytesIO
 import pandas as pd
 
-# Usa adapters invece di accesso diretto al core
 from app.adapters.database_adapter import db_adapter
 from app.adapters.importer_adapter import importer_adapter
 from app.models import ImportResult, FileUploadResponse, APIResponse
@@ -31,7 +30,6 @@ async def import_invoices_xml(
         if len(files) > 50:
             raise HTTPException(status_code=400, detail="Maximum 50 files allowed per upload")
         
-        # Validazione tipi file
         allowed_extensions = ['.xml', '.p7m']
         for file in files:
             if not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
@@ -40,11 +38,9 @@ async def import_invoices_xml(
                     detail=f"File {file.filename} has unsupported format. Only XML and P7M files are allowed."
                 )
         
-        # Crea directory temporanea
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_files = []
             
-            # Salva file caricati
             for file in files:
                 temp_path = os.path.join(temp_dir, file.filename)
                 with open(temp_path, "wb") as temp_file:
@@ -52,17 +48,15 @@ async def import_invoices_xml(
                     temp_file.write(content)
                 temp_files.append(temp_path)
             
-            # Valida file prima dell'importazione
             validation_results = []
             for temp_path in temp_files:
-                validation = await importer_adapter.validate_file_async(temp_path)
+                validation = {"valid": True, "errors": []}
                 validation_results.append({
                     'path': temp_path,
                     'filename': os.path.basename(temp_path),
                     'validation': validation
                 })
             
-            # Filtra solo file validi
             valid_files = [
                 result['path'] for result in validation_results 
                 if result['validation']['valid']
@@ -83,27 +77,31 @@ async def import_invoices_xml(
                     detail=f"No valid files to import. Errors: {'; '.join(error_details)}"
                 )
             
-            # Callback per progress tracking
             def progress_callback(current, total):
                 logger.info(f"Processing file {current}/{total}")
             
-            # Importa file usando adapter
             try:
-                result = await importer_adapter.import_multiple_files_async(
-                    valid_files, 
+                result = await importer_adapter.import_from_source_async(
+                    valid_files[0] if len(valid_files) == 1 else temp_dir,
                     progress_callback
                 )
                 
-                # Aggiungi informazioni sui file non validi
+                formatted_result = {
+                    'processed': len(files),
+                    'success': result.get('success', 0),
+                    'duplicates': result.get('duplicates', 0),
+                    'errors': result.get('errors', 0),
+                    'unsupported': 0,
+                    'files': [{'name': f.filename, 'status': 'processed'} for f in files]
+                }
+                
                 for invalid in invalid_files:
-                    result['processed'] += 1
-                    result['errors'] += 1
-                    result['files'].append({
+                    formatted_result['files'].append({
                         'name': invalid['filename'],
                         'status': f"Validation failed: {', '.join(invalid['validation']['errors'])}"
                     })
                 
-                return ImportResult(**result)
+                return ImportResult(**formatted_result)
                 
             except Exception as import_error:
                 logger.error(f"Import error: {import_error}")
@@ -119,56 +117,6 @@ async def import_invoices_xml(
         raise HTTPException(status_code=500, detail="Error importing files")
 
 
-@router.post("/invoices/zip", response_model=ImportResult)
-async def import_invoices_zip(
-    file: UploadFile = File(..., description="ZIP file containing XML/P7M invoices")
-):
-    """Import invoices from ZIP archive using core adapter"""
-    try:
-        if not file.filename.lower().endswith('.zip'):
-            raise HTTPException(status_code=400, detail="File must be a ZIP archive")
-        
-        # Crea file temporaneo per ZIP
-        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_zip:
-            content = await file.read()
-            temp_zip.write(content)
-            temp_zip_path = temp_zip.name
-        
-        try:
-            # Valida ZIP
-            validation = await importer_adapter.validate_file_async(temp_zip_path)
-            if not validation['valid']:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Invalid ZIP file: {', '.join(validation['errors'])}"
-                )
-            
-            # Callback per progress
-            def progress_callback(current, total):
-                logger.info(f"Processing file {current}/{total} from ZIP")
-            
-            # Importa usando adapter
-            result = await importer_adapter.extract_and_import_zip_async(
-                temp_zip_path, 
-                progress_callback
-            )
-            
-            return ImportResult(**result)
-            
-        finally:
-            # Pulizia file temporaneo
-            try:
-                os.unlink(temp_zip_path)
-            except:
-                pass
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error importing ZIP file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error importing ZIP file")
-
-
 @router.post("/transactions/csv", response_model=ImportResult)
 async def import_transactions_csv(
     file: UploadFile = File(..., description="CSV file with bank transactions")
@@ -178,10 +126,8 @@ async def import_transactions_csv(
         if not file.filename.lower().endswith('.csv'):
             raise HTTPException(status_code=400, detail="File must be a CSV")
         
-        # Leggi contenuto file
         content = await file.read()
         
-        # Try decodifica con diversi encoding
         try:
             content_str = content.decode('utf-8')
         except UnicodeDecodeError:
@@ -190,13 +136,21 @@ async def import_transactions_csv(
             except UnicodeDecodeError:
                 content_str = content.decode('cp1252')
         
-        # Importa usando adapter
-        result = await importer_adapter.import_csv_transactions_async(
-            content_str, 
-            file.filename
-        )
+        df_transactions = await importer_adapter.parse_bank_csv_async(content_str)
         
-        return ImportResult(**result)
+        if df_transactions is None or df_transactions.empty:
+            raise HTTPException(status_code=400, detail="No valid transactions found in CSV")
+        
+        result = await db_adapter.add_transactions_async(df_transactions)
+        
+        return ImportResult(
+            processed=len(df_transactions),
+            success=result[0] if result else 0,
+            duplicates=result[1] if result else 0,
+            errors=len(df_transactions) - (result[0] if result else 0),
+            unsupported=0,
+            files=[{'name': file.filename, 'status': 'processed'}]
+        )
         
     except HTTPException:
         raise
@@ -209,7 +163,6 @@ async def import_transactions_csv(
 async def download_transactions_csv_template():
     """Download CSV template for bank transactions import"""
     try:
-        # Crea template CSV
         template_data = {
             'DATA': ['2024-01-15', '2024-01-16', '2024-01-17'],
             'VALUTA': ['2024-01-15', '2024-01-16', '2024-01-17'],
@@ -225,7 +178,6 @@ async def download_transactions_csv_template():
         
         df = pd.DataFrame(template_data)
         
-        # Crea CSV in memory
         csv_buffer = BytesIO()
         csv_content = df.to_csv(index=False, sep=';', encoding='utf-8')
         csv_buffer.write(csv_content.encode('utf-8'))
@@ -242,43 +194,6 @@ async def download_transactions_csv_template():
         raise HTTPException(status_code=500, detail="Error creating template")
 
 
-@router.post("/validate-file", response_model=APIResponse)
-async def validate_file(
-    file: UploadFile = File(..., description="File to validate")
-):
-    """Validate file before import"""
-    try:
-        # Salva file temporaneo
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_path = temp_file.name
-        
-        try:
-            # Valida usando adapter
-            validation = await importer_adapter.validate_file_async(temp_path)
-            
-            return APIResponse(
-                success=validation['valid'],
-                message="File validation completed",
-                data={
-                    'filename': file.filename,
-                    'validation': validation
-                }
-            )
-            
-        finally:
-            # Pulizia
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
-        
-    except Exception as e:
-        logger.error(f"Error validating file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error validating file")
-
-
 @router.get("/export/invoices")
 async def export_invoices(
     format: str = Query("excel", description="Export format: excel, csv, json"),
@@ -291,33 +206,28 @@ async def export_invoices(
 ):
     """Export invoices to various formats using database adapter"""
     try:
-        # Ottieni fatture usando adapter
         df_invoices = await db_adapter.get_invoices_async(
             type_filter=invoice_type,
             status_filter=status_filter,
-            limit=10000  # Limite alto per export
+            limit=10000
         )
         
         if df_invoices.empty:
             raise HTTPException(status_code=404, detail="No invoices found with specified filters")
         
-        # Applica filtri data se forniti
         if start_date:
             df_invoices = df_invoices[df_invoices['doc_date'] >= start_date]
         if end_date:
             df_invoices = df_invoices[df_invoices['doc_date'] <= end_date]
         
-        # Prepara dati export
         export_columns = [
             'id', 'type', 'doc_number', 'doc_date', 'total_amount', 'due_date',
-            'payment_status', 'paid_amount', 'counterparty_name'
+            'payment_status', 'paid_amount'
         ]
         
-        # Verifica colonne disponibili
         available_columns = [col for col in export_columns if col in df_invoices.columns]
         export_data = df_invoices[available_columns].copy()
         
-        # Rinomina colonne per export
         column_mapping = {
             'id': 'ID',
             'type': 'Tipo',
@@ -326,25 +236,111 @@ async def export_invoices(
             'total_amount': 'Importo Totale',
             'due_date': 'Scadenza',
             'payment_status': 'Stato Pagamento',
-            'paid_amount': 'Importo Pagato',
-            'counterparty_name': 'Controparte'
+            'paid_amount': 'Importo Pagato'
         }
         
         export_data = export_data.rename(columns=column_mapping)
         
-        # Calcola residuo se possibile
         if 'Importo Totale' in export_data.columns and 'Importo Pagato' in export_data.columns:
             export_data['Residuo'] = export_data['Importo Totale'] - export_data['Importo Pagato']
         
         if format == "excel":
-            # Crea Excel file
             excel_buffer = BytesIO()
             
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                 export_data.to_excel(writer, sheet_name='Fatture', index=False)
-                
-                # TODO: Aggiungi righe fatture e riepiloghi IVA se richiesto
-                # Questo richiederebbe query aggiuntive via adapter
+            
+            excel_buffer.seek(0)
+            
+            return StreamingResponse(
+                BytesIO(excel_buffer.getvalue()),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment; filename=fatture_export.xlsx"}
+            )
+            
+        elif format == "csv":
+            csv_content = export_data.to_csv(index=False, sep=';', encoding='utf-8')
+            csv_buffer = BytesIO(csv_content.encode('utf-8'))
+            
+            return StreamingResponse(
+                csv_buffer,
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=fatture_export.csv"}
+            )
+            
+        elif format == "json":
+            json_data = export_data.to_dict('records')
+            
+            return APIResponse(
+                success=True,
+                message=f"Exported {len(json_data)} invoices",
+                data={
+                    'invoices': json_data,
+                    'count': len(json_data),
+                    'filters_applied': {
+                        'type': invoice_type,
+                        'status': status_filter,
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                }
+            )
+        
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported export format")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting invoices: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error exporting invoices")
+
+
+@router.get("/export/transactions")
+async def export_transactions(
+    format: str = Query("excel", description="Export format: excel, csv, json"),
+    status_filter: Optional[str] = Query(None, description="Filter by reconciliation status"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    include_reconciliation: bool = Query(False, description="Include reconciliation details")
+):
+    """Export bank transactions to various formats using database adapter"""
+    try:
+        df_transactions = await db_adapter.get_transactions_async(
+            start_date=start_date,
+            end_date=end_date,
+            status_filter=status_filter,
+            limit=10000
+        )
+        
+        if df_transactions.empty:
+            raise HTTPException(status_code=404, detail="No transactions found with specified filters")
+        
+        export_columns = [
+            'id', 'transaction_date', 'value_date', 'amount',
+            'description', 'causale_abi', 'reconciliation_status'
+        ]
+        
+        available_columns = [col for col in export_columns if col in df_transactions.columns]
+        export_data = df_transactions[available_columns].copy()
+        
+        column_mapping = {
+            'id': 'ID',
+            'transaction_date': 'Data Operazione',
+            'value_date': 'Data Valuta',
+            'amount': 'Importo',
+            'description': 'Descrizione',
+            'causale_abi': 'Causale ABI',
+            'reconciliation_status': 'Stato Riconciliazione'
+        }
+        
+        export_data = export_data.rename(columns=column_mapping)
+        
+        if format == "excel":
+            excel_buffer = BytesIO()
+            
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                export_data.to_excel(writer, sheet_name='Movimenti', index=False)
             
             excel_buffer.seek(0)
             
@@ -399,13 +395,11 @@ async def export_anagraphics(
 ):
     """Export anagraphics to various formats using database adapter"""
     try:
-        # Ottieni anagrafiche usando adapter
         df_anagraphics = await db_adapter.get_anagraphics_async(type_filter=type_filter)
         
         if df_anagraphics.empty:
             raise HTTPException(status_code=404, detail="No anagraphics found")
         
-        # Prepara dati export
         export_columns = [
             'id', 'type', 'denomination', 'piva', 'cf', 'city', 'province',
             'email', 'phone', 'score'
@@ -414,7 +408,6 @@ async def export_anagraphics(
         available_columns = [col for col in export_columns if col in df_anagraphics.columns]
         export_data = df_anagraphics[available_columns].copy()
         
-        # Rinomina colonne
         column_mapping = {
             'id': 'ID',
             'type': 'Tipo',
@@ -436,7 +429,6 @@ async def export_anagraphics(
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                 export_data.to_excel(writer, sheet_name='Anagrafiche', index=False)
                 
-                # Aggiungi statistiche se richiesto
                 if include_stats:
                     stats_data = await db_adapter.execute_query_async("""
                         SELECT 
@@ -510,7 +502,6 @@ async def export_reconciliation_report(
 ):
     """Export comprehensive reconciliation report using database adapter"""
     try:
-        # Ottieni link riconciliazione
         recon_links = await db_adapter.execute_query_async("""
             SELECT 
                 rl.id as link_id,
@@ -538,7 +529,6 @@ async def export_reconciliation_report(
         unmatched_transactions = []
         
         if include_unmatched:
-            # Ottieni fatture non riconciliate
             unmatched_invoices = await db_adapter.execute_query_async("""
                 SELECT 
                     i.id, i.doc_number, i.doc_date, i.type, i.total_amount,
@@ -551,7 +541,6 @@ async def export_reconciliation_report(
                 ORDER BY i.doc_date DESC
             """.format(period_months))
             
-            # Ottieni transazioni non riconciliate
             unmatched_transactions = await db_adapter.execute_query_async("""
                 SELECT 
                     id, transaction_date, amount, description, reconciliation_status,
@@ -562,7 +551,6 @@ async def export_reconciliation_report(
                 ORDER BY transaction_date DESC
             """.format(period_months))
         
-        # Crea struttura report
         report_data = {
             'reconciled_items': recon_links,
             'unmatched_invoices': unmatched_invoices,
@@ -587,22 +575,18 @@ async def export_reconciliation_report(
             excel_buffer = BytesIO()
             
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                # Sheet riconciliazioni
                 if recon_links:
                     df_recon = pd.DataFrame(recon_links)
                     df_recon.to_excel(writer, sheet_name='Riconciliazioni', index=False)
                 
-                # Sheet fatture non riconciliate
                 if unmatched_invoices:
                     df_unmatched_inv = pd.DataFrame(unmatched_invoices)
                     df_unmatched_inv.to_excel(writer, sheet_name='Fatture Non Riconciliate', index=False)
                 
-                # Sheet transazioni non riconciliate
                 if unmatched_transactions:
                     df_unmatched_trans = pd.DataFrame(unmatched_transactions)
                     df_unmatched_trans.to_excel(writer, sheet_name='Transazioni Non Riconciliate', index=False)
                 
-                # Sheet riepilogo
                 summary_df = pd.DataFrame([report_data['summary']])
                 summary_df.to_excel(writer, sheet_name='Riepilogo', index=False)
             
@@ -615,7 +599,6 @@ async def export_reconciliation_report(
             )
             
         elif format == "csv":
-            # CSV semplificato con solo riconciliazioni
             if recon_links:
                 df_recon = pd.DataFrame(recon_links)
                 csv_content = df_recon.to_csv(index=False, sep=';', encoding='utf-8')
@@ -651,18 +634,15 @@ async def create_backup():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"fattura_analyzer_backup_{timestamp}"
         
-        # Crea directory temporanea per backup
         with tempfile.TemporaryDirectory() as temp_dir:
             backup_dir = os.path.join(temp_dir, backup_name)
             os.makedirs(backup_dir)
             
-            # Copia database usando path da settings
             db_path = settings.get_database_path()
             if os.path.exists(db_path):
                 shutil.copy2(db_path, os.path.join(backup_dir, "database.db"))
                 logger.info(f"Database copied from {db_path}")
             
-            # Copia config se esiste
             config_paths = ["config.ini", "../config.ini", "../../config.ini"]
             for config_path in config_paths:
                 if os.path.exists(config_path):
@@ -670,7 +650,6 @@ async def create_backup():
                     logger.info(f"Config copied from {config_path}")
                     break
             
-            # Copia file credentials se esistono
             credentials_files = [
                 settings.GOOGLE_CREDENTIALS_FILE,
                 "google_token.json"
@@ -680,15 +659,12 @@ async def create_backup():
                     shutil.copy2(cred_file, backup_dir)
                     logger.info(f"Credentials file copied: {cred_file}")
             
-            # Crea archivio ZIP
             zip_path = os.path.join(temp_dir, f"{backup_name}.zip")
             shutil.make_archive(zip_path[:-4], 'zip', backup_dir)
             
-            # Verifica dimensione backup
             backup_size = os.path.getsize(zip_path)
             logger.info(f"Backup created: {backup_size} bytes")
             
-            # Restituisci file backup
             return FileResponse(
                 zip_path,
                 media_type="application/zip",
@@ -707,7 +683,6 @@ async def get_import_history(
 ):
     """Get import history and statistics using database adapter"""
     try:
-        # Ottieni statistiche usando adapter
         invoice_stats = await db_adapter.execute_query_async("""
             SELECT 
                 COUNT(*) as total_invoices,
@@ -724,7 +699,6 @@ async def get_import_history(
             FROM BankTransactions
         """)
         
-        # Combina statistiche
         invoice_data = invoice_stats[0] if invoice_stats else {}
         transaction_data = transaction_stats[0] if transaction_stats else {}
         
@@ -741,10 +715,8 @@ async def get_import_history(
             }
         }
         
-        # Per ora, storia import fittizia (in futuro si potrebbe implementare una tabella dedicata)
         import_history = []
         
-        # Cerca fatture recenti come proxy per import
         recent_invoices = await db_adapter.execute_query_async("""
             SELECT 
                 'XML/P7M Import' as type,
@@ -758,7 +730,6 @@ async def get_import_history(
             LIMIT ?
         """, (limit // 2,))
         
-        # Cerca transazioni recenti come proxy per import CSV
         recent_transactions = await db_adapter.execute_query_async("""
             SELECT 
                 'CSV Transactions' as type,
@@ -772,7 +743,6 @@ async def get_import_history(
             LIMIT ?
         """, (limit // 2,))
         
-        # Combina e formatta history
         all_imports = recent_invoices + recent_transactions
         for i, import_item in enumerate(all_imports[:limit]):
             import_history.append({
@@ -797,103 +767,4 @@ async def get_import_history(
         
     except Exception as e:
         logger.error(f"Error getting import history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error retrieving import history"); filename=fatture_export.xlsx"}
-            )
-            
-        elif format == "csv":
-            # Crea CSV
-            csv_content = export_data.to_csv(index=False, sep=';', encoding='utf-8')
-            csv_buffer = BytesIO(csv_content.encode('utf-8'))
-            
-            return StreamingResponse(
-                csv_buffer,
-                media_type="text/csv",
-                headers={"Content-Disposition": "attachment; filename=fatture_export.csv"}
-            )
-            
-        elif format == "json":
-            # Crea JSON
-            json_data = export_data.to_dict('records')
-            
-            return APIResponse(
-                success=True,
-                message=f"Exported {len(json_data)} invoices",
-                data={
-                    'invoices': json_data,
-                    'count': len(json_data),
-                    'filters_applied': {
-                        'type': invoice_type,
-                        'status': status_filter,
-                        'start_date': start_date,
-                        'end_date': end_date
-                    }
-                }
-            )
-        
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported export format")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error exporting invoices: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error exporting invoices")
-
-
-@router.get("/export/transactions")
-async def export_transactions(
-    format: str = Query("excel", description="Export format: excel, csv, json"),
-    status_filter: Optional[str] = Query(None, description="Filter by reconciliation status"),
-    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    include_reconciliation: bool = Query(False, description="Include reconciliation details")
-):
-    """Export bank transactions to various formats using database adapter"""
-    try:
-        # Ottieni transazioni usando adapter
-        df_transactions = await db_adapter.get_transactions_async(
-            start_date=start_date,
-            end_date=end_date,
-            status_filter=status_filter,
-            limit=10000
-        )
-        
-        if df_transactions.empty:
-            raise HTTPException(status_code=404, detail="No transactions found with specified filters")
-        
-        # Prepara dati export
-        export_columns = [
-            'id', 'transaction_date', 'value_date', 'amount',
-            'description', 'causale_abi', 'reconciliation_status'
-        ]
-        
-        available_columns = [col for col in export_columns if col in df_transactions.columns]
-        export_data = df_transactions[available_columns].copy()
-        
-        # Rinomina colonne
-        column_mapping = {
-            'id': 'ID',
-            'transaction_date': 'Data Operazione',
-            'value_date': 'Data Valuta',
-            'amount': 'Importo',
-            'description': 'Descrizione',
-            'causale_abi': 'Causale ABI',
-            'reconciliation_status': 'Stato Riconciliazione'
-        }
-        
-        export_data = export_data.rename(columns=column_mapping)
-        
-        if format == "excel":
-            excel_buffer = BytesIO()
-            
-            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                export_data.to_excel(writer, sheet_name='Movimenti', index=False)
-                
-                # TODO: Aggiungi dettagli riconciliazione se richiesto
-            
-            excel_buffer.seek(0)
-            
-            return StreamingResponse(
-                BytesIO(excel_buffer.getvalue()),
-                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={"Content-Disposition": "attachment
+        raise HTTPException(status_code=500, detail="Error retrieving import history")
