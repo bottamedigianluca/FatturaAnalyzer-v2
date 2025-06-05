@@ -305,9 +305,387 @@ export function ReconciliationPage() {
                   className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-200/50"
                 >
                   <SystemStatusIndicator
-                    label="Neural Load"
-                    value={systemMetrics.neural_load}
-                    color="text-blue-600"
-                    icon={Cpu}
+                    label="Quantum Coherence"
+                    value={systemMetrics.quantum_coherence}
+                    color="text-purple-600"
+                    icon={Atom}
                   />
-                  <System
+                  <SystemStatusIndicator
+                    label="Pattern Recognition"
+                    value={systemMetrics.pattern_recognition}
+                    color="text-green-600"
+                    icon={Network}
+                  />
+                  <SystemStatusIndicator
+                    label="Semantic Processing"
+                    value={systemMetrics.semantic_processing}
+                    color="text-orange-600"
+                    icon={Brain}
+                  />
+                  <SystemStatusIndicator
+                    label="ML Accuracy"
+                    value={systemMetrics.ml_accuracy}
+                    color="text-emerald-600"
+                    icon={Target}
+                  />
+                  <SystemStatusIndicator
+                    label="Processing Speed"
+                    value={systemMetrics.processing_speed}
+                    color="text-cyan-600"
+                    icon={Zap}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Mode Selection and Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Mode Selection */}
+        <Card className="lg:col-span-2 border-2 border-indigo-200/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5 text-indigo-600" />
+              Modalità di Riconciliazione
+            </CardTitle>
+            <CardDescription>
+              Seleziona il livello di automazione per il processo di riconciliazione
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                {
+                  id: 'manual',
+                  title: 'Manuale',
+                  description: 'Controllo completo del processo',
+                  icon: Target,
+                  color: 'blue',
+                },
+                {
+                  id: 'assisted',
+                  title: 'AI Assistita',
+                  description: 'Suggerimenti intelligenti con conferma',
+                  icon: Brain,
+                  color: 'purple',
+                },
+                {
+                  id: 'auto',
+                  title: 'Automatica',
+                  description: 'Riconciliazione completamente automatizzata',
+                  icon: Zap,
+                  color: 'green',
+                },
+              ].map((mode) => {
+                const Icon = mode.icon;
+                const isActive = activeMode === mode.id;
+                
+                return (
+                  <motion.div
+                    key={mode.id}
+                    className={cn(
+                      "relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300",
+                      isActive
+                        ? `border-${mode.color}-400 bg-${mode.color}-50`
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    )}
+                    onClick={() => setActiveMode(mode.id as any)}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <div className="text-center">
+                      <div className={cn(
+                        "mx-auto mb-3 p-3 rounded-lg",
+                        isActive
+                          ? `bg-${mode.color}-100 text-${mode.color}-600`
+                          : "bg-gray-100 text-gray-500"
+                      )}>
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <h3 className="font-semibold mb-2">{mode.title}</h3>
+                      <p className="text-xs text-gray-600">{mode.description}</p>
+                    </div>
+                    
+                    {isActive && (
+                      <motion.div
+                        className={`absolute inset-0 border-2 border-${mode.color}-400 rounded-xl`}
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions */}
+        <Card className="border-2 border-green-200/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-green-600" />
+              Azioni Rapide
+            </CardTitle>
+            <CardDescription>
+              Operazioni immediate per ottimizzare il flusso di lavoro
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={handleAutoReconcile}
+              disabled={autoReconcileMutation.isPending}
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+            >
+              {autoReconcileMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              Auto-Riconcilia Tutto
+            </Button>
+            
+            <Button
+              onClick={handleMLTraining}
+              disabled={mlTrainingMutation.isPending}
+              variant="outline"
+              className="w-full border-purple-200 hover:bg-purple-50"
+            >
+              {mlTrainingMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Beaker className="h-4 w-4 mr-2" />
+              )}
+              Addestra Modello AI
+            </Button>
+            
+            <Button
+              variant="outline"
+              className="w-full border-blue-200 hover:bg-blue-50"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Esporta Report
+            </Button>
+            
+            <Button
+              variant="outline"
+              className="w-full border-orange-200 hover:bg-orange-50"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Importa Dati
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Analytics Dashboard */}
+      {analytics && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="border border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-green-600 font-medium">Successo</p>
+                  <p className="text-2xl font-bold text-green-700">
+                    {formatPercentage(analytics.success_rate)}
+                  </p>
+                </div>
+                <CheckCircle className="h-8 w-8 text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-blue-600 font-medium">Processati</p>
+                  <p className="text-2xl font-bold text-blue-700">
+                    {analytics.total_processed.toLocaleString()}
+                  </p>
+                </div>
+                <Activity className="h-8 w-8 text-blue-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-purple-600 font-medium">Accuratezza AI</p>
+                  <p className="text-2xl font-bold text-purple-700">
+                    {formatPercentage(analytics.ml_accuracy)}
+                  </p>
+                </div>
+                <Brain className="h-8 w-8 text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-orange-200 bg-gradient-to-br from-orange-50 to-yellow-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-orange-600 font-medium">Ore Risparmiate</p>
+                  <p className="text-2xl font-bold text-orange-700">
+                    {analytics.time_saved_hours.toFixed(1)}h
+                  </p>
+                </div>
+                <Clock className="h-8 w-8 text-orange-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* AI Configuration Panel */}
+      <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50/30 to-indigo-50/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-purple-600" />
+            Configurazione AI
+          </CardTitle>
+          <CardDescription>
+            Ottimizza i parametri del motore di intelligenza artificiale
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-purple-700">
+                Soglia Confidenza: {formatPercentage(aiConfig.confidence_threshold)}
+              </label>
+              <Slider
+                value={[aiConfig.confidence_threshold]}
+                onValueChange={([value]) => setAiConfig(prev => ({ ...prev, confidence_threshold: value }))}
+                max={1}
+                min={0.5}
+                step={0.05}
+                className="w-full"
+              />
+            </div>
+            
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-purple-700">
+                Auto-Reconcile: {formatPercentage(aiConfig.auto_reconcile_threshold)}
+              </label>
+              <Slider
+                value={[aiConfig.auto_reconcile_threshold]}
+                onValueChange={([value]) => setAiConfig(prev => ({ ...prev, auto_reconcile_threshold: value }))}
+                max={1}
+                min={0.8}
+                step={0.02}
+                className="w-full"
+              />
+            </div>
+            
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-purple-700">
+                Neural Layers: {aiConfig.neural_layers}
+              </label>
+              <Slider
+                value={[aiConfig.neural_layers]}
+                onValueChange={([value]) => setAiConfig(prev => ({ ...prev, neural_layers: value }))}
+                max={256}
+                min={32}
+                step={16}
+                className="w-full"
+              />
+            </div>
+            
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-purple-700">
+                Learning Rate: {aiConfig.learning_rate.toFixed(4)}
+              </label>
+              <Slider
+                value={[aiConfig.learning_rate * 1000]}
+                onValueChange={([value]) => setAiConfig(prev => ({ ...prev, learning_rate: value / 1000 }))}
+                max={10}
+                min={0.1}
+                step={0.1}
+                className="w-full"
+              />
+            </div>
+          </div>
+          
+          <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={aiConfig.quantum_enhancement}
+                onCheckedChange={(checked) => setAiConfig(prev => ({ ...prev, quantum_enhancement: checked }))}
+              />
+              <label className="text-sm font-medium text-purple-700">Quantum Enhancement</label>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={aiConfig.semantic_analysis}
+                onCheckedChange={(checked) => setAiConfig(prev => ({ ...prev, semantic_analysis: checked }))}
+              />
+              <label className="text-sm font-medium text-purple-700">Semantic Analysis</label>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={aiConfig.pattern_matching}
+                onCheckedChange={(checked) => setAiConfig(prev => ({ ...prev, pattern_matching: checked }))}
+              />
+              <label className="text-sm font-medium text-purple-700">Pattern Matching</label>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={aiConfig.real_time_learning}
+                onCheckedChange={(checked) => setAiConfig(prev => ({ ...prev, real_time_learning: checked }))}
+              />
+              <label className="text-sm font-medium text-purple-700">Real-time Learning</label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Main Reconciliation Interface */}
+      <ReconciliationView />
+
+      {/* Quantum Processing Status */}
+      {(autoReconcileMutation.isPending || mlTrainingMutation.isPending) && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+        >
+          <Card className="w-96 border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-indigo-50">
+            <CardContent className="p-8 text-center">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-16 h-16 border-4 border-purple-300 border-t-purple-600 rounded-full mx-auto mb-6"
+              />
+              
+              <h3 className="text-xl font-bold text-purple-700 mb-2">
+                {autoReconcileMutation.isPending ? 'Quantum Auto-Reconciliation' : 'Neural Network Training'}
+              </h3>
+              
+              <p className="text-purple-600 mb-4">
+                {autoReconcileMutation.isPending 
+                  ? 'AI sta processando le riconciliazioni...' 
+                  : 'Addestramento del modello in corso...'}
+              </p>
+              
+              <div className="space-y-2">
+                <Progress value={65} className="w-full" />
+                <p className="text-xs text-purple-500">
+                  Processamento quantistico attivo
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+    </div>
+  );
+}
