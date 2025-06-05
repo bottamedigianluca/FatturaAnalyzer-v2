@@ -8,7 +8,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query, Path
 from fastapi.responses import JSONResponse
 
-from app.core.database import get_db_session, execute_query_async, execute_write_async, execute_many_async
+from app.adapters.database_adapter import db_adapter
 from app.models import (
     Invoice, InvoiceCreate, InvoiceUpdate, InvoiceFilter,
     PaginationParams, InvoiceListResponse, APIResponse,
@@ -36,7 +36,6 @@ async def get_invoices_list(
     try:
         pagination = PaginationParams(page=page, size=size)
         
-        # Build query with filters
         base_query = """
             SELECT i.id, i.type, i.doc_number, i.doc_date, i.total_amount, i.due_date,
                    i.payment_status, i.paid_amount, i.payment_method, i.anagraphics_id,
@@ -95,17 +94,14 @@ async def get_invoices_list(
             base_query += where_clause
             count_query += where_clause
         
-        # Get total count
-        total_result = await execute_query_async(count_query, tuple(params))
+        total_result = await db_adapter.execute_query_async(count_query, tuple(params))
         total = total_result[0]['total'] if total_result else 0
         
-        # Get paginated results
         base_query += " ORDER BY i.doc_date DESC, i.id DESC LIMIT ? OFFSET ?"
         params.extend([pagination.limit, pagination.offset])
         
-        items = await execute_query_async(base_query, tuple(params))
+        items = await db_adapter.execute_query_async(base_query, tuple(params))
         
-        # Calculate pagination info
         pages = (total + pagination.size - 1) // pagination.size
         
         return InvoiceListResponse(
@@ -127,7 +123,6 @@ async def get_invoice_by_id(
 ):
     """Get invoice by ID with full details"""
     try:
-        # Get main invoice data
         invoice_query = """
             SELECT i.id, i.type, i.doc_type, i.doc_number, i.doc_date, i.total_amount, 
                    i.due_date, i.payment_status, i.paid_amount, i.payment_method,
@@ -140,14 +135,13 @@ async def get_invoice_by_id(
             WHERE i.id = ?
         """
         
-        invoice_result = await execute_query_async(invoice_query, (invoice_id,))
+        invoice_result = await db_adapter.execute_query_async(invoice_query, (invoice_id,))
         
         if not invoice_result:
             raise HTTPException(status_code=404, detail="Invoice not found")
         
         invoice_data = invoice_result[0]
         
-        # Get invoice lines
         lines_query = """
             SELECT id, line_number, description, quantity, unit_measure, 
                    unit_price, total_price, vat_rate, item_code, item_type
@@ -156,9 +150,8 @@ async def get_invoice_by_id(
             ORDER BY line_number
         """
         
-        lines = await execute_query_async(lines_query, (invoice_id,))
+        lines = await db_adapter.execute_query_async(lines_query, (invoice_id,))
         
-        # Get VAT summary
         vat_query = """
             SELECT id, vat_rate, taxable_amount, vat_amount
             FROM InvoiceVATSummary
@@ -166,9 +159,8 @@ async def get_invoice_by_id(
             ORDER BY vat_rate
         """
         
-        vat_summary = await execute_query_async(vat_query, (invoice_id,))
+        vat_summary = await db_adapter.execute_query_async(vat_query, (invoice_id,))
         
-        # Combine all data
         invoice_data['lines'] = lines
         invoice_data['vat_summary'] = vat_summary
         
@@ -185,8 +177,7 @@ async def get_invoice_by_id(
 async def create_invoice(invoice_data: InvoiceCreate):
     """Create new invoice with lines and VAT summary"""
     try:
-        # Verify anagraphics exists
-        anag_check = await execute_query_async(
+        anag_check = await db_adapter.execute_query_async(
             "SELECT id FROM Anagraphics WHERE id = ?", 
             (invoice_data.anagraphics_id,)
         )
@@ -196,13 +187,11 @@ async def create_invoice(invoice_data: InvoiceCreate):
                 detail=f"Anagraphics ID {invoice_data.anagraphics_id} not found"
             )
         
-        # Generate unique hash (simplified - in reality would use your existing hash function)
         import hashlib
         from datetime import datetime
         hash_input = f"{invoice_data.anagraphics_id}_{invoice_data.doc_number}_{invoice_data.doc_date}_{datetime.now().isoformat()}"
         unique_hash = hashlib.sha256(hash_input.encode()).hexdigest()
         
-        # Insert main invoice
         invoice_insert = """
             INSERT INTO Invoices 
             (anagraphics_id, type, doc_type, doc_number, doc_date, total_amount, 
@@ -226,12 +215,11 @@ async def create_invoice(invoice_data: InvoiceCreate):
             unique_hash
         )
         
-        invoice_id = await execute_write_async(invoice_insert, invoice_params)
+        invoice_id = await db_adapter.execute_write_async(invoice_insert, invoice_params)
         
         if not invoice_id:
             raise HTTPException(status_code=500, detail="Failed to create invoice")
         
-        # Insert invoice lines if provided
         if invoice_data.lines:
             lines_insert = """
                 INSERT INTO InvoiceLines 
@@ -240,8 +228,8 @@ async def create_invoice(invoice_data: InvoiceCreate):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             
-            lines_params = [
-                (
+            for line in invoice_data.lines:
+                line_params = (
                     invoice_id,
                     line.line_number,
                     line.description,
@@ -253,12 +241,8 @@ async def create_invoice(invoice_data: InvoiceCreate):
                     line.item_code,
                     line.item_type
                 )
-                for line in invoice_data.lines
-            ]
-            
-            await execute_many_async(lines_insert, lines_params)
+                await db_adapter.execute_write_async(lines_insert, line_params)
         
-        # Insert VAT summary if provided
         if invoice_data.vat_summary:
             vat_insert = """
                 INSERT INTO InvoiceVATSummary 
@@ -266,19 +250,15 @@ async def create_invoice(invoice_data: InvoiceCreate):
                 VALUES (?, ?, ?, ?)
             """
             
-            vat_params = [
-                (
+            for vat in invoice_data.vat_summary:
+                vat_params = (
                     invoice_id,
                     vat.vat_rate,
                     vat.taxable_amount,
                     vat.vat_amount
                 )
-                for vat in invoice_data.vat_summary
-            ]
-            
-            await execute_many_async(vat_insert, vat_params)
+                await db_adapter.execute_write_async(vat_insert, vat_params)
         
-        # Return the created invoice
         return await get_invoice_by_id(invoice_id)
         
     except HTTPException:
@@ -295,12 +275,10 @@ async def update_invoice(
 ):
     """Update invoice"""
     try:
-        # Check if invoice exists
-        existing = await execute_query_async("SELECT id FROM Invoices WHERE id = ?", (invoice_id,))
+        existing = await db_adapter.execute_query_async("SELECT id FROM Invoices WHERE id = ?", (invoice_id,))
         if not existing:
             raise HTTPException(status_code=404, detail="Invoice not found")
         
-        # Build update query dynamically
         update_fields = []
         params = []
         
@@ -308,7 +286,7 @@ async def update_invoice(
             if value is not None:
                 if field in ['doc_date', 'due_date'] and hasattr(value, 'isoformat'):
                     value = value.isoformat()
-                elif hasattr(value, 'value'):  # Enum
+                elif hasattr(value, 'value'):
                     value = value.value
                 update_fields.append(f"{field} = ?")
                 params.append(value)
@@ -316,18 +294,16 @@ async def update_invoice(
         if not update_fields:
             raise HTTPException(status_code=400, detail="No fields to update")
         
-        # Add updated_at
         update_fields.append("updated_at = datetime('now')")
         params.append(invoice_id)
         
         update_query = f"UPDATE Invoices SET {', '.join(update_fields)} WHERE id = ?"
         
-        rows_affected = await execute_write_async(update_query, tuple(params))
+        rows_affected = await db_adapter.execute_write_async(update_query, tuple(params))
         
         if rows_affected == 0:
             raise HTTPException(status_code=404, detail="Invoice not found")
         
-        # Return updated invoice
         return await get_invoice_by_id(invoice_id)
         
     except HTTPException:
@@ -343,9 +319,8 @@ async def delete_invoice(
 ):
     """Delete invoice and related data"""
     try:
-        # Check for existing reconciliation links
         links_query = "SELECT COUNT(*) as count FROM ReconciliationLinks WHERE invoice_id = ?"
-        links_result = await execute_query_async(links_query, (invoice_id,))
+        links_result = await db_adapter.execute_query_async(links_query, (invoice_id,))
         
         if links_result and links_result[0]['count'] > 0:
             raise HTTPException(
@@ -353,9 +328,8 @@ async def delete_invoice(
                 detail="Cannot delete invoice with existing reconciliation links"
             )
         
-        # Delete invoice (lines and VAT summary will be deleted by CASCADE)
         delete_query = "DELETE FROM Invoices WHERE id = ?"
-        rows_affected = await execute_write_async(delete_query, (invoice_id,))
+        rows_affected = await db_adapter.execute_write_async(delete_query, (invoice_id,))
         
         if rows_affected == 0:
             raise HTTPException(status_code=404, detail="Invoice not found")
@@ -387,7 +361,7 @@ async def get_invoice_reconciliation_links(
             ORDER BY rl.reconciliation_date DESC
         """
         
-        links = await execute_query_async(query, (invoice_id,))
+        links = await db_adapter.execute_query_async(query, (invoice_id,))
         
         return APIResponse(
             success=True,
@@ -406,14 +380,34 @@ async def get_overdue_invoices(
 ):
     """Get overdue invoices ordered by priority"""
     try:
-        from app.core.analysis import get_top_overdue_invoices
+        query = f"""
+            SELECT 
+                i.id,
+                i.doc_number,
+                i.doc_date,
+                i.due_date,
+                i.total_amount,
+                i.paid_amount,
+                (i.total_amount - i.paid_amount) as open_amount,
+                (julianday('now') - julianday(i.due_date)) as days_overdue,
+                a.denomination as counterparty_name,
+                (julianday('now') - julianday(i.due_date)) * (i.total_amount - i.paid_amount) as priority_score
+            FROM Invoices i
+            JOIN Anagraphics a ON i.anagraphics_id = a.id
+            WHERE i.type = 'Attiva'
+              AND i.payment_status IN ('Scaduta', 'Aperta')
+              AND i.due_date < date('now')
+              AND (i.total_amount - i.paid_amount) > 0.01
+            ORDER BY priority_score DESC, i.due_date ASC
+            LIMIT {limit}
+        """
         
-        overdue_invoices = get_top_overdue_invoices(limit)
+        overdue_invoices = await db_adapter.execute_query_async(query)
         
         return APIResponse(
             success=True,
             message=f"Found {len(overdue_invoices)} overdue invoices",
-            data=overdue_invoices.to_dict('records') if not overdue_invoices.empty else []
+            data=overdue_invoices
         )
         
     except Exception as e:
@@ -427,20 +421,43 @@ async def get_aging_summary(
 ):
     """Get aging summary for invoices"""
     try:
-        from app.core.analysis import get_aging_summary
+        query = f"""
+            SELECT 
+                CASE 
+                    WHEN julianday('now') - julianday(due_date) <= 0 THEN 'Not Due'
+                    WHEN julianday('now') - julianday(due_date) <= 30 THEN '1-30 days'
+                    WHEN julianday('now') - julianday(due_date) <= 60 THEN '31-60 days'
+                    WHEN julianday('now') - julianday(due_date) <= 90 THEN '61-90 days'
+                    ELSE 'Over 90 days'
+                END as aging_bucket,
+                COUNT(*) as count,
+                SUM(total_amount - paid_amount) as amount
+            FROM Invoices
+            WHERE type = '{invoice_type.value}'
+              AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
+              AND (total_amount - paid_amount) > 0.01
+            GROUP BY aging_bucket
+            ORDER BY 
+                CASE aging_bucket
+                    WHEN 'Not Due' THEN 1
+                    WHEN '1-30 days' THEN 2
+                    WHEN '31-60 days' THEN 3
+                    WHEN '61-90 days' THEN 4
+                    ELSE 5
+                END
+        """
         
-        aging_data = get_aging_summary(invoice_type.value)
+        result = await db_adapter.execute_query_async(query)
         
-        # Convert to response format
         buckets = []
         total_amount = 0.0
         total_count = 0
         
-        for label, data in aging_data.items():
-            amount = float(data['amount'])
-            count = data['count']
+        for row in result:
+            amount = float(row['amount'] or 0)
+            count = row['count'] or 0
             buckets.append({
-                "label": label,
+                "label": row['aging_bucket'],
                 "amount": amount,
                 "count": count
             })
@@ -479,9 +496,8 @@ async def get_invoices_stats():
             GROUP BY type, payment_status
         """
         
-        stats = await execute_query_async(stats_query)
+        stats = await db_adapter.execute_query_async(stats_query)
         
-        # Get recent invoices
         recent_query = """
             SELECT i.id, i.type, i.doc_number, i.doc_date, i.total_amount,
                    i.payment_status, a.denomination as counterparty_name
@@ -491,7 +507,7 @@ async def get_invoices_stats():
             LIMIT 10
         """
         
-        recent = await execute_query_async(recent_query)
+        recent = await db_adapter.execute_query_async(recent_query)
         
         return APIResponse(
             success=True,
@@ -536,7 +552,7 @@ async def search_invoices(
         search_query += " ORDER BY i.doc_date DESC LIMIT ?"
         params.append(limit)
         
-        results = await execute_query_async(search_query, tuple(params))
+        results = await db_adapter.execute_query_async(search_query, tuple(params))
         
         return APIResponse(
             success=True,
@@ -561,16 +577,14 @@ async def update_invoice_payment_status(
 ):
     """Update invoice payment status and paid amount"""
     try:
-        # Get current invoice data
         current_query = "SELECT total_amount, paid_amount FROM Invoices WHERE id = ?"
-        current_result = await execute_query_async(current_query, (invoice_id,))
+        current_result = await db_adapter.execute_query_async(current_query, (invoice_id,))
         
         if not current_result:
             raise HTTPException(status_code=404, detail="Invoice not found")
         
         current_data = current_result[0]
         
-        # If paid_amount not provided, calculate based on status
         if paid_amount is None:
             if payment_status == PaymentStatus.PAGATA_TOT:
                 paid_amount = current_data['total_amount']
@@ -579,21 +593,19 @@ async def update_invoice_payment_status(
             else:
                 paid_amount = current_data['paid_amount']
         
-        # Validate paid amount
         if paid_amount < 0 or paid_amount > current_data['total_amount']:
             raise HTTPException(
                 status_code=400, 
                 detail="Paid amount must be between 0 and total amount"
             )
         
-        # Update invoice
         update_query = """
             UPDATE Invoices 
             SET payment_status = ?, paid_amount = ?, updated_at = datetime('now')
             WHERE id = ?
         """
         
-        rows_affected = await execute_write_async(
+        rows_affected = await db_adapter.execute_write_async(
             update_query, 
             (payment_status.value, paid_amount, invoice_id)
         )
