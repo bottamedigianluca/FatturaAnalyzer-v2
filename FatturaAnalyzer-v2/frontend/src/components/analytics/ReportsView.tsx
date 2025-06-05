@@ -330,4 +330,434 @@ export function ReportsView() {
                       )}
                       <span className={cn(
                         "text-xs font-medium",
-                        metric.trend > 0 ? "
+                        metric.trend > 0 ? "text-green-600" : "text-red-600"
+                      )}>
+                        {metric.trend > 0 ? '+' : ''}{formatPercentage(metric.trend)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "p-3 rounded-lg",
+                    metric.color === 'green' && "bg-green-100 text-green-600",
+                    metric.color === 'red' && "bg-red-100 text-red-600",
+                    metric.color === 'blue' && "bg-blue-100 text-blue-600",
+                    metric.color === 'purple' && "bg-purple-100 text-purple-600"
+                  )}>
+                    <Icon className="h-6 w-6" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+
+  const MonthlyTrendsChart = () => (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <LineChart className="h-5 w-5 text-blue-600" />
+          Trend Mensili
+        </CardTitle>
+        <CardDescription>
+          Andamento di ricavi, spese e profitti negli ultimi 12 mesi
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={reportData.monthly_trends}>
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis dataKey="month" />
+              <YAxis tickFormatter={(value) => formatCurrency(value, 'EUR', 'it-IT').replace(',00', 'K').replace('€ ', '€')} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Bar dataKey="revenue" fill={CHART_COLORS[0]} name="Ricavi" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="expenses" fill={CHART_COLORS[3]} name="Spese" radius={[2, 2, 0, 0]} />
+              <Line type="monotone" dataKey="profit" stroke={CHART_COLORS[1]} strokeWidth={3} name="Profitto" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const TopClientsChart = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-green-600" />
+            Top 5 Clienti per Ricavi
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {reportData.top_clients.map((client, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">{client.name}</p>
+                    <p className="text-xs text-gray-500">{client.invoices} fatture</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-gray-900">{formatCurrency(client.revenue)}</p>
+                  <div className="flex items-center gap-1">
+                    {client.growth > 0 ? (
+                      <TrendingUp className="h-3 w-3 text-green-500" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3 text-red-500" />
+                    )}
+                    <span className={cn(
+                      "text-xs font-medium",
+                      client.growth > 0 ? "text-green-600" : "text-red-600"
+                    )}>
+                      {client.growth > 0 ? '+' : ''}{formatPercentage(client.growth)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PieChart className="h-5 w-5 text-purple-600" />
+            Distribuzione Spese per Categoria
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsPieChart>
+                <Pie
+                  data={reportData.expense_categories}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  dataKey="amount"
+                  nameKey="category"
+                  label={({ category, percentage }) => `${category}: ${formatPercentage(percentage)}`}
+                >
+                  {reportData.expense_categories.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: any) => [formatCurrency(value), 'Importo']}
+                  labelFormatter={(label) => `Categoria: ${label}`}
+                />
+              </RechartsPieChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const ReconciliationStatsCard = () => (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Brain className="h-5 w-5 text-indigo-600" />
+          Statistiche Riconciliazione AI
+        </CardTitle>
+        <CardDescription>
+          Performance del sistema di riconciliazione intelligente
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="text-center">
+            <div className="text-3xl font-bold text-indigo-600 mb-1">
+              {reportData.reconciliation_stats.total_processed.toLocaleString()}
+            </div>
+            <div className="text-sm text-gray-600">Processate</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-green-600 mb-1">
+              {formatPercentage(reportData.reconciliation_stats.success_rate)}
+            </div>
+            <div className="text-sm text-gray-600">Successo</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-blue-600 mb-1">
+              {reportData.reconciliation_stats.avg_processing_time}s
+            </div>
+            <div className="text-sm text-gray-600">Tempo Medio</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-purple-600 mb-1">
+              {formatPercentage(reportData.reconciliation_stats.ai_assisted)}
+            </div>
+            <div className="text-sm text-gray-600">AI Assistite</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const PredictionsCard = () => (
+    <Card className="border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-orange-50">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-yellow-600" />
+          Previsioni AI
+        </CardTitle>
+        <CardDescription>
+          Proiezioni basate su machine learning e pattern analysis
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center p-4 bg-white/60 rounded-lg">
+            <TrendingUp className="h-8 w-8 text-green-500 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-green-600 mb-1">
+              {formatCurrency(reportData.predictions.next_month_revenue)}
+            </div>
+            <div className="text-sm text-gray-600">Ricavi Prossimo Mese</div>
+          </div>
+          
+          <div className="text-center p-4 bg-white/60 rounded-lg">
+            <DollarSign className="h-8 w-8 text-blue-500 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-blue-600 mb-1">
+              {formatCurrency(reportData.predictions.cash_flow_forecast)}
+            </div>
+            <div className="text-sm text-gray-600">Cash Flow Previsto</div>
+          </div>
+          
+          <div className="text-center p-4 bg-white/60 rounded-lg">
+            <Badge 
+              className={cn(
+                "text-lg px-4 py-2 mb-2",
+                reportData.predictions.risk_assessment === 'low' && "bg-green-100 text-green-700",
+                reportData.predictions.risk_assessment === 'medium' && "bg-yellow-100 text-yellow-700",
+                reportData.predictions.risk_assessment === 'high' && "bg-red-100 text-red-700"
+              )}
+            >
+              {reportData.predictions.risk_assessment === 'low' && 'Basso Rischio'}
+              {reportData.predictions.risk_assessment === 'medium' && 'Medio Rischio'}
+              {reportData.predictions.risk_assessment === 'high' && 'Alto Rischio'}
+            </Badge>
+            <div className="text-sm text-gray-600">
+              Confidenza: {formatPercentage(reportData.predictions.confidence)}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Controls */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Report e Analytics</h1>
+          <p className="text-gray-600 mt-1">
+            Dashboard avanzato con intelligenza artificiale e previsioni
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <Select value={filters.dateRange} onValueChange={(value) => setFilters(prev => ({...prev, dateRange: value}))}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="last-month">Ultimo Mese</SelectItem>
+              <SelectItem value="last-3-months">Ultimi 3 Mesi</SelectItem>
+              <SelectItem value="last-6-months">Ultimi 6 Mesi</SelectItem>
+              <SelectItem value="last-12-months">Ultimi 12 Mesi</SelectItem>
+              <SelectItem value="current-year">Anno Corrente</SelectItem>
+              <SelectItem value="custom">Personalizzato</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Settings className="h-4 w-4 mr-2" />
+                Opzioni
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuLabel>Visualizzazione</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setViewMode('charts')}>
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Solo Grafici
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setViewMode('tables')}>
+                <FileText className="h-4 w-4 mr-2" />
+                Solo Tabelle
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setViewMode('mixed')}>
+                <Eye className="h-4 w-4 mr-2" />
+                Misto
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Esportazione</DropdownMenuLabel>
+              <DropdownMenuItem>
+                <Download className="h-4 w-4 mr-2" />
+                Esporta PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Download className="h-4 w-4 mr-2" />
+                Esporta Excel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <Button 
+            onClick={generateReport}
+            disabled={isGenerating}
+            className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+          >
+            {isGenerating ? (
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
+            {isGenerating ? 'Generazione...' : 'Genera Report AI'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Report Type Selection */}
+      <Card className="border-2 border-blue-200/50 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-4 overflow-x-auto">
+            {reportTypes.map((type) => {
+              const Icon = type.icon;
+              const isActive = selectedReport === type.id;
+              
+              return (
+                <motion.button
+                  key={type.id}
+                  onClick={() => setSelectedReport(type.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-all duration-200",
+                    isActive 
+                      ? "bg-blue-600 text-white shadow-lg"
+                      : "bg-white text-gray-600 hover:bg-blue-50 border border-gray-200"
+                  )}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="font-medium">{type.name}</span>
+                </motion.button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Main Content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={selectedReport}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.3 }}
+        >
+          {selectedReport === 'financial-overview' && (
+            <div>
+              <FinancialOverviewCards />
+              <MonthlyTrendsChart />
+              <ReconciliationStatsCard />
+            </div>
+          )}
+          
+          {selectedReport === 'revenue-analysis' && (
+            <div>
+              <FinancialOverviewCards />
+              <MonthlyTrendsChart />
+              <TopClientsChart />
+            </div>
+          )}
+          
+          {selectedReport === 'expense-breakdown' && (
+            <div>
+              <TopClientsChart />
+              <ReconciliationStatsCard />
+            </div>
+          )}
+          
+          {selectedReport === 'client-performance' && (
+            <div>
+              <TopClientsChart />
+              <FinancialOverviewCards />
+            </div>
+          )}
+          
+          {selectedReport === 'reconciliation-report' && (
+            <div>
+              <ReconciliationStatsCard />
+              <MonthlyTrendsChart />
+            </div>
+          )}
+          
+          {selectedReport === 'cash-flow' && (
+            <div>
+              <MonthlyTrendsChart />
+              <FinancialOverviewCards />
+            </div>
+          )}
+          
+          {selectedReport === 'predictions' && (
+            <div>
+              <PredictionsCard />
+              <MonthlyTrendsChart />
+              <ReconciliationStatsCard />
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Generation Loading Overlay */}
+      {isGenerating && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+        >
+          <Card className="w-96 border-2 border-blue-300">
+            <CardContent className="p-8 text-center">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-16 h-16 border-4 border-blue-300 border-t-blue-600 rounded-full mx-auto mb-6"
+              />
+              
+              <h3 className="text-xl font-bold text-blue-700 mb-2">
+                Generazione Report AI in Corso
+              </h3>
+              
+              <p className="text-blue-600 mb-4">
+                L'intelligenza artificiale sta analizzando i dati...
+              </p>
+              
+              <div className="space-y-2">
+                <Progress value={65} className="w-full" />
+                <p className="text-xs text-blue-500">
+                  Elaborazione pattern e previsioni
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+    </div>
+  );
+}
