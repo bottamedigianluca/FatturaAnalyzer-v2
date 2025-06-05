@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query, Path
 from fastapi.responses import JSONResponse
 
-from app.core.database import execute_query_async
+from app.adapters.database_adapter import db_adapter
 from app.models import (
     KPIData, CashFlowData, MonthlyRevenueData, TopClientData,
     ProductAnalysisData, AgingSummary, DashboardData, APIResponse
@@ -22,17 +22,8 @@ router = APIRouter()
 async def get_dashboard_data():
     """Get comprehensive dashboard data with KPIs and summaries"""
     try:
-        from app.core.analysis import (
-            calculate_main_kpis,
-            get_monthly_cash_flow_analysis,
-            get_top_clients_by_revenue,
-            get_top_overdue_invoices
-        )
+        kpis = await calculate_main_kpis()
         
-        # Calculate main KPIs
-        kpis = calculate_main_kpis()
-        
-        # Get recent invoices
         recent_invoices_query = """
             SELECT i.id, i.type, i.doc_number, i.doc_date, i.total_amount,
                    i.payment_status, i.due_date, a.denomination as counterparty_name,
@@ -43,9 +34,8 @@ async def get_dashboard_data():
             LIMIT 10
         """
         
-        recent_invoices = await execute_query_async(recent_invoices_query)
+        recent_invoices = await db_adapter.execute_query_async(recent_invoices_query)
         
-        # Get recent transactions
         recent_transactions_query = """
             SELECT id, transaction_date, amount, description, reconciliation_status,
                    (amount - reconciled_amount) as remaining_amount
@@ -55,19 +45,11 @@ async def get_dashboard_data():
             LIMIT 10
         """
         
-        recent_transactions = await execute_query_async(recent_transactions_query)
+        recent_transactions = await db_adapter.execute_query_async(recent_transactions_query)
         
-        # Get cash flow data (last 6 months)
-        cash_flow_df = get_monthly_cash_flow_analysis(6)
-        cash_flow_summary = cash_flow_df.to_dict('records') if not cash_flow_df.empty else []
-        
-        # Get top clients
-        top_clients_df = get_top_clients_by_revenue(10)
-        top_clients = top_clients_df.to_dict('records') if not top_clients_df.empty else []
-        
-        # Get overdue invoices
-        overdue_invoices_df = get_top_overdue_invoices(5)
-        overdue_invoices = overdue_invoices_df.to_dict('records') if not overdue_invoices_df.empty else []
+        cash_flow_summary = await get_monthly_cash_flow_analysis(6)
+        top_clients = await get_top_clients_by_revenue(10)
+        overdue_invoices = await get_top_overdue_invoices(5)
         
         return DashboardData(
             kpis=kpis,
@@ -87,9 +69,7 @@ async def get_dashboard_data():
 async def get_kpis():
     """Get main KPIs"""
     try:
-        from app.core.analysis import calculate_main_kpis
-        
-        kpis = calculate_main_kpis()
+        kpis = await calculate_main_kpis()
         return kpis
         
     except Exception as e:
@@ -103,21 +83,12 @@ async def get_monthly_cash_flow(
 ):
     """Get monthly cash flow analysis"""
     try:
-        from app.core.analysis import get_monthly_cash_flow_analysis
-        
-        cash_flow_df = get_monthly_cash_flow_analysis(months)
-        
-        if cash_flow_df.empty:
-            return APIResponse(
-                success=True,
-                message="No cash flow data available",
-                data=[]
-            )
+        cash_flow_data = await get_monthly_cash_flow_analysis(months)
         
         return APIResponse(
             success=True,
             message=f"Cash flow data for {months} months",
-            data=cash_flow_df.to_dict('records')
+            data=cash_flow_data
         )
         
     except Exception as e:
@@ -132,21 +103,12 @@ async def get_monthly_revenue(
 ):
     """Get monthly revenue analysis"""
     try:
-        from app.core.analysis import get_monthly_revenue_analysis
-        
-        revenue_df = get_monthly_revenue_analysis(months, invoice_type)
-        
-        if revenue_df.empty:
-            return APIResponse(
-                success=True,
-                message="No revenue data available",
-                data=[]
-            )
+        revenue_data = await get_monthly_revenue_analysis(months, invoice_type)
         
         return APIResponse(
             success=True,
             message=f"Revenue data for {months} months",
-            data=revenue_df.to_dict('records')
+            data=revenue_data
         )
         
     except Exception as e:
@@ -162,21 +124,12 @@ async def get_top_clients(
 ):
     """Get top clients by revenue"""
     try:
-        from app.core.analysis import get_top_clients_by_revenue
-        
-        clients_df = get_top_clients_by_revenue(limit, period_months, min_revenue)
-        
-        if clients_df.empty:
-            return APIResponse(
-                success=True,
-                message="No client data available",
-                data=[]
-            )
+        clients_data = await get_top_clients_by_revenue(limit, period_months, min_revenue)
         
         return APIResponse(
             success=True,
-            message=f"Top {len(clients_df)} clients by revenue",
-            data=clients_df.to_dict('records')
+            message=f"Top {len(clients_data)} clients by revenue",
+            data=clients_data
         )
         
     except Exception as e:
@@ -193,21 +146,12 @@ async def get_product_analysis(
 ):
     """Get product analysis by quantity and value"""
     try:
-        from app.core.analysis import get_product_analysis
-        
-        products_df = get_product_analysis(limit, period_months, min_quantity, invoice_type)
-        
-        if products_df.empty:
-            return APIResponse(
-                success=True,
-                message="No product data available",
-                data=[]
-            )
+        products_data = await get_product_analysis(limit, period_months, min_quantity, invoice_type)
         
         return APIResponse(
             success=True,
-            message=f"Product analysis for {len(products_df)} items",
-            data=products_df.to_dict('records')
+            message=f"Product analysis for {len(products_data)} items",
+            data=products_data
         )
         
     except Exception as e:
@@ -221,11 +165,8 @@ async def get_invoices_aging(
 ):
     """Get aging analysis for invoices"""
     try:
-        from app.core.analysis import get_aging_summary
+        aging_data = await get_aging_summary(invoice_type)
         
-        aging_data = get_aging_summary(invoice_type)
-        
-        # Convert to API response format
         buckets = []
         total_amount = 0.0
         total_count = 0
@@ -264,21 +205,12 @@ async def get_overdue_invoices(
 ):
     """Get overdue invoices with priority scoring"""
     try:
-        from app.core.analysis import get_top_overdue_invoices
-        
-        overdue_df = get_top_overdue_invoices(limit, priority_sort)
-        
-        if overdue_df.empty:
-            return APIResponse(
-                success=True,
-                message="No overdue invoices found",
-                data=[]
-            )
+        overdue_data = await get_top_overdue_invoices(limit, priority_sort)
         
         return APIResponse(
             success=True,
-            message=f"Found {len(overdue_df)} overdue invoices",
-            data=overdue_df.to_dict('records')
+            message=f"Found {len(overdue_data)} overdue invoices",
+            data=overdue_data
         )
         
     except Exception as e:
@@ -294,7 +226,6 @@ async def get_revenue_trends(
 ):
     """Get revenue trends analysis"""
     try:
-        # Base query for revenue trends
         if period == "daily":
             date_format = "%Y-%m-%d"
             date_trunc = "date(doc_date)"
@@ -304,7 +235,7 @@ async def get_revenue_trends(
         elif period == "quarterly":
             date_format = "%Y-Q%q"
             date_trunc = "strftime('%Y', doc_date) || '-Q' || ((CAST(strftime('%m', doc_date) AS INTEGER) - 1) / 3 + 1)"
-        else:  # monthly
+        else:
             date_format = "%Y-%m"
             date_trunc = "strftime('%Y-%m', doc_date)"
         
@@ -323,13 +254,7 @@ async def get_revenue_trends(
             ORDER BY period, type
         """
         
-        trends = await execute_query_async(trends_query)
-        
-        # Calculate period-over-period changes if requested
-        if compare_previous and trends:
-            # This would require more complex logic to compare with previous periods
-            # For now, return the basic trends
-            pass
+        trends = await db_adapter.execute_query_async(trends_query)
         
         return APIResponse(
             success=True,
@@ -350,7 +275,6 @@ async def get_revenue_trends(
 async def get_payment_performance():
     """Get payment performance metrics"""
     try:
-        # Average days to payment
         payment_performance_query = """
             WITH payment_times AS (
                 SELECT 
@@ -361,7 +285,6 @@ async def get_payment_performance():
                     i.payment_status,
                     CASE 
                         WHEN i.payment_status = 'Pagata Tot.' THEN
-                            -- Use the latest reconciliation date as payment date approximation
                             (SELECT MAX(reconciliation_date) FROM ReconciliationLinks rl WHERE rl.invoice_id = i.id)
                         ELSE NULL
                     END as estimated_payment_date
@@ -386,9 +309,8 @@ async def get_payment_performance():
             GROUP BY payment_status
         """
         
-        performance = await execute_query_async(payment_performance_query)
+        performance = await db_adapter.execute_query_async(payment_performance_query)
         
-        # Collection efficiency
         collection_query = """
             SELECT 
                 strftime('%Y-%m', doc_date) as month,
@@ -404,7 +326,7 @@ async def get_payment_performance():
             ORDER BY month
         """
         
-        collection = await execute_query_async(collection_query)
+        collection = await db_adapter.execute_query_async(collection_query)
         
         return APIResponse(
             success=True,
@@ -420,6 +342,294 @@ async def get_payment_performance():
         raise HTTPException(status_code=500, detail="Error retrieving payment performance")
 
 
+async def calculate_main_kpis():
+    """Calculate main KPIs"""
+    try:
+        receivables_query = """
+            SELECT 
+                SUM(CASE WHEN type = 'Attiva' AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') 
+                    THEN total_amount - paid_amount ELSE 0 END) as total_receivables,
+                SUM(CASE WHEN type = 'Passiva' AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') 
+                    THEN total_amount - paid_amount ELSE 0 END) as total_payables,
+                COUNT(CASE WHEN type = 'Attiva' AND payment_status = 'Scaduta' THEN 1 END) as overdue_receivables_count,
+                SUM(CASE WHEN type = 'Attiva' AND payment_status = 'Scaduta' 
+                    THEN total_amount - paid_amount ELSE 0 END) as overdue_receivables_amount,
+                COUNT(CASE WHEN type = 'Passiva' AND payment_status = 'Scaduta' THEN 1 END) as overdue_payables_count,
+                SUM(CASE WHEN type = 'Passiva' AND payment_status = 'Scaduta' 
+                    THEN total_amount - paid_amount ELSE 0 END) as overdue_payables_amount
+            FROM Invoices
+        """
+        
+        kpi_result = await db_adapter.execute_query_async(receivables_query)
+        kpi_data = kpi_result[0] if kpi_result else {}
+        
+        revenue_query = """
+            SELECT 
+                SUM(CASE WHEN type = 'Attiva' AND strftime('%Y', doc_date) = strftime('%Y', 'now') 
+                    THEN total_amount ELSE 0 END) as revenue_ytd,
+                SUM(CASE WHEN type = 'Attiva' AND strftime('%Y', doc_date) = CAST(CAST(strftime('%Y', 'now') AS INTEGER) - 1 AS TEXT) 
+                    THEN total_amount ELSE 0 END) as revenue_prev_year_ytd,
+                SUM(CASE WHEN type = 'Attiva' AND strftime('%Y', doc_date) = strftime('%Y', 'now') 
+                    THEN total_amount ELSE 0 END) - 
+                SUM(CASE WHEN type = 'Passiva' AND strftime('%Y', doc_date) = strftime('%Y', 'now') 
+                    THEN total_amount ELSE 0 END) as gross_margin_ytd
+            FROM Invoices
+        """
+        
+        revenue_result = await db_adapter.execute_query_async(revenue_query)
+        revenue_data = revenue_result[0] if revenue_result else {}
+        
+        clients_query = """
+            SELECT 
+                COUNT(DISTINCT CASE WHEN i.type = 'Attiva' AND i.doc_date >= date('now', 'start of month') 
+                    THEN i.anagraphics_id END) as active_customers_month,
+                COUNT(DISTINCT CASE WHEN i.type = 'Attiva' AND i.doc_date >= date('now', 'start of month') 
+                    AND i.anagraphics_id NOT IN (
+                        SELECT DISTINCT anagraphics_id FROM Invoices 
+                        WHERE type = 'Attiva' AND doc_date < date('now', 'start of month')
+                    ) THEN i.anagraphics_id END) as new_customers_month
+            FROM Invoices i
+        """
+        
+        clients_result = await db_adapter.execute_query_async(clients_query)
+        clients_data = clients_result[0] if clients_result else {}
+        
+        revenue_ytd = revenue_data.get('revenue_ytd', 0) or 0
+        revenue_prev_year_ytd = revenue_data.get('revenue_prev_year_ytd', 0) or 0
+        gross_margin_ytd = revenue_data.get('gross_margin_ytd', 0) or 0
+        
+        revenue_yoy_change_ytd = None
+        margin_percent_ytd = None
+        
+        if revenue_prev_year_ytd > 0:
+            revenue_yoy_change_ytd = ((revenue_ytd - revenue_prev_year_ytd) / revenue_prev_year_ytd) * 100
+        
+        if revenue_ytd > 0:
+            margin_percent_ytd = (gross_margin_ytd / revenue_ytd) * 100
+        
+        return KPIData(
+            total_receivables=kpi_data.get('total_receivables', 0) or 0,
+            total_payables=kpi_data.get('total_payables', 0) or 0,
+            overdue_receivables_count=kpi_data.get('overdue_receivables_count', 0) or 0,
+            overdue_receivables_amount=kpi_data.get('overdue_receivables_amount', 0) or 0,
+            overdue_payables_count=kpi_data.get('overdue_payables_count', 0) or 0,
+            overdue_payables_amount=kpi_data.get('overdue_payables_amount', 0) or 0,
+            revenue_ytd=revenue_ytd,
+            revenue_prev_year_ytd=revenue_prev_year_ytd,
+            revenue_yoy_change_ytd=revenue_yoy_change_ytd,
+            gross_margin_ytd=gross_margin_ytd,
+            margin_percent_ytd=margin_percent_ytd,
+            avg_days_to_payment=None,
+            inventory_turnover_estimate=None,
+            active_customers_month=clients_data.get('active_customers_month', 0) or 0,
+            new_customers_month=clients_data.get('new_customers_month', 0) or 0
+        )
+        
+    except Exception as e:
+        logger.error(f"Error calculating KPIs: {e}", exc_info=True)
+        return KPIData(
+            total_receivables=0, total_payables=0, overdue_receivables_count=0,
+            overdue_receivables_amount=0, overdue_payables_count=0, overdue_payables_amount=0,
+            revenue_ytd=0, revenue_prev_year_ytd=0, gross_margin_ytd=0,
+            active_customers_month=0, new_customers_month=0
+        )
+
+
+async def get_monthly_cash_flow_analysis(months: int):
+    """Get monthly cash flow analysis"""
+    try:
+        query = """
+            SELECT 
+                strftime('%Y-%m', transaction_date) as month,
+                SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as total_inflows,
+                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as total_outflows,
+                SUM(amount) as net_cash_flow
+            FROM BankTransactions
+            WHERE transaction_date >= date('now', '-{} months')
+            GROUP BY strftime('%Y-%m', transaction_date)
+            ORDER BY month
+        """.format(months)
+        
+        result = await db_adapter.execute_query_async(query)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting cash flow analysis: {e}", exc_info=True)
+        return []
+
+
+async def get_monthly_revenue_analysis(months: int, invoice_type: Optional[str] = None):
+    """Get monthly revenue analysis"""
+    try:
+        type_filter = f"AND type = '{invoice_type}'" if invoice_type else ""
+        
+        query = f"""
+            SELECT 
+                strftime('%Y-%m', doc_date) as month,
+                type,
+                COUNT(*) as invoice_count,
+                SUM(total_amount) as total_revenue,
+                AVG(total_amount) as avg_invoice_amount
+            FROM Invoices
+            WHERE doc_date >= date('now', '-{months} months') {type_filter}
+            GROUP BY strftime('%Y-%m', doc_date), type
+            ORDER BY month, type
+        """
+        
+        result = await db_adapter.execute_query_async(query)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting revenue analysis: {e}", exc_info=True)
+        return []
+
+
+async def get_top_clients_by_revenue(limit: int, period_months: int = 12, min_revenue: Optional[float] = None):
+    """Get top clients by revenue"""
+    try:
+        min_revenue_filter = f"HAVING total_revenue >= {min_revenue}" if min_revenue else ""
+        
+        query = f"""
+            SELECT 
+                a.id,
+                a.denomination,
+                COUNT(i.id) as num_invoices,
+                SUM(i.total_amount) as total_revenue,
+                AVG(i.total_amount) as avg_order_value,
+                MAX(i.doc_date) as last_order_date,
+                a.score
+            FROM Anagraphics a
+            JOIN Invoices i ON a.id = i.anagraphics_id
+            WHERE a.type = 'Cliente'
+              AND i.type = 'Attiva'
+              AND i.doc_date >= date('now', '-{period_months} months')
+            GROUP BY a.id, a.denomination, a.score
+            {min_revenue_filter}
+            ORDER BY total_revenue DESC
+            LIMIT {limit}
+        """
+        
+        result = await db_adapter.execute_query_async(query)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting top clients: {e}", exc_info=True)
+        return []
+
+
+async def get_top_overdue_invoices(limit: int, priority_sort: bool = True):
+    """Get top overdue invoices"""
+    try:
+        order_clause = """
+            ORDER BY 
+                (julianday('now') - julianday(due_date)) * (total_amount - paid_amount) DESC,
+                due_date ASC
+        """ if priority_sort else "ORDER BY due_date ASC"
+        
+        query = f"""
+            SELECT 
+                i.id,
+                i.doc_number,
+                i.doc_date,
+                i.due_date,
+                i.total_amount,
+                i.paid_amount,
+                (i.total_amount - i.paid_amount) as open_amount,
+                (julianday('now') - julianday(i.due_date)) as days_overdue,
+                a.denomination as counterparty_name
+            FROM Invoices i
+            JOIN Anagraphics a ON i.anagraphics_id = a.id
+            WHERE i.type = 'Attiva'
+              AND i.payment_status IN ('Scaduta', 'Aperta')
+              AND i.due_date < date('now')
+              AND (i.total_amount - i.paid_amount) > 0.01
+            {order_clause}
+            LIMIT {limit}
+        """
+        
+        result = await db_adapter.execute_query_async(query)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting overdue invoices: {e}", exc_info=True)
+        return []
+
+
+async def get_product_analysis(limit: int, period_months: int = 12, min_quantity: Optional[float] = None, invoice_type: Optional[str] = None):
+    """Get product analysis"""
+    try:
+        type_filter = f"AND i.type = '{invoice_type}'" if invoice_type else ""
+        quantity_filter = f"HAVING total_quantity >= {min_quantity}" if min_quantity else ""
+        
+        query = f"""
+            SELECT 
+                il.description as product_name,
+                SUM(il.quantity) as total_quantity,
+                SUM(il.total_price) as total_value,
+                COUNT(DISTINCT i.id) as num_invoices,
+                AVG(il.unit_price) as avg_unit_price
+            FROM InvoiceLines il
+            JOIN Invoices i ON il.invoice_id = i.id
+            WHERE i.doc_date >= date('now', '-{period_months} months') {type_filter}
+            GROUP BY il.description
+            {quantity_filter}
+            ORDER BY total_value DESC
+            LIMIT {limit}
+        """
+        
+        result = await db_adapter.execute_query_async(query)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting product analysis: {e}", exc_info=True)
+        return []
+
+
+async def get_aging_summary(invoice_type: str):
+    """Get aging summary for invoices"""
+    try:
+        query = f"""
+            SELECT 
+                CASE 
+                    WHEN julianday('now') - julianday(due_date) <= 0 THEN 'Not Due'
+                    WHEN julianday('now') - julianday(due_date) <= 30 THEN '1-30 days'
+                    WHEN julianday('now') - julianday(due_date) <= 60 THEN '31-60 days'
+                    WHEN julianday('now') - julianday(due_date) <= 90 THEN '61-90 days'
+                    ELSE 'Over 90 days'
+                END as aging_bucket,
+                COUNT(*) as count,
+                SUM(total_amount - paid_amount) as amount
+            FROM Invoices
+            WHERE type = '{invoice_type}'
+              AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
+              AND (total_amount - paid_amount) > 0.01
+            GROUP BY aging_bucket
+            ORDER BY 
+                CASE aging_bucket
+                    WHEN 'Not Due' THEN 1
+                    WHEN '1-30 days' THEN 2
+                    WHEN '31-60 days' THEN 3
+                    WHEN '61-90 days' THEN 4
+                    ELSE 5
+                END
+        """
+        
+        result = await db_adapter.execute_query_async(query)
+        
+        aging_data = {}
+        for row in result:
+            aging_data[row['aging_bucket']] = {
+                'amount': row['amount'],
+                'count': row['count']
+            }
+        
+        return aging_data
+        
+    except Exception as e:
+        logger.error(f"Error getting aging summary: {e}", exc_info=True)
+        return {}
+
+
 @router.get("/forecasting/cash-flow")
 async def get_cash_flow_forecast(
     months_ahead: int = Query(6, ge=1, le=24, description="Months to forecast ahead"),
@@ -427,7 +637,6 @@ async def get_cash_flow_forecast(
 ):
     """Get cash flow forecasting based on historical data and scheduled payments"""
     try:
-        # Get historical monthly patterns
         historical_query = """
             SELECT 
                 strftime('%m', transaction_date) as month_num,
@@ -449,11 +658,13 @@ async def get_cash_flow_forecast(
             ORDER BY month_num
         """
         
-        historical = await execute_query_async(historical_query)
+        historical = await db_adapter.execute_query_async(historical_query)
         
-        # Get scheduled receivables (open invoices with due dates)
+        scheduled_receivables = []
+        scheduled_payables = []
+        
         if include_scheduled:
-            scheduled_receivables_query = """
+            scheduled_receivables_query = f"""
                 SELECT 
                     strftime('%Y-%m', due_date) as due_month,
                     SUM(total_amount - paid_amount) as expected_inflow,
@@ -466,9 +677,9 @@ async def get_cash_flow_forecast(
                   AND (total_amount - paid_amount) > 0
                 GROUP BY strftime('%Y-%m', due_date)
                 ORDER BY due_month
-            """.format(months_ahead=months_ahead)
+            """
             
-            scheduled_payables_query = """
+            scheduled_payables_query = f"""
                 SELECT 
                     strftime('%Y-%m', due_date) as due_month,
                     SUM(total_amount - paid_amount) as expected_outflow,
@@ -481,15 +692,11 @@ async def get_cash_flow_forecast(
                   AND (total_amount - paid_amount) > 0
                 GROUP BY strftime('%Y-%m', due_date)
                 ORDER BY due_month
-            """.format(months_ahead=months_ahead)
+            """
             
-            scheduled_receivables = await execute_query_async(scheduled_receivables_query)
-            scheduled_payables = await execute_query_async(scheduled_payables_query)
-        else:
-            scheduled_receivables = []
-            scheduled_payables = []
+            scheduled_receivables = await db_adapter.execute_query_async(scheduled_receivables_query)
+            scheduled_payables = await db_adapter.execute_query_async(scheduled_payables_query)
         
-        # Generate forecast
         forecast = []
         current_date = datetime.now()
         
@@ -498,13 +705,11 @@ async def get_cash_flow_forecast(
             month_num = forecast_date.strftime('%m')
             year_month = forecast_date.strftime('%Y-%m')
             
-            # Find historical pattern for this month
             historical_pattern = next(
                 (h for h in historical if h['month_num'] == month_num), 
                 {'avg_inflow': 0, 'avg_outflow': 0, 'avg_net': 0}
             )
             
-            # Find scheduled amounts for this month
             scheduled_in = next(
                 (s['expected_inflow'] for s in scheduled_receivables if s['due_month'] == year_month),
                 0
@@ -514,7 +719,6 @@ async def get_cash_flow_forecast(
                 0
             )
             
-            # Combine historical and scheduled
             forecast_inflow = (historical_pattern['avg_inflow'] or 0) + scheduled_in
             forecast_outflow = (historical_pattern['avg_outflow'] or 0) + scheduled_out
             forecast_net = forecast_inflow - forecast_outflow
@@ -572,10 +776,9 @@ async def get_year_over_year_comparison(
                 ORDER BY month, year, type
             """
             
-            comparison = await execute_query_async(comparison_query, (previous_year, current_year))
+            comparison = await db_adapter.execute_query_async(comparison_query, (previous_year, current_year))
             
         elif metric == "profit":
-            # Simplified profit calculation (revenue - costs)
             comparison_query = """
                 SELECT 
                     strftime('%m', doc_date) as month,
@@ -590,7 +793,7 @@ async def get_year_over_year_comparison(
                 ORDER BY month, year
             """
             
-            comparison = await execute_query_async(comparison_query, (previous_year, current_year))
+            comparison = await db_adapter.execute_query_async(comparison_query, (previous_year, current_year))
             
         elif metric == "volume":
             comparison_query = """
@@ -606,15 +809,13 @@ async def get_year_over_year_comparison(
                 ORDER BY month, year, type
             """
             
-            comparison = await execute_query_async(comparison_query, (previous_year, current_year))
+            comparison = await db_adapter.execute_query_async(comparison_query, (previous_year, current_year))
         
-        # Calculate percentage changes
         comparison_with_changes = []
         current_year_data = [c for c in comparison if c['year'] == current_year]
         previous_year_data = [c for c in comparison if c['year'] == previous_year]
         
         for current in current_year_data:
-            # Find corresponding previous year data
             previous = next(
                 (p for p in previous_year_data 
                  if p['month'] == current['month'] and 
@@ -623,7 +824,6 @@ async def get_year_over_year_comparison(
             )
             
             if previous:
-                # Calculate changes for numeric fields
                 changes = {}
                 for key in current:
                     if key not in ['month', 'year', 'type'] and isinstance(current[key], (int, float)):
@@ -672,8 +872,7 @@ async def get_client_segmentation(
     """Get client segmentation analysis"""
     try:
         if segmentation_type == "revenue":
-            # RFM-style revenue segmentation
-            segmentation_query = """
+            segmentation_query = f"""
                 WITH client_metrics AS (
                     SELECT 
                         a.id,
@@ -712,10 +911,10 @@ async def get_client_segmentation(
                 FROM revenue_quartiles
                 GROUP BY revenue_quartile
                 ORDER BY revenue_quartile DESC
-            """.format(period_months=period_months)
+            """
             
         elif segmentation_type == "frequency":
-            segmentation_query = """
+            segmentation_query = f"""
                 WITH client_frequency AS (
                     SELECT 
                         a.id,
@@ -749,7 +948,7 @@ async def get_client_segmentation(
                         ELSE 'Occasional (1)'
                     END
                 ORDER BY avg_order_frequency DESC
-            """.format(period_months=period_months)
+            """
             
         elif segmentation_type == "recency":
             segmentation_query = """
@@ -791,7 +990,7 @@ async def get_client_segmentation(
                 ORDER BY avg_days_since_last_order
             """
         
-        segmentation = await execute_query_async(segmentation_query)
+        segmentation = await db_adapter.execute_query_async(segmentation_query)
         
         return APIResponse(
             success=True,
@@ -819,16 +1018,12 @@ async def export_analytics_report(
         report_data = {}
         
         if report_type == "dashboard":
-            # Get dashboard data
-            from app.core.analysis import calculate_main_kpis
-            
-            report_data['kpis'] = calculate_main_kpis()
+            report_data['kpis'] = await calculate_main_kpis()
             report_data['generated_at'] = datetime.now().isoformat()
             report_data['period_months'] = period_months
             
         elif report_type == "financial":
-            # Financial report with revenue, costs, profit
-            financial_query = """
+            financial_query = f"""
                 SELECT 
                     strftime('%Y-%m', doc_date) as month,
                     type,
@@ -840,14 +1035,13 @@ async def export_analytics_report(
                 WHERE doc_date >= date('now', '-{period_months} months')
                 GROUP BY strftime('%Y-%m', doc_date), type
                 ORDER BY month, type
-            """.format(period_months=period_months)
+            """
             
-            financial_data = await execute_query_async(financial_query)
+            financial_data = await db_adapter.execute_query_async(financial_query)
             report_data['financial_summary'] = financial_data
             
         elif report_type == "operational":
-            # Operational metrics
-            operational_query = """
+            operational_query = f"""
                 SELECT 
                     'invoices' as metric_type,
                     payment_status as status,
@@ -867,12 +1061,11 @@ async def export_analytics_report(
                 FROM BankTransactions
                 WHERE transaction_date >= date('now', '-{period_months} months')
                 GROUP BY reconciliation_status
-            """.format(period_months=period_months)
+            """
             
-            operational_data = await execute_query_async(operational_query)
+            operational_data = await db_adapter.execute_query_async(operational_query)
             report_data['operational_metrics'] = operational_data
         
-        # Add metadata
         report_data['metadata'] = {
             'report_type': report_type,
             'generated_at': datetime.now().isoformat(),
@@ -881,13 +1074,11 @@ async def export_analytics_report(
         }
         
         if format == "csv":
-            # Convert to CSV format (simplified)
             import io
             import csv
             
             output = io.StringIO()
             if report_data:
-                # Flatten the data for CSV
                 flattened_data = []
                 for key, value in report_data.items():
                     if isinstance(value, list):
