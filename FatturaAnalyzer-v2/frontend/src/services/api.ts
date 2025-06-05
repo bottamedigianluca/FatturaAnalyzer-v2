@@ -1,5 +1,5 @@
 /**
- * API Client for FatturaAnalyzer Backend
+ * API Client for FatturaAnalyzer Backend v2
  * Configurato per comunicare con FastAPI backend
  */
 
@@ -10,6 +10,8 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 export interface PaginationParams {
   page?: number;
   size?: number;
+  limit?: number;
+  offset?: number;
 }
 
 export interface DateRangeFilter {
@@ -65,17 +67,40 @@ class ApiClient {
       'Content-Type': 'application/json',
     };
 
-    const response = await fetch(url, {
-      headers: { ...defaultHeaders, ...options.headers },
-      ...options,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+    // Log richieste in development
+    if (import.meta.env.DEV) {
+      console.log('🚀 API Request:', options.method || 'GET', endpoint);
     }
 
-    return response.json();
+    try {
+      const response = await fetch(url, {
+        headers: { ...defaultHeaders, ...options.headers },
+        ...options,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
+        
+        console.error('❌ API Error:', response.status, endpoint, errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      
+      // Log risposte in development
+      if (import.meta.env.DEV) {
+        console.log('✅ API Response:', response.status, endpoint);
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        console.error('🔌 Backend connection failed. Make sure backend is running at:', this.baseURL);
+        throw new Error('Backend non raggiungibile. Verifica che sia in esecuzione.');
+      }
+      throw error;
+    }
   }
 
   private buildQuery(params: Record<string, any>): string {
@@ -95,10 +120,15 @@ class ApiClient {
     return this.request('/health');
   }
 
+  // First Run Check
+  async checkFirstRun(): Promise<APIResponse> {
+    return this.request('/api/first-run/check');
+  }
+
   // Anagraphics API
   async getAnagraphics(filters: AnagraphicsFilters = {}) {
     const query = this.buildQuery(filters);
-    return this.request(`/api/anagraphics?${query}`);
+    return this.request(`/api/anagraphics/${query ? '?' + query : ''}`);
   }
 
   async getAnagraphicsById(id: number): Promise<Anagraphics> {
@@ -106,7 +136,7 @@ class ApiClient {
   }
 
   async createAnagraphics(data: Partial<Anagraphics>): Promise<Anagraphics> {
-    return this.request('/api/anagraphics', {
+    return this.request('/api/anagraphics/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -127,7 +157,7 @@ class ApiClient {
 
   async searchAnagraphics(query: string, type_filter?: string): Promise<APIResponse> {
     const params = this.buildQuery({ type_filter });
-    return this.request(`/api/anagraphics/search/${encodeURIComponent(query)}?${params}`);
+    return this.request(`/api/anagraphics/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
   }
 
   async getAnagraphicsFinancialSummary(id: number): Promise<APIResponse> {
@@ -137,7 +167,7 @@ class ApiClient {
   // Invoices API
   async getInvoices(filters: InvoiceFilters = {}) {
     const query = this.buildQuery(filters);
-    return this.request(`/api/invoices?${query}`);
+    return this.request(`/api/invoices/${query ? '?' + query : ''}`);
   }
 
   async getInvoiceById(id: number): Promise<Invoice> {
@@ -145,7 +175,7 @@ class ApiClient {
   }
 
   async createInvoice(data: Partial<Invoice>): Promise<Invoice> {
-    return this.request('/api/invoices', {
+    return this.request('/api/invoices/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -174,7 +204,7 @@ class ApiClient {
 
   async searchInvoices(query: string, type_filter?: string): Promise<APIResponse> {
     const params = this.buildQuery({ type_filter });
-    return this.request(`/api/invoices/search/${encodeURIComponent(query)}?${params}`);
+    return this.request(`/api/invoices/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
   }
 
   async updateInvoicePaymentStatus(
@@ -191,7 +221,7 @@ class ApiClient {
   // Transactions API
   async getTransactions(filters: TransactionFilters = {}) {
     const query = this.buildQuery(filters);
-    return this.request(`/api/transactions?${query}`);
+    return this.request(`/api/transactions/${query ? '?' + query : ''}`);
   }
 
   async getTransactionById(id: number): Promise<BankTransaction> {
@@ -199,7 +229,7 @@ class ApiClient {
   }
 
   async createTransaction(data: Partial<BankTransaction>): Promise<BankTransaction> {
-    return this.request('/api/transactions', {
+    return this.request('/api/transactions/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -291,7 +321,7 @@ class ApiClient {
   }>): Promise<APIResponse> {
     return this.request('/api/reconciliation/reconcile/batch', {
       method: 'POST',
-      body: JSON.stringify(reconciliations),
+      body: JSON.stringify({ reconciliations }),
     });
   }
 
@@ -360,6 +390,14 @@ class ApiClient {
     return this.request(`/api/analytics/revenue/monthly?${params}`);
   }
 
+  async getMonthlyCashFlow(months: number = 12): Promise<APIResponse> {
+    return this.request(`/api/analytics/cash-flow/monthly?months=${months}`);
+  }
+
+  async getRevenueTrends(period: 'monthly' | 'quarterly' = 'monthly', periods: number = 12): Promise<APIResponse> {
+    return this.request(`/api/analytics/trends/revenue?period=${period}&periods=${periods}`);
+  }
+
   async getTopClients(limit: number = 20, period_months: number = 12): Promise<APIResponse> {
     const params = this.buildQuery({ limit, period_months });
     return this.request(`/api/analytics/clients/top?${params}`);
@@ -379,28 +417,17 @@ class ApiClient {
     return this.request(`/api/analytics/year-over-year?${params}`);
   }
 
-  // Import/Export API
+  // Import/Export API - Corretto per endpoint attuali
   async importInvoicesXML(files: FileList): Promise<APIResponse> {
     const formData = new FormData();
     Array.from(files).forEach(file => {
       formData.append('files', file);
     });
 
-    return this.request('/api/import/invoices/xml', {
+    return this.request('/api/import-export/invoices/xml', {
       method: 'POST',
       body: formData,
       headers: {}, // Let browser set Content-Type for FormData
-    });
-  }
-
-  async importInvoicesZip(file: File): Promise<APIResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    return this.request('/api/import/invoices/zip', {
-      method: 'POST',
-      body: formData,
-      headers: {},
     });
   }
 
@@ -408,18 +435,7 @@ class ApiClient {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.request('/api/import/transactions/csv', {
-      method: 'POST',
-      body: formData,
-      headers: {},
-    });
-  }
-
-  async validateFile(file: File): Promise<APIResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    return this.request('/api/import/validate-file', {
+    return this.request('/api/import-export/transactions/csv', {
       method: 'POST',
       body: formData,
       headers: {},
@@ -427,7 +443,7 @@ class ApiClient {
   }
 
   async downloadTransactionTemplate(): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}/api/import/templates/transactions-csv`);
+    const response = await fetch(`${this.baseURL}/api/import-export/templates/transactions-csv`);
     if (!response.ok) {
       throw new Error('Failed to download template');
     }
@@ -439,7 +455,7 @@ class ApiClient {
     filters: any = {}
   ): Promise<Blob | APIResponse> {
     const params = this.buildQuery({ format, ...filters });
-    const response = await fetch(`${this.baseURL}/api/import/export/invoices?${params}`);
+    const response = await fetch(`${this.baseURL}/api/import-export/export/invoices?${params}`);
     
     if (!response.ok) {
       throw new Error('Export failed');
@@ -457,7 +473,25 @@ class ApiClient {
     filters: any = {}
   ): Promise<Blob | APIResponse> {
     const params = this.buildQuery({ format, ...filters });
-    const response = await fetch(`${this.baseURL}/api/import/export/transactions?${params}`);
+    const response = await fetch(`${this.baseURL}/api/import-export/export/transactions?${params}`);
+    
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+
+    if (format === 'json') {
+      return response.json();
+    } else {
+      return response.blob();
+    }
+  }
+
+  async exportAnagraphics(
+    format: 'excel' | 'csv' | 'json' = 'excel',
+    filters: any = {}
+  ): Promise<Blob | APIResponse> {
+    const params = this.buildQuery({ format, ...filters });
+    const response = await fetch(`${this.baseURL}/api/import-export/export/anagraphics?${params}`);
     
     if (!response.ok) {
       throw new Error('Export failed');
@@ -471,7 +505,7 @@ class ApiClient {
   }
 
   async createBackup(): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}/api/import/backup/create`, {
+    const response = await fetch(`${this.baseURL}/api/import-export/backup/create`, {
       method: 'POST',
     });
     
@@ -483,7 +517,7 @@ class ApiClient {
   }
 
   async getImportHistory(limit: number = 50): Promise<APIResponse> {
-    return this.request(`/api/import/status/import-history?limit=${limit}`);
+    return this.request(`/api/import-export/status/import-history?limit=${limit}`);
   }
 
   // Cloud Sync API
@@ -491,33 +525,120 @@ class ApiClient {
     return this.request('/api/sync/status');
   }
 
-  async performSync(): Promise<APIResponse> {
+  async enableSync(): Promise<APIResponse> {
+    return this.request('/api/sync/enable', {
+      method: 'POST',
+    });
+  }
+
+  async disableSync(): Promise<APIResponse> {
+    return this.request('/api/sync/disable', {
+      method: 'POST',
+    });
+  }
+
+  async performManualSync(force_direction?: 'upload' | 'download'): Promise<APIResponse> {
+    const params = force_direction ? `?force_direction=${force_direction}` : '';
+    return this.request(`/api/sync/manual${params}`, {
+      method: 'POST',
+    });
+  }
+
+  async forceUpload(): Promise<APIResponse> {
     return this.request('/api/sync/upload', {
       method: 'POST',
     });
   }
 
-  async downloadFromCloud(): Promise<APIResponse> {
+  async forceDownload(): Promise<APIResponse> {
     return this.request('/api/sync/download', {
       method: 'POST',
     });
   }
 
-  async enableAutoSync(): Promise<APIResponse> {
-    return this.request('/api/sync/auto/enable', {
+  async startAutoSync(): Promise<APIResponse> {
+    return this.request('/api/sync/auto-sync/start', {
       method: 'POST',
     });
   }
 
-  async disableAutoSync(): Promise<APIResponse> {
-    return this.request('/api/sync/auto/disable', {
+  async stopAutoSync(): Promise<APIResponse> {
+    return this.request('/api/sync/auto-sync/stop', {
       method: 'POST',
     });
+  }
+
+  async getSyncHistory(limit: number = 20): Promise<APIResponse> {
+    return this.request(`/api/sync/history?limit=${limit}`);
+  }
+
+  async testConnection(): Promise<APIResponse> {
+    return this.request('/api/sync/test-connection', {
+      method: 'POST',
+    });
+  }
+
+  // Setup API
+  async getSetupStatus(): Promise<APIResponse> {
+    return this.request('/api/setup/status');
+  }
+
+  async updateCompanySettings(data: any): Promise<APIResponse> {
+    return this.request('/api/setup/company', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSystemSettings(data: any): Promise<APIResponse> {
+    return this.request('/api/setup/system', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async initializeDatabase(): Promise<APIResponse> {
+    return this.request('/api/setup/database/initialize', {
+      method: 'POST',
+    });
+  }
+
+  // Test di connessione
+  async testConnection(): Promise<boolean> {
+    try {
+      await this.healthCheck();
+      return true;
+    } catch (error) {
+      console.error('Backend connection test failed:', error);
+      return false;
+    }
   }
 }
 
 // Singleton instance
 export const apiClient = new ApiClient();
+
+// Export helper per testare la connessione
+export const testBackendConnection = async (): Promise<{
+  connected: boolean;
+  message: string;
+  details?: any;
+}> => {
+  try {
+    const health = await apiClient.healthCheck();
+    return {
+      connected: true,
+      message: 'Backend connesso con successo',
+      details: health
+    };
+  } catch (error) {
+    return {
+      connected: false,
+      message: error instanceof Error ? error.message : 'Errore di connessione',
+      details: error
+    };
+  }
+};
 
 // Default export
 export default apiClient;
