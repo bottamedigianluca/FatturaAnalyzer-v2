@@ -1,105 +1,86 @@
-# FastAPI Backend Requirements
-# Core dependencies per FatturaAnalyzer v2
+# FastAPI Backend Requirements for FatturaAnalyzer v2
+# Optimized for broader Python compatibility (3.9+) and macOS ARM architecture
 
-# FastAPI e componenti
-fastapi>=0.104.1,<0.110.0
-uvicorn[standard]>=0.24.0,<0.25.0
-python-multipart>=0.0.6,<0.1.0
-starlette>=0.27.0,<0.30.0
+# --- Core Framework ---
+fastapi>=0.109.0,<0.112.0
+uvicorn[standard]>=0.29.0,<0.31.0
+python-multipart>=0.0.9,<0.1.0
+starlette>=0.36.0,<0.38.0
 
-# Pydantic per validazione
-pydantic>=2.5.0,<3.0.0
+# --- Pydantic & Settings ---
+pydantic>=2.6.0,<3.0.0
 pydantic-settings>=2.1.0,<3.0.0
 
-# Database e ORM
-pandas>=2.0.0,<3.0.0
-openpyxl>=3.1.0,<4.0.0  # Excel support
+# --- Data Handling & Excel ---
+pandas>=2.1.0,<3.0.0
+openpyxl>=3.1.0,<4.0.0
 
-# HTTP client e requests
-httpx>=0.25.0,<0.26.0
+# --- HTTP & Networking ---
+httpx>=0.27.0,<0.28.0
 requests>=2.31.0,<3.0.0
 
-# File processing
-python-magic>=0.4.27,<0.5.0  # MIME type detection
-chardet>=5.2.0,<6.0.0  # Character encoding detection
+# --- File Processing & Parsing ---
+# Using python-magic-bin for cross-platform compatibility (especially Windows)
+python-magic-bin==0.4.14; sys_platform == 'win32'
+python-magic==0.4.27; sys_platform != 'win32'
+chardet>=5.2.0,<6.0.0
 
-# XML processing (per fatture elettroniche)
-lxml>=4.9.0,<5.0.0
+# --- XML/P7M Processing (CRITICAL FIX) ---
+# Updated lxml to a version compatible with modern Python (3.12+)
+lxml>=5.2.0,<6.0.0
 xmltodict>=0.13.0,<0.14.0
+cryptography>=42.0.0,<43.0.0
+pyOpenSSL>=24.0.0,<25.0.0
 
-# Cryptography (per file P7M)
-cryptography>=41.0.0,<42.0.0
-pyOpenSSL>=23.3.0,<24.0.0
-
-# Google Drive API
-google-api-python-client>=2.108.0,<3.0.0
+# --- Google Drive API ---
+google-api-python-client>=2.110.0,<3.0.0
 google-auth-httplib2>=0.1.1,<0.2.0
-google-auth-oauthlib>=1.1.0,<2.0.0
-google-auth>=2.23.0,<3.0.0
+google-auth-oauthlib>=1.2.0,<2.0.0
+google-auth>=2.25.0,<3.0.0
 
-# Date/time handling
+# --- Date/Time Handling ---
 python-dateutil>=2.8.2,<3.0.0
-pytz>=2023.3
+pytz>=2024.1
+tzdata>=2024.1; sys_platform != 'win32'
 
-# Utilities
-python-dotenv>=1.0.0,<2.0.0  # Environment variables
-configparser>=6.0.0,<7.0.0  # Config files
-pathlib>=1.0.1  # Built-in but ensure compatibility
+# --- Utilities ---
+python-dotenv>=1.0.0,<2.0.0
+configparser>=6.0.0,<8.0.0
 
-# Logging e monitoring
-structlog>=23.2.0,<24.0.0
-colorama>=0.4.6,<0.5.0  # Colored console output
+# --- Logging & Monitoring ---
+structlog>=24.1.0,<25.0.0
+colorama>=0.4.6,<0.5.0
 
-# Development dependencies (optional)
-pytest>=7.4.0,<8.0.0
-pytest-asyncio>=0.21.0,<0.22.0
-pytest-cov>=4.1.0,<5.0.0
-black>=23.9.0,<24.0.0
-isort>=5.12.0,<6.0.0
-flake8>=6.1.0,<7.0.0
-mypy>=1.6.0,<2.0.0
+# --- Development Dependencies (Optional) ---
+# These are typically managed by a dev tool like Poetry, but are here for completeness.
+# pytest>=7.4.0,<9.0.0
+# pytest-asyncio>=0.23.0,<0.24.0
+# pytest-cov>=4.1.0,<6.0.0
+# black>=24.1.0,<25.0.0
+# isort>=5.13.0,<6.0.0
+# flake8>=7.0.0,<8.0.0
+# mypy>=1.8.0,<2.0.0
 
-# Security
-bcrypt>=4.1.0,<5.0.0  # Password hashing se necessario
-PyJWT>=2.8.0,<3.0.0  # JWT tokens se necessario
+# --- Security ---
+# bcrypt>=4.1.0,<5.0.0
+# PyJWT>=2.8.0,<3.0.0
 
-# Performance optimization
-ujson>=5.8.0,<6.0.0  # Faster JSON parsing
-orjson>=3.9.0,<4.0.0  # Even faster JSON (alternative)
+# --- Performance Optimization ---
+ujson>=5.8.0,<6.0.0
+orjson>=3.9.0,<4.0.0
 
-# File upload handling
+# --- Async File Handling ---
 aiofiles>=23.2.0,<24.0.0
 
-# WebSocket support (se necessario in futuro)
-websockets>=11.0.0,<12.0.0
+# --- Caching ---
+# redis>=5.0.0,<6.0.0
 
-# Caching (se necessario)
-redis>=5.0.0,<6.0.0  # Optional per caching avanzato
-
-# Data validation extra
+# --- Data Validation Extras ---
 email-validator>=2.1.0,<3.0.0
-phonenumbers>=8.13.0,<9.0.0  # Validazione numeri telefono
+phonenumbers>=8.13.0,<9.0.0
 
-# Export/Import extra formats
-PyPDF2>=3.0.0,<4.0.0  # PDF processing se necessario
-Pillow>=10.1.0,<11.0.0  # Image processing se necessario
-
-# Async database drivers (se si vuole migrare da sqlite)
-# asyncpg>=0.29.0,<0.30.0  # PostgreSQL async
-# aiomysql>=0.2.0,<0.3.0   # MySQL async
-
-# Italian fiscal code validation
+# --- Italian Fiscal Code Validation ---
 codicefiscale>=0.9,<1.0
 
-# Bank transaction parsing utilities
-# iban>=2.7.0,<3.0.0  # IBAN validation
-
-# Production WSGI server
-gunicorn>=21.2.0,<22.0.0
-
-# Memory profiling e debugging
-memory-profiler>=0.61.0,<0.62.0
-psutil>=5.9.0,<6.0.0  # System monitoring
-
-# Timezone data
-tzdata>=2023.3  # Timezone database
+# --- Production WSGI Server ---
+gunicorn>=21.2.0,<23.0.0; sys_platform != 'win32'
