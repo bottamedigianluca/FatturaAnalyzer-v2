@@ -1,0 +1,880 @@
+/* frontend/src/styles/components.css */
+
+/* Component-specific styles for FatturaAnalyzer */
+
+/* =============================================================================
+   BUTTONS
+   ============================================================================= */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  @apply disabled:pointer-events-none disabled:opacity-50;
+}
+
+.btn-default {
+  @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  @apply h-10 px-4 py-2;
+}
+
+.btn-destructive {
+  @apply bg-destructive text-destructive-foreground hover:bg-destructive/90;
+  @apply h-10 px-4 py-2;
+}
+
+.btn-outline {
+  @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
+  @apply h-10 px-4 py-2;
+}
+
+.btn-secondary {
+  @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  @apply h-10 px-4 py-2;
+}
+
+.btn-ghost {
+  @apply hover:bg-accent hover:text-accent-foreground;
+  @apply h-10 px-4 py-2;
+}
+
+.btn-link {
+  @apply text-primary underline-offset-4 hover:underline;
+  @apply h-10 px-4 py-2;
+}
+
+.btn-sm {
+  @apply h-9 rounded-md px-3;
+}
+
+.btn-lg {
+  @apply h-11 rounded-md px-8;
+}
+
+.btn-icon {
+  @apply h-10 w-10;
+}
+
+/* =============================================================================
+   CARDS
+   ============================================================================= */
+.card {
+  @apply rounded-lg border bg-card text-card-foreground shadow-sm;
+}
+
+.card-header {
+  @apply flex flex-col space-y-1.5 p-6;
+}
+
+.card-title {
+  @apply text-2xl font-semibold leading-none tracking-tight;
+}
+
+.card-description {
+  @apply text-sm text-muted-foreground;
+}
+
+.card-content {
+  @apply p-6 pt-0;
+}
+
+.card-footer {
+  @apply flex items-center p-6 pt-0;
+}
+
+/* Card variants */
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-md hover:-translate-y-1;
+}
+
+.card-interactive {
+  @apply cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary/50;
+}
+
+.card-stats {
+  @apply bg-gradient-to-br from-background to-muted/30;
+}
+
+/* =============================================================================
+   BADGES
+   ============================================================================= */
+.badge {
+  @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors;
+  @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+}
+
+.badge-default {
+  @apply border-transparent bg-primary text-primary-foreground hover:bg-primary/80;
+}
+
+.badge-secondary {
+  @apply border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80;
+}
+
+.badge-destructive {
+  @apply border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80;
+}
+
+.badge-outline {
+  @apply text-foreground;
+}
+
+/* Status badges */
+.badge-success {
+  @apply bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800;
+}
+
+.badge-warning {
+  @apply bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800;
+}
+
+.badge-error {
+  @apply bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800;
+}
+
+.badge-info {
+  @apply bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800;
+}
+
+/* =============================================================================
+   INPUTS
+   ============================================================================= */
+.input {
+  @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background;
+  @apply file:border-0 file:bg-transparent file:text-sm file:font-medium;
+  @apply placeholder:text-muted-foreground;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  @apply disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.input-error {
+  @apply border-destructive focus-visible:ring-destructive;
+}
+
+.input-group {
+  @apply relative flex w-full items-center;
+}
+
+.input-group .input {
+  @apply pr-10;
+}
+
+.input-group-icon {
+  @apply absolute right-3 h-4 w-4 text-muted-foreground;
+}
+
+/* =============================================================================
+   TABLES
+   ============================================================================= */
+.table-wrapper {
+  @apply relative w-full overflow-auto;
+}
+
+.table {
+  @apply w-full caption-bottom text-sm;
+}
+
+.table-header {
+  @apply [&_tr]:border-b;
+}
+
+.table-body {
+  @apply [&_tr:last-child]:border-0;
+}
+
+.table-footer {
+  @apply border-t bg-muted/50 font-medium [&>tr]:last:border-b-0;
+}
+
+.table-row {
+  @apply border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted;
+}
+
+.table-head {
+  @apply h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0;
+}
+
+.table-cell {
+  @apply px-4 py-2 align-middle [&:has([role=checkbox])]:pr-0;
+}
+
+.table-caption {
+  @apply mt-4 text-sm text-muted-foreground;
+}
+
+/* Table variants */
+.table-compact .table-head {
+  @apply h-8 py-2;
+}
+
+.table-compact .table-cell {
+  @apply py-1;
+}
+
+.table-striped .table-row:nth-child(even) {
+  @apply bg-muted/25;
+}
+
+/* =============================================================================
+   MODALS & DIALOGS
+   ============================================================================= */
+.dialog-overlay {
+  @apply fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out;
+  @apply data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0;
+}
+
+.dialog-content {
+  @apply fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg;
+  @apply duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out;
+  @apply data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0;
+  @apply data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95;
+  @apply data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%];
+  @apply data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%];
+  @apply sm:rounded-lg;
+}
+
+.dialog-header {
+  @apply flex flex-col space-y-1.5 text-center sm:text-left;
+}
+
+.dialog-footer {
+  @apply flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2;
+}
+
+.dialog-title {
+  @apply text-lg font-semibold leading-none tracking-tight;
+}
+
+.dialog-description {
+  @apply text-sm text-muted-foreground;
+}
+
+/* =============================================================================
+   NAVIGATION
+   ============================================================================= */
+.nav {
+  @apply relative z-10 flex max-w-max flex-1 items-center justify-center;
+}
+
+.nav-list {
+  @apply group flex flex-1 list-none items-center justify-center space-x-1;
+}
+
+.nav-item {
+  @apply block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none;
+  @apply transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground;
+}
+
+.nav-trigger {
+  @apply group inline-flex h-10 w-max items-center justify-center rounded-md bg-background px-4 py-2 text-sm font-medium;
+  @apply transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground;
+  @apply focus:outline-none disabled:pointer-events-none disabled:opacity-50;
+  @apply data-[active]:bg-accent/50 data-[state=open]:bg-accent/50;
+}
+
+.nav-content {
+  @apply left-0 top-0 w-full data-[motion^=from-]:animate-in data-[motion^=to-]:animate-out;
+  @apply data-[motion^=from-]:fade-in data-[motion^=to-]:fade-out;
+  @apply data-[motion=from-end]:slide-in-from-right-52 data-[motion=from-start]:slide-in-from-left-52;
+  @apply data-[motion=to-end]:slide-out-to-right-52 data-[motion=to-start]:slide-out-to-left-52;
+  @apply md:absolute md:w-auto;
+}
+
+/* =============================================================================
+   SIDEBAR
+   ============================================================================= */
+.sidebar {
+  @apply flex h-full w-full flex-col bg-background;
+}
+
+.sidebar-header {
+  @apply flex items-center gap-2 px-4 py-2;
+}
+
+.sidebar-content {
+  @apply flex-1 overflow-auto px-3 py-2;
+}
+
+.sidebar-nav {
+  @apply space-y-2;
+}
+
+.sidebar-nav-item {
+  @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all;
+  @apply hover:bg-accent hover:text-accent-foreground;
+}
+
+.sidebar-nav-item-active {
+  @apply bg-primary text-primary-foreground;
+}
+
+.sidebar-nav-group {
+  @apply px-3 py-2;
+}
+
+.sidebar-nav-group-title {
+  @apply mb-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider;
+}
+
+/* =============================================================================
+   FORMS
+   ============================================================================= */
+.form-item {
+  @apply space-y-2;
+}
+
+.form-label {
+  @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
+}
+
+.form-description {
+  @apply text-sm text-muted-foreground;
+}
+
+.form-message {
+  @apply text-sm font-medium text-destructive;
+}
+
+.form-control {
+  @apply relative;
+}
+
+/* Form layouts */
+.form-grid {
+  @apply grid gap-6;
+}
+
+.form-grid-2 {
+  @apply grid-cols-1 md:grid-cols-2;
+}
+
+.form-grid-3 {
+  @apply grid-cols-1 md:grid-cols-3;
+}
+
+.form-section {
+  @apply space-y-6 rounded-lg border bg-card p-6;
+}
+
+.form-section-title {
+  @apply text-lg font-semibold;
+}
+
+.form-section-description {
+  @apply text-sm text-muted-foreground;
+}
+
+/* =============================================================================
+   ALERTS
+   ============================================================================= */
+.alert {
+  @apply relative w-full rounded-lg border p-4 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground [&>svg~*]:pl-7;
+}
+
+.alert-default {
+  @apply bg-background text-foreground;
+}
+
+.alert-destructive {
+  @apply border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive;
+}
+
+.alert-warning {
+  @apply border-yellow-500/50 text-yellow-900 bg-yellow-50 dark:bg-yellow-900/10 dark:text-yellow-400 dark:border-yellow-500 [&>svg]:text-yellow-600 dark:[&>svg]:text-yellow-400;
+}
+
+.alert-success {
+  @apply border-green-500/50 text-green-900 bg-green-50 dark:bg-green-900/10 dark:text-green-400 dark:border-green-500 [&>svg]:text-green-600 dark:[&>svg]:text-green-400;
+}
+
+.alert-info {
+  @apply border-blue-500/50 text-blue-900 bg-blue-50 dark:bg-blue-900/10 dark:text-blue-400 dark:border-blue-500 [&>svg]:text-blue-600 dark:[&>svg]:text-blue-400;
+}
+
+.alert-title {
+  @apply mb-1 font-medium leading-none tracking-tight;
+}
+
+.alert-description {
+  @apply text-sm [&_p]:leading-relaxed;
+}
+
+/* =============================================================================
+   DROPDOWNS & SELECTS
+   ============================================================================= */
+.select-trigger {
+  @apply flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background;
+  @apply placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+  @apply disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1;
+}
+
+.select-content {
+  @apply relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md;
+  @apply data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0;
+  @apply data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95;
+  @apply data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2;
+  @apply data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2;
+}
+
+.select-item {
+  @apply relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none;
+  @apply focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50;
+}
+
+.select-label {
+  @apply py-1.5 pl-8 pr-2 text-sm font-semibold;
+}
+
+.select-separator {
+  @apply -mx-1 my-1 h-px bg-muted;
+}
+
+/* =============================================================================
+   TOOLTIPS
+   ============================================================================= */
+.tooltip-content {
+  @apply z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md;
+  @apply animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0;
+  @apply data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2;
+  @apply data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2;
+}
+
+/* =============================================================================
+   TABS
+   ============================================================================= */
+.tabs-list {
+  @apply inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground;
+}
+
+.tabs-trigger {
+  @apply inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background;
+  @apply transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  @apply disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground;
+  @apply data-[state=active]:shadow-sm;
+}
+
+.tabs-content {
+  @apply mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+}
+
+/* =============================================================================
+   PROGRESS BARS
+   ============================================================================= */
+.progress {
+  @apply relative h-4 w-full overflow-hidden rounded-full bg-secondary;
+}
+
+.progress-indicator {
+  @apply h-full w-full flex-1 bg-primary transition-all;
+}
+
+/* Progress variants */
+.progress-sm {
+  @apply h-2;
+}
+
+.progress-lg {
+  @apply h-6;
+}
+
+.progress-success .progress-indicator {
+  @apply bg-green-500;
+}
+
+.progress-warning .progress-indicator {
+  @apply bg-yellow-500;
+}
+
+.progress-error .progress-indicator {
+  @apply bg-red-500;
+}
+
+/* =============================================================================
+   LOADING STATES
+   ============================================================================= */
+.skeleton {
+  @apply animate-pulse rounded-md bg-muted;
+}
+
+.skeleton-text {
+  @apply h-4 bg-muted rounded;
+}
+
+.skeleton-text-sm {
+  @apply h-3;
+}
+
+.skeleton-text-lg {
+  @apply h-5;
+}
+
+.skeleton-avatar {
+  @apply h-10 w-10 rounded-full;
+}
+
+.skeleton-button {
+  @apply h-10 w-20 rounded-md;
+}
+
+.spinner {
+  @apply animate-spin rounded-full border-2 border-muted border-t-primary;
+}
+
+.spinner-sm {
+  @apply h-4 w-4;
+}
+
+.spinner-md {
+  @apply h-6 w-6;
+}
+
+.spinner-lg {
+  @apply h-8 w-8;
+}
+
+/* =============================================================================
+   LAYOUT COMPONENTS
+   ============================================================================= */
+.container {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+.section {
+  @apply py-8 md:py-12 lg:py-16;
+}
+
+.section-sm {
+  @apply py-4 md:py-6;
+}
+
+.section-lg {
+  @apply py-12 md:py-16 lg:py-24;
+}
+
+/* Grid layouts */
+.grid-auto-fit {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.grid-auto-fill {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
+
+/* =============================================================================
+   BUSINESS SPECIFIC COMPONENTS
+   ============================================================================= */
+
+/* Invoice status indicators */
+.invoice-status {
+  @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+}
+
+.invoice-status-open {
+  @apply bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400;
+}
+
+.invoice-status-paid {
+  @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+}
+
+.invoice-status-overdue {
+  @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
+}
+
+.invoice-status-partial {
+  @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400;
+}
+
+/* Payment status */
+.payment-status {
+  @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+}
+
+.payment-status-pending {
+  @apply bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400;
+}
+
+.payment-status-completed {
+  @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+}
+
+.payment-status-failed {
+  @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
+}
+
+/* Currency display */
+.currency {
+  @apply font-mono text-right tabular-nums;
+}
+
+.currency-positive {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.currency-negative {
+  @apply text-red-600 dark:text-red-400;
+}
+
+.currency-large {
+  @apply text-2xl font-bold;
+}
+
+/* Reconciliation confidence */
+.confidence-high {
+  @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+}
+
+.confidence-medium {
+  @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400;
+}
+
+.confidence-low {
+  @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
+}
+
+/* Chart containers */
+.chart-card {
+  @apply bg-card border border-border rounded-lg p-6;
+}
+
+.chart-header {
+  @apply flex items-center justify-between mb-4;
+}
+
+.chart-title {
+  @apply text-lg font-semibold;
+}
+
+.chart-description {
+  @apply text-sm text-muted-foreground;
+}
+
+.chart-body {
+  @apply h-[300px] lg:h-[400px];
+}
+
+/* Data table specific */
+.data-table {
+  @apply w-full border-collapse;
+}
+
+.data-table-header {
+  @apply bg-muted/50 border-b border-border;
+}
+
+.data-table-header-cell {
+  @apply px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider;
+}
+
+.data-table-row {
+  @apply border-b border-border/50 hover:bg-muted/30 transition-colors;
+}
+
+.data-table-cell {
+  @apply px-4 py-3 text-sm;
+}
+
+.data-table-actions {
+  @apply flex items-center gap-2;
+}
+
+/* File upload zone */
+.upload-dropzone {
+  @apply border-2 border-dashed border-border rounded-lg p-8 text-center;
+  @apply hover:border-primary/50 transition-colors cursor-pointer;
+}
+
+.upload-dropzone-active {
+  @apply border-primary bg-primary/5;
+}
+
+.upload-dropzone-rejected {
+  @apply border-destructive bg-destructive/5;
+}
+
+/* Search and filters */
+.search-box {
+  @apply relative flex items-center;
+}
+
+.search-input {
+  @apply pl-10 pr-4;
+}
+
+.search-icon {
+  @apply absolute left-3 h-4 w-4 text-muted-foreground;
+}
+
+.filter-chip {
+  @apply inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full;
+  @apply bg-primary/10 text-primary border border-primary/20;
+}
+
+.filter-chip-remove {
+  @apply ml-1 h-3 w-3 rounded-full hover:bg-primary/20 cursor-pointer;
+}
+
+/* Dashboard widgets */
+.dashboard-grid {
+  @apply grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+}
+
+.widget-card {
+  @apply bg-card border border-border rounded-lg p-6 shadow-sm;
+}
+
+.widget-header {
+  @apply flex items-center justify-between mb-4;
+}
+
+.widget-title {
+  @apply text-sm font-medium text-muted-foreground;
+}
+
+.widget-value {
+  @apply text-3xl font-bold text-foreground;
+}
+
+.widget-change {
+  @apply text-sm font-medium;
+}
+
+.widget-change-positive {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.widget-change-negative {
+  @apply text-red-600 dark:text-red-400;
+}
+
+/* =============================================================================
+   RESPONSIVE UTILITIES
+   ============================================================================= */
+.mobile-menu {
+  @apply fixed inset-0 z-50 bg-background/80 backdrop-blur-sm md:hidden;
+}
+
+.mobile-menu-content {
+  @apply fixed left-0 top-0 h-full w-4/5 bg-card border-r border-border p-6;
+  @apply animate-in slide-in-from-left duration-300;
+}
+
+.mobile-nav {
+  @apply space-y-2;
+}
+
+.mobile-nav-item {
+  @apply block rounded-lg px-3 py-2 text-base font-medium;
+  @apply hover:bg-accent hover:text-accent-foreground;
+}
+
+/* Responsive grid adjustments */
+@media (max-width: 768px) {
+  .responsive-table {
+    @apply block overflow-x-auto whitespace-nowrap;
+  }
+  
+  .responsive-card {
+    @apply mx-4;
+  }
+  
+  .responsive-padding {
+    @apply px-4 py-2;
+  }
+}
+
+/* =============================================================================
+   PRINT STYLES
+   ============================================================================= */
+@media print {
+  .print-header {
+    @apply text-lg font-bold mb-4;
+  }
+  
+  .print-section {
+    @apply mb-6 page-break-inside-avoid;
+  }
+  
+  .print-table {
+    @apply w-full border-collapse text-sm;
+  }
+  
+  .print-table th,
+  .print-table td {
+    @apply border border-gray-300 px-2 py-1;
+  }
+  
+  .print-hide {
+    @apply hidden;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* =============================================================================
+   ACCESSIBILITY ENHANCEMENTS
+   ============================================================================= */
+.sr-only {
+  @apply absolute w-px h-px p-0 -m-px overflow-hidden clip-[rect(0,0,0,0)] whitespace-nowrap border-0;
+}
+
+.focus-trap {
+  @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background;
+}
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+  .badge,
+  .alert,
+  .status-indicator {
+    @apply border-2;
+  }
+  
+  .btn {
+    @apply border-2 border-current;
+  }
+}
+
+/* =============================================================================
+   ANIMATIONS FOR COMPONENTS
+   ============================================================================= */
+.slide-up-enter {
+  @apply translate-y-2 opacity-0;
+}
+
+.slide-up-enter-active {
+  @apply translate-y-0 opacity-100 transition-all duration-300 ease-out;
+}
+
+.fade-enter {
+  @apply opacity-0;
+}
+
+.fade-enter-active {
+  @apply opacity-100 transition-opacity duration-200;
+}
+
+.scale-enter {
+  @apply scale-95 opacity-0;
+}
+
+.scale-enter-active {
+  @apply scale-100 opacity-100 transition-all duration-200 ease-out;
+}
+
+/* Notification animations */
+.notification-enter {
+  @apply translate-x-full opacity-0;
+}
+
+.notification-enter-active {
+  @apply translate-x-0 opacity-100 transition-all duration-300 ease-out;
+}
+
+.notification-exit {
+  @apply translate-x-0 opacity-100;
+}
+
+.notification-exit-active {
+  @apply translate-x-full opacity-0 transition-all duration-200 ease-in;
+}
