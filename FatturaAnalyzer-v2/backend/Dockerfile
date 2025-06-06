@@ -83,8 +83,6 @@ echo "🚀 Starting FatturaAnalyzer v2 Backend..."
 if [ ! -f "/app/data/fattura_analyzer.db" ]; then
     echo "📊 Setting up database..."
     python -c "
-import sys
-sys.path.append('/app')
 try:
     from utils.database_tools import setup_database
     import asyncio
@@ -99,8 +97,6 @@ fi
 # Check database integrity
 echo "🔍 Checking database integrity..."
 python -c "
-import sys
-sys.path.append('/app')
 try:
     from utils.database_tools import integrity_check
     import asyncio
