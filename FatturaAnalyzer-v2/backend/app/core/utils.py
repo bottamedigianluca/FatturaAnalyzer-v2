@@ -9,20 +9,6 @@ import configparser
 import base64 # Per serializzare lo stato della UI se non si usa QByteArray direttamente qui
 from functools import lru_cache # Per funzioni che beneficiano di caching
 from typing import Optional, Dict, Any, List, Union # Per type hinting
-try:
-    from PySide6.QtCore import QByteArray
-    QT_AVAILABLE = True
-except ImportError:
-    try:
-        from PyQt6.QtCore import QByteArray
-        QT_AVAILABLE = True
-    except ImportError:
-        try:
-            from PyQt5.QtCore import QByteArray
-            QT_AVAILABLE = True
-        except ImportError:
-            QT_AVAILABLE = False
-            logger.warning("Nessuna libreria Qt disponibile per funzioni UI avanzate")
 
 
 logger = logging.getLogger(__name__)
