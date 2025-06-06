@@ -1,6 +1,7 @@
 import hashlib
 import re
 import logging
+logger = logging.getLogger(__name__)
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, date
 import pandas as pd # Necessario per pd.isna e pd.to_datetime in alcune funzioni
@@ -9,9 +10,10 @@ import configparser
 import base64 # Per serializzare lo stato della UI se non si usa QByteArray direttamente qui
 from functools import lru_cache # Per funzioni che beneficiano di caching
 from typing import Optional, Dict, Any, List, Union # Per type hinting
+QT_AVAILABLE = False
 
 
-logger = logging.getLogger(__name__)
+
 
 # --- Costanti ---
 AMOUNT_TOLERANCE = Decimal('0.01')
