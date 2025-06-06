@@ -1,15 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import AppWrapper from './AppWrapper'; // Invece di App
+import App from './App';
 import './globals.css';
 
-// Disable right-click context menu in production
+// Protezioni di base per l'ambiente di produzione
 if (import.meta.env.PROD) {
+  // Disabilita menu contestuale
   document.addEventListener('contextmenu', (e) => e.preventDefault());
-}
 
-// Disable F12 and other dev tools shortcuts in production
-if (import.meta.env.PROD) {
+  // Disabilita scorciatoie per dev tools
   document.addEventListener('keydown', (e) => {
     if (
       e.key === 'F12' ||
@@ -25,6 +24,6 @@ if (import.meta.env.PROD) {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <AppWrapper />
+    <App />
   </React.StrictMode>
 );
