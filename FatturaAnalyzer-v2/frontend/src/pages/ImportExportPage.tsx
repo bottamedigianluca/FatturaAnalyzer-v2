@@ -1,6 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Upload,
   Download,
@@ -12,13 +11,11 @@ import {
   Clock,
   RefreshCw,
   Trash,
-  Eye,
   Archive,
   Database,
   History,
-  Settings,
   Filter,
-  Search,
+  Loader2,
 } from 'lucide-react';
 
 // Components
@@ -35,12 +32,6 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
   Table,
   TableBody,
   TableCell,
@@ -54,232 +45,69 @@ import {
   SelectTrigger,
   SelectValue,
   Checkbox,
-  Textarea,
   Separator,
   Alert,
   AlertDescription,
 } from '@/components/ui';
 
-// Services
-import { apiClient } from '@/services/api';
+// Custom Components
+import { TransactionImport } from '@/components/transactions/TransactionImport';
+
+// Hooks
+import {
+  useImportInvoicesXML,
+  useValidateInvoiceFiles,
+  useExportData,
+  useDownloadTransactionTemplate,
+  useCreateBackup,
+  useImportHistory,
+  useImportStatistics,
+  useImportExportHealth,
+  useCleanupTempFiles,
+  useExportPresets,
+  ImportResult,
+} from '@/hooks/useImportExport';
 
 // Utils
 import { formatDate, formatFileSize } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 
 // Types
-interface ImportResult {
-  processed: number;
-  success: number;
-  duplicates: number;
-  errors: number;
-  unsupported: number;
-  files: FileProcessingResult[];
-}
-
-interface FileProcessingResult {
-  name: string;
-  status: string;
-  message?: string;
-}
-
-interface ImportHistory {
-  id: number;
-  timestamp: string;
-  type: string;
-  files_processed: number;
-  files_success: number;
-  files_duplicates: number;
-  files_errors: number;
-  status: string;
-}
-
 interface ExportOptions {
   format: 'excel' | 'csv' | 'json';
   type: 'invoices' | 'transactions' | 'anagraphics' | 'reconciliation-report';
   filters?: Record<string, any>;
-  include_details?: boolean;
+  includeDetails?: boolean;
 }
 
 export function ImportExportPage() {
   const [activeTab, setActiveTab] = useState('import');
   const [importType, setImportType] = useState<'invoices' | 'transactions'>('invoices');
-  const [isImporting, setIsImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState(0);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   
   // Export state
   const [exportOptions, setExportOptions] = useState<ExportOptions>({
     format: 'excel',
     type: 'invoices',
-    include_details: true,
+    includeDetails: true,
   });
 
-  // Fetch import history
-  const { data: importHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useQuery({
-    queryKey: ['import-history'],
-    queryFn: async () => {
-      const response = await apiClient.get('/import-export/status/import-history?limit=20');
-      if (response.success) {
-        return response.data.import_history as ImportHistory[];
-      }
-      return [];
-    },
-  });
+  // Hooks
+  const importInvoices = useImportInvoicesXML();
+  const validateInvoices = useValidateInvoiceFiles();
+  const exportData = useExportData();
+  const downloadTemplate = useDownloadTransactionTemplate();
+  const createBackup = useCreateBackup();
+  const cleanupFiles = useCleanupTempFiles();
+  const exportPresets = useExportPresets();
 
-  // Import mutations
-  const importInvoicesMutation = useMutation({
-    mutationFn: async (files: File[]) => {
-      const formData = new FormData();
-      files.forEach(file => formData.append('files', file));
-      
-      const response = await apiClient.post('/import-export/invoices/xml', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      
-      if (!response.success) {
-        throw new Error(response.message || 'Errore durante l\'importazione');
-      }
-      
-      return response.data as ImportResult;
-    },
-    onSuccess: (data) => {
-      setImportResult(data);
-      setIsImporting(false);
-      setImportProgress(100);
-      refetchHistory();
-    },
-    onError: () => {
-      setIsImporting(false);
-      setImportProgress(0);
-    },
-  });
+  // Queries
+  const { data: importHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useImportHistory(20);
+  const { data: statistics, isLoading: isLoadingStats } = useImportStatistics();
+  const { data: healthData } = useImportExportHealth();
 
-  const importTransactionsMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await apiClient.post('/import-export/transactions/csv', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      
-      if (!response.success) {
-        throw new Error(response.message || 'Errore durante l\'importazione');
-      }
-      
-      return response.data as ImportResult;
-    },
-    onSuccess: (data) => {
-      setImportResult(data);
-      setIsImporting(false);
-      setImportProgress(100);
-      refetchHistory();
-    },
-    onError: () => {
-      setIsImporting(false);
-      setImportProgress(0);
-    },
-  });
-
-  // Export mutations
-  const exportMutation = useMutation({
-    mutationFn: async (options: ExportOptions) => {
-      let endpoint = '';
-      const params = new URLSearchParams();
-      
-      switch (options.type) {
-        case 'invoices':
-          endpoint = '/import-export/export/invoices';
-          break;
-        case 'transactions':
-          endpoint = '/import-export/export/transactions';
-          break;
-        case 'anagraphics':
-          endpoint = '/import-export/export/anagraphics';
-          break;
-        case 'reconciliation-report':
-          endpoint = '/import-export/export/reconciliation-report';
-          break;
-      }
-      
-      params.append('format', options.format);
-      if (options.include_details) params.append('include_details', 'true');
-      
-      // Add filters if present
-      if (options.filters) {
-        Object.entries(options.filters).forEach(([key, value]) => {
-          if (value) params.append(key, value);
-        });
-      }
-      
-      const response = await apiClient.get(`${endpoint}?${params.toString()}`, {
-        responseType: 'blob',
-      });
-      
-      // Create download link
-      const url = window.URL.createObjectURL(new Blob([response]));
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const timestamp = new Date().toISOString().split('T')[0];
-      const extension = options.format === 'excel' ? 'xlsx' : options.format;
-      link.download = `${options.type}_export_${timestamp}.${extension}`;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      return { success: true };
-    },
-  });
-
-  // Download template mutation
-  const downloadTemplateMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.get('/import-export/templates/transactions-csv', {
-        responseType: 'blob',
-      });
-      
-      const url = window.URL.createObjectURL(new Blob([response]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'template_transazioni_bancarie.csv';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      return { success: true };
-    },
-  });
-
-  // Create backup mutation
-  const createBackupMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/import-export/backup/create', {}, {
-        responseType: 'blob',
-      });
-      
-      const url = window.URL.createObjectURL(new Blob([response]));
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      link.download = `fattura_analyzer_backup_${timestamp}.zip`;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      return { success: true };
-    },
-  });
-
-  // Dropzone configuration
+  // Dropzone configuration for invoices
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setSelectedFiles(acceptedFiles);
     setImportResult(null);
@@ -294,41 +122,35 @@ export function ImportExportPage() {
       'text/csv': ['.csv'],
     },
     multiple: importType === 'invoices',
+    disabled: importInvoices.isPending || validateInvoices.isPending,
   });
 
-  const handleImport = async () => {
+  // Handle invoice import
+  const handleInvoiceImport = useCallback(async () => {
     if (selectedFiles.length === 0) return;
     
-    setIsImporting(true);
-    setImportProgress(0);
-    setImportResult(null);
-    
-    // Simulate progress
-    const progressInterval = setInterval(() => {
-      setImportProgress(prev => Math.min(prev + 10, 90));
-    }, 500);
-    
     try {
-      if (importType === 'invoices') {
-        await importInvoicesMutation.mutateAsync(selectedFiles);
-      } else {
-        await importTransactionsMutation.mutateAsync(selectedFiles[0]);
-      }
-    } finally {
-      clearInterval(progressInterval);
+      const result = await importInvoices.mutateAsync(selectedFiles);
+      setImportResult(result);
+      setSelectedFiles([]);
+      refetchHistory();
+    } catch (error) {
+      // Error handled by hook
     }
-  };
+  }, [selectedFiles, importInvoices, refetchHistory]);
 
-  const handleExport = () => {
-    exportMutation.mutate(exportOptions);
-  };
+  // Handle export
+  const handleExport = useCallback(() => {
+    exportData.mutate(exportOptions);
+  }, [exportData, exportOptions]);
 
-  const resetImport = () => {
+  const resetImport = useCallback(() => {
     setSelectedFiles([]);
     setImportResult(null);
-    setImportProgress(0);
-    setIsImporting(false);
-  };
+  }, []);
+
+  const isImporting = importInvoices.isPending;
+  const isValidating = validateInvoices.isPending;
 
   return (
     <div className="space-y-6">
@@ -342,13 +164,37 @@ export function ImportExportPage() {
         </div>
         
         <div className="flex items-center space-x-2">
+          {/* System Health Indicator */}
+          {healthData && (
+            <Badge 
+              variant={healthData.status === 'healthy' ? 'success' : 'warning'}
+              className="mr-2"
+            >
+              Sistema {healthData.status === 'healthy' ? 'OK' : 'Degradato'}
+            </Badge>
+          )}
+          
           <Button
             variant="outline"
-            onClick={() => createBackupMutation.mutate()}
-            disabled={createBackupMutation.isPending}
+            size="sm"
+            onClick={() => cleanupFiles.mutate()}
+            disabled={cleanupFiles.isPending}
           >
-            {createBackupMutation.isPending ? (
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            {cleanupFiles.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash className="mr-2 h-4 w-4" />
+            )}
+            Pulizia
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={() => createBackup.mutate()}
+            disabled={createBackup.isPending}
+          >
+            {createBackup.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Archive className="mr-2 h-4 w-4" />
             )}
@@ -356,6 +202,69 @@ export function ImportExportPage() {
           </Button>
         </div>
       </div>
+
+      {/* System Statistics */}
+      {statistics && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {statistics.invoices.total_invoices}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Fatture Totali
+                </div>
+                <div className="text-xs text-green-600 mt-1">
+                  +{statistics.invoices.last_30_days} ultimi 30gg
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {statistics.transactions.total_transactions}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Transazioni Totali
+                </div>
+                <div className="text-xs text-green-600 mt-1">
+                  +{statistics.transactions.last_30_days} ultimi 30gg
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {statistics.invoices.active_invoices}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Fatture Attive
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">
+                  {statistics.invoices.passive_invoices}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Fatture Passive
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -419,10 +328,14 @@ export function ImportExportPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => downloadTemplateMutation.mutate()}
-                      disabled={downloadTemplateMutation.isPending}
+                      onClick={() => downloadTemplate.mutate()}
+                      disabled={downloadTemplate.isPending}
                     >
-                      <Download className="mr-2 h-4 w-4" />
+                      {downloadTemplate.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="mr-2 h-4 w-4" />
+                      )}
                       Scarica Template CSV
                     </Button>
                   </div>
@@ -430,131 +343,130 @@ export function ImportExportPage() {
               </CardContent>
             </Card>
 
-            {/* File Upload */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  File Upload
-                </CardTitle>
-                <CardDescription>
-                  {importType === 'invoices' 
-                    ? 'Trascina file XML/P7M o clicca per selezionare'
-                    : 'Trascina file CSV o clicca per selezionare'
-                  }
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div
-                  {...getRootProps()}
-                  className={cn(
-                    "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
-                    isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
-                  )}
-                >
-                  <input {...getInputProps()} />
-                  <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  {isDragActive ? (
-                    <p className="text-primary font-medium">Rilascia i file qui...</p>
-                  ) : (
-                    <div>
-                      <p className="font-medium mb-2">
-                        Clicca per selezionare {importType === 'invoices' ? 'file' : 'file'}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {importType === 'invoices' 
-                          ? 'Supportati: .xml, .p7m (max 50 file)'
-                          : 'Supportati: .csv (un file alla volta)'
-                        }
-                      </p>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Selected Files */}
-                {selectedFiles.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium">File selezionati:</h4>
-                    <div className="space-y-1">
-                      {selectedFiles.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4" />
-                            <span className="text-sm">{file.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {formatFileSize(file.size)}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}
-                            >
-                              <Trash className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Import Actions */}
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleImport}
-                    disabled={selectedFiles.length === 0 || isImporting}
-                    className="flex-1"
-                  >
-                    {isImporting ? (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                        Importazione...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Avvia Importazione
-                      </>
+            {/* File Upload - Only for Invoices */}
+            {importType === 'invoices' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    File Upload
+                  </CardTitle>
+                  <CardDescription>
+                    Trascina file XML/P7M o clicca per selezionare
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div
+                    {...getRootProps()}
+                    className={cn(
+                      "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+                      isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50",
+                      (isImporting || isValidating) && "pointer-events-none opacity-50"
                     )}
-                  </Button>
+                  >
+                    <input {...getInputProps()} />
+                    {isImporting || isValidating ? (
+                      <div className="space-y-2">
+                        <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin" />
+                        <p className="text-primary font-medium">
+                          {isValidating ? 'Validazione in corso...' : 'Importazione in corso...'}
+                        </p>
+                      </div>
+                    ) : isDragActive ? (
+                      <p className="text-primary font-medium">Rilascia i file qui...</p>
+                    ) : (
+                      <div>
+                        <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="font-medium mb-2">
+                          Clicca per selezionare file XML/P7M
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Supportati: .xml, .p7m (max 50 file)
+                        </p>
+                      </div>
+                    )}
+                  </div>
                   
+                  {/* Selected Files */}
                   {selectedFiles.length > 0 && (
-                    <Button variant="outline" onClick={resetImport}>
-                      <Trash className="h-4 w-4" />
-                    </Button>
+                    <div className="space-y-2">
+                      <h4 className="font-medium">File selezionati:</h4>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {selectedFiles.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4" />
+                              <span className="text-sm">{file.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                {formatFileSize(file.size)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}
+                                disabled={isImporting || isValidating}
+                              >
+                                <Trash className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
+                  
+                  {/* Import Actions */}
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleInvoiceImport}
+                      disabled={selectedFiles.length === 0 || isImporting || isValidating}
+                      className="flex-1"
+                    >
+                      {isImporting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Importazione...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Avvia Importazione
+                        </>
+                      )}
+                    </Button>
+                    
+                    {selectedFiles.length > 0 && (
+                      <Button 
+                        variant="outline" 
+                        onClick={resetImport}
+                        disabled={isImporting || isValidating}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
-          {/* Import Progress */}
-          {(isImporting || importProgress > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5" />
-                  Progresso Importazione
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Elaborazione in corso...</span>
-                    <span>{importProgress}%</span>
-                  </div>
-                  <Progress value={importProgress} className="h-2" />
-                </div>
-                
-                {isImporting && (
-                  <p className="text-sm text-muted-foreground">
-                    Processando {selectedFiles.length} file...
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+          {/* Transaction Import Component */}
+          {importType === 'transactions' && (
+            <TransactionImport
+              onImportComplete={(result) => {
+                setImportResult({
+                  processed: result.success + result.duplicates + result.errors,
+                  success: result.success,
+                  duplicates: result.duplicates,
+                  errors: result.errors,
+                  unsupported: 0,
+                  files: [{ name: 'CSV Import', status: 'completed' }]
+                });
+                refetchHistory();
+              }}
+            />
           )}
 
           {/* Import Results */}
@@ -568,22 +480,22 @@ export function ImportExportPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-4">
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <div className="text-center p-4 bg-green-50 dark:bg-green-950 rounded-lg">
                     <div className="text-2xl font-bold text-green-600">{importResult.success}</div>
                     <div className="text-sm text-green-600">Successi</div>
                   </div>
                   
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
                     <div className="text-2xl font-bold text-yellow-600">{importResult.duplicates}</div>
                     <div className="text-sm text-yellow-600">Duplicati</div>
                   </div>
                   
-                  <div className="text-center p-4 bg-red-50 rounded-lg">
+                  <div className="text-center p-4 bg-red-50 dark:bg-red-950 rounded-lg">
                     <div className="text-2xl font-bold text-red-600">{importResult.errors}</div>
                     <div className="text-sm text-red-600">Errori</div>
                   </div>
                   
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-950 rounded-lg">
                     <div className="text-2xl font-bold text-gray-600">{importResult.processed}</div>
                     <div className="text-sm text-gray-600">Totale</div>
                   </div>
@@ -592,7 +504,7 @@ export function ImportExportPage() {
                 {importResult.files.length > 0 && (
                   <div className="space-y-3">
                     <h4 className="font-medium">Dettaglio File:</h4>
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
                       {importResult.files.map((file, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div className="flex items-center gap-2">
@@ -600,8 +512,8 @@ export function ImportExportPage() {
                             <span className="text-sm">{file.name}</span>
                           </div>
                           <Badge variant={
-                            file.status === 'processed' ? 'success' :
-                            file.status.includes('error') ? 'destructive' :
+                            file.status === 'processed' || file.status === 'completed' ? 'success' :
+                            file.status.includes('error') || file.status.includes('Error') ? 'destructive' :
                             'secondary'
                           }>
                             {file.status}
@@ -670,9 +582,9 @@ export function ImportExportPage() {
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="include_details"
-                      checked={exportOptions.include_details}
+                      checked={exportOptions.includeDetails}
                       onCheckedChange={(checked) => 
-                        setExportOptions(prev => ({ ...prev, include_details: !!checked }))
+                        setExportOptions(prev => ({ ...prev, includeDetails: !!checked }))
                       }
                     />
                     <label htmlFor="include_details" className="text-sm">
@@ -798,12 +710,12 @@ export function ImportExportPage() {
               <CardContent className="space-y-3">
                 <Button
                   onClick={handleExport}
-                  disabled={exportMutation.isPending}
+                  disabled={exportData.isPending}
                   className="w-full"
                 >
-                  {exportMutation.isPending ? (
+                  {exportData.isPending ? (
                     <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Esportazione...
                     </>
                   ) : (
@@ -823,21 +735,8 @@ export function ImportExportPage() {
                     variant="outline"
                     size="sm"
                     className="w-full justify-start"
-                    onClick={() => {
-                      setExportOptions({
-                        format: 'excel',
-                        type: 'invoices',
-                        filters: { invoice_type: 'Attiva' },
-                        include_details: true,
-                      });
-                      setTimeout(() => exportMutation.mutate({
-                        format: 'excel',
-                        type: 'invoices',
-                        filters: { invoice_type: 'Attiva' },
-                        include_details: true,
-                      }), 100);
-                    }}
-                    disabled={exportMutation.isPending}
+                    onClick={exportPresets.presets.activeInvoicesExcel}
+                    disabled={exportPresets.isExporting}
                   >
                     <FileText className="mr-2 h-4 w-4" />
                     Fatture Attive (Excel)
@@ -847,14 +746,8 @@ export function ImportExportPage() {
                     variant="outline"
                     size="sm"
                     className="w-full justify-start"
-                    onClick={() => {
-                      setTimeout(() => exportMutation.mutate({
-                        format: 'csv',
-                        type: 'transactions',
-                        filters: { status_filter: 'Da Riconciliare' },
-                      }), 100);
-                    }}
-                    disabled={exportMutation.isPending}
+                    onClick={exportPresets.presets.unreconciledTransactionsCSV}
+                    disabled={exportPresets.isExporting}
                   >
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                     Transazioni da Riconciliare (CSV)
@@ -864,17 +757,22 @@ export function ImportExportPage() {
                     variant="outline"
                     size="sm"
                     className="w-full justify-start"
-                    onClick={() => {
-                      setTimeout(() => exportMutation.mutate({
-                        format: 'excel',
-                        type: 'reconciliation-report',
-                        include_details: true,
-                      }), 100);
-                    }}
-                    disabled={exportMutation.isPending}
+                    onClick={exportPresets.presets.fullReconciliationReport}
+                    disabled={exportPresets.isExporting}
                   >
                     <Database className="mr-2 h-4 w-4" />
                     Report Riconciliazione Completo
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={exportPresets.presets.clientsWithStats}
+                    disabled={exportPresets.isExporting}
+                  >
+                    <Filter className="mr-2 h-4 w-4" />
+                    Clienti con Statistiche
                   </Button>
                 </div>
                 
@@ -884,11 +782,11 @@ export function ImportExportPage() {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  onClick={() => createBackupMutation.mutate()}
-                  disabled={createBackupMutation.isPending}
+                  onClick={() => createBackup.mutate()}
+                  disabled={createBackup.isPending}
                 >
-                  {createBackupMutation.isPending ? (
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  {createBackup.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Archive className="mr-2 h-4 w-4" />
                   )}
@@ -899,11 +797,11 @@ export function ImportExportPage() {
           </div>
 
           {/* Export Status */}
-          {exportMutation.isPending && (
+          {(exportData.isPending || exportPresets.isExporting) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <RefreshCw className="h-5 w-5 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                   Preparazione Export
                 </CardTitle>
               </CardHeader>
