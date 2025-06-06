@@ -47,7 +47,7 @@ class CloudSyncManager:
         self.sync_enabled = False
         self.auto_sync_interval = 300  # 5 minuti default
         self.last_sync_time = None
-        self.sync_thread = None
+        self.sync_thread = None  # AGGIUNTO: Ora è una proprietà pubblica
         self.stop_sync = threading.Event()
         
         # Nome file su Google Drive
@@ -73,7 +73,7 @@ class CloudSyncManager:
         except Exception as e:
             logger.error(f"Errore caricamento config sync: {e}")
     
-    def _save_config(self):
+    def save_config(self):  # CAMBIATO: da _save_config a save_config (pubblico)
         """Salva configurazione sync in config.ini"""
         try:
             import configparser
@@ -93,6 +93,11 @@ class CloudSyncManager:
                 
         except Exception as e:
             logger.error(f"Errore salvataggio config sync: {e}")
+    
+    # AGGIUNTO: Alias per compatibilità con adapter
+    def _save_config(self):
+        """Alias privato per save_config (compatibilità)"""
+        return self.save_config()
     
     def _init_google_service(self):
         """Inizializza il servizio Google Drive"""
@@ -163,7 +168,7 @@ class CloudSyncManager:
             files = results.get('files', [])
             if files:
                 self.remote_file_id = files[0]['id']
-                self._save_config()
+                self.save_config()  # CAMBIATO: usa save_config pubblico
                 return self.remote_file_id
             
             return None
@@ -208,7 +213,7 @@ class CloudSyncManager:
                     fields='id'
                 ).execute()
                 self.remote_file_id = file.get('id')
-                self._save_config()
+                self.save_config()  # CAMBIATO: usa save_config pubblico
                 logger.info(f"Nuovo database creato su Google Drive: {self.remote_file_id}")
             
             # Pulizia file temporaneo
@@ -264,7 +269,7 @@ class CloudSyncManager:
             logger.error(f"Errore download database: {e}")
             return False
     
-    def _get_remote_modified_time(self) -> Optional[datetime]:
+    def get_remote_modified_time(self) -> Optional[datetime]:  # CAMBIATO: da privato a pubblico
         """Ottiene il timestamp di modifica del file remoto"""
         try:
             if not self.remote_file_id:
@@ -285,7 +290,12 @@ class CloudSyncManager:
             logger.error(f"Errore recupero timestamp remoto: {e}")
             return None
     
-    def _get_local_modified_time(self) -> Optional[datetime]:
+    # AGGIUNTO: Alias privato per compatibilità
+    def _get_remote_modified_time(self) -> Optional[datetime]:
+        """Alias privato per get_remote_modified_time (compatibilità)"""
+        return self.get_remote_modified_time()
+    
+    def get_local_modified_time(self) -> Optional[datetime]:  # CAMBIATO: da privato a pubblico
         """Ottiene il timestamp di modifica del database locale"""
         try:
             if not os.path.exists(DB_PATH):
@@ -297,6 +307,11 @@ class CloudSyncManager:
         except Exception as e:
             logger.error(f"Errore recupero timestamp locale: {e}")
             return None
+    
+    # AGGIUNTO: Alias privato per compatibilità
+    def _get_local_modified_time(self) -> Optional[datetime]:
+        """Alias privato per get_local_modified_time (compatibilità)"""
+        return self.get_local_modified_time()
     
     def sync_database(self, force_direction: str = None) -> Dict[str, Any]:
         """
@@ -366,8 +381,8 @@ class CloudSyncManager:
                     
                 else:
                     # Entrambi esistono - confronta timestamp
-                    remote_time = self._get_remote_modified_time()
-                    local_time = self._get_local_modified_time()
+                    remote_time = self.get_remote_modified_time()  # CAMBIATO: usa metodo pubblico
+                    local_time = self.get_local_modified_time()    # CAMBIATO: usa metodo pubblico
                     
                     if not remote_time or not local_time:
                         result['message'] = 'Impossibile confrontare timestamp'
