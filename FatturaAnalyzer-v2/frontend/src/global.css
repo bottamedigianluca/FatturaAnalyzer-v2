@@ -397,21 +397,6 @@
   scrollbar-color: hsl(var(--muted-foreground)/0.3) hsl(var(--muted));
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: 3px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground)/0.3);
-  border-radius: 3px;
-}
-
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground)/0.5);
 }
@@ -517,4 +502,19 @@
 
 .loading-spinner {
   @apply animate-spin rounded-full h-8 w-8 border-b-2 border-primary;
+} {
+  width: 6px;
+  height: 6px;
 }
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground)/0.3);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar
