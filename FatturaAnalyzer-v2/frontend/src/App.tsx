@@ -1,17 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/tauri';
 
-// Layout components
+// Layout and Global UI
 import { Layout } from '@/components/layout/Layout';
 import { Toaster } from '@/components/ui/sonner';
-import { ThemeProvider } from '@/components/providers/ThemeProvider';
+import { ThemeProvider } from '@/providers/ThemeProvider';
 
-// First Run components
-import { FirstRunCheck, SimpleSetupWizard } from '@/components/FirstRunCheck';
+// Core Components
+import { FirstRunCheck } from '@/components/FirstRunCheck';
+import { SimpleSetupWizard } from '@/components/setup/SetupWizard'; // Assicurati che questo percorso sia corretto
 
-// Page components
+// Page Components
 import { DashboardPage } from '@/pages/DashboardPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
 import { InvoiceDetailPage } from '@/pages/InvoiceDetailPage';
@@ -23,14 +24,15 @@ import { AnagraphicsDetailPage } from '@/pages/AnagraphicsDetailPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { ImportExportPage } from '@/pages/ImportExportPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { Button } from '@/components/ui/button'; // Importa Button
 
 // Store
 import { useUIStore } from '@/store';
 
 // Styles
-import './globals.css';
+import './globals.css'; // Assumi che questo file sia corretto ora
 
-// React Query client
+// Create the query client instance outside the component to prevent re-creation
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -38,186 +40,101 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: 5 * 60 * 1000, // 5 minutes
     },
-    mutations: {
-      retry: 1,
-    },
   },
 });
 
-// App states
-type AppState = 'loading' | 'setup-needed' | 'setup-complete' | 'error';
+type AppState = 'checking' | 'setup_needed' | 'ready' | 'error';
 
 function App() {
-  const [appState, setAppState] = useState<AppState>('loading');
-  const { setLoading, setError, addNotification } = useUIStore();
+  const [appState, setAppState] = useState<AppState>('checking');
+  const { addNotification } = useUIStore();
 
   useEffect(() => {
-    initializeApp();
-  }, []);
-
-  const initializeApp = async () => {
-    try {
-      setLoading('app-init', true);
-      
-      // Check if running in Tauri
+    const initializeTauri = async () => {
       if (window.__TAURI_IPC__) {
         try {
-          // Setup Tauri-specific configurations
           await invoke('app_ready');
-          console.log('🖥️ Tauri initialized successfully');
-          
-          addNotification({
-            type: 'success',
-            title: 'Applicazione avviata',
-            message: 'FatturaAnalyzer è pronto all\'uso',
-            duration: 3000,
-          });
+          console.log('Tauri IPC initialized successfully');
         } catch (tauriError) {
-          console.warn('⚠️ Tauri initialization failed, continuing in web mode:', tauriError);
+          console.warn('Tauri IPC initialization failed, continuing in web mode:', tauriError);
         }
       } else {
-        console.log('🌐 Running in web mode');
+        console.log('Running in standard web mode');
       }
-      
-      // App initialization completed - FirstRunCheck will handle the rest
-      setAppState('loading'); // FirstRunCheck will change this
-      
-    } catch (error) {
-      console.error('❌ App initialization error:', error);
-      setError('app-init', 'Errore durante l\'inizializzazione');
-      setAppState('error');
-      
-      addNotification({
-        type: 'error',
-        title: 'Errore inizializzazione',
-        message: 'Si è verificato un errore durante l\'avvio',
-        duration: 0,
-      });
-    } finally {
-      setLoading('app-init', false);
-    }
-  };
+    };
+    initializeTauri();
+  }, []);
 
-  const handleSetupNeeded = () => {
-    console.log('🎯 Setup needed, showing setup wizard');
-    setAppState('setup-needed');
-  };
-
+  const handleSetupNeeded = () => setAppState('setup_needed');
+  
   const handleSetupComplete = () => {
-    console.log('✅ Setup completed, showing main app');
-    setAppState('setup-complete');
-    
     addNotification({
       type: 'success',
       title: 'Setup Completato',
-      message: 'Il sistema è ora configurato e pronto all\'uso',
+      message: 'Il sistema è ora configurato e pronto all\'uso.',
       duration: 5000,
     });
+    setAppState('ready');
   };
+  
+  const handleError = () => setAppState('error');
 
-  // Loading state
-  if (appState === 'loading') {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
+  const renderContent = () => {
+    switch (appState) {
+      case 'checking':
+        return (
           <FirstRunCheck
             onSetupNeeded={handleSetupNeeded}
             onSetupComplete={handleSetupComplete}
+            onConnectionError={handleError}
           />
-          <Toaster position="top-right" expand={true} richColors closeButton />
-        </ThemeProvider>
-      </QueryClientProvider>
-    );
-  }
-
-  // Setup needed
-  if (appState === 'setup-needed') {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <SimpleSetupWizard onComplete={handleSetupComplete} />
-          <Toaster position="top-right" expand={true} richColors closeButton />
-        </ThemeProvider>
-      </QueryClientProvider>
-    );
-  }
-
-  // Error state
-  if (appState === 'error') {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
+        );
+      case 'setup_needed':
+        return <SimpleSetupWizard onComplete={handleSetupComplete} />;
+      case 'error':
+        return (
           <div className="min-h-screen flex items-center justify-center bg-background">
-            <div className="text-center space-y-4 max-w-md mx-auto p-6">
-              <div className="text-red-500 text-5xl">❌</div>
-              <h2 className="text-lg font-semibold text-red-600">Errore Inizializzazione</h2>
+            <div className="text-center p-6 space-y-4 max-w-md mx-auto">
+              <h2 className="text-lg font-semibold text-destructive">Errore di Connessione</h2>
               <p className="text-muted-foreground">
-                Si è verificato un errore durante l'avvio dell'applicazione
+                Impossibile comunicare con il backend. Assicurati che sia in esecuzione e riprova.
               </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-              >
-                Riavvia Applicazione
-              </button>
+              <Button onClick={() => window.location.reload()}>Riprova</Button>
             </div>
           </div>
-          <Toaster position="top-right" expand={true} richColors closeButton />
-        </ThemeProvider>
-      </QueryClientProvider>
-    );
-  }
-
-  // Main app (setup completed)
-  return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <Router>
-          <div className="min-h-screen bg-background font-sans antialiased">
-            <Routes>
-              <Route path="/" element={<Layout />}>
-                {/* Dashboard */}
+        );
+      case 'ready':
+        return (
+          <Router>
+            <Layout>
+              <Routes>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<DashboardPage />} />
-                
-                {/* Invoices */}
                 <Route path="invoices" element={<InvoicesPage />} />
                 <Route path="invoices/:id" element={<InvoiceDetailPage />} />
-                
-                {/* Transactions */}
                 <Route path="transactions" element={<TransactionsPage />} />
                 <Route path="transactions/:id" element={<TransactionDetailPage />} />
-                
-                {/* Reconciliation */}
                 <Route path="reconciliation" element={<ReconciliationPage />} />
-                
-                {/* Anagraphics */}
                 <Route path="anagraphics" element={<AnagraphicsPage />} />
                 <Route path="anagraphics/:id" element={<AnagraphicsDetailPage />} />
-                
-                {/* Analytics */}
                 <Route path="analytics" element={<AnalyticsPage />} />
-                
-                {/* Import/Export */}
                 <Route path="import" element={<ImportExportPage />} />
-                
-                {/* Settings */}
                 <Route path="settings" element={<SettingsPage />} />
-                
-                {/* Catch all */}
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Route>
-            </Routes>
-            
-            {/* Global Notifications */}
-            <Toaster 
-              position="top-right"
-              expand={true}
-              richColors
-              closeButton
-            />
-          </div>
-        </Router>
+              </Routes>
+            </Layout>
+          </Router>
+        );
+    }
+  };
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="system" storageKey="fattura-analyzer-theme">
+        <div className="min-h-screen bg-background font-sans antialiased">
+          {renderContent()}
+        </div>
+        <Toaster position="top-right" richColors closeButton />
       </ThemeProvider>
     </QueryClientProvider>
   );
