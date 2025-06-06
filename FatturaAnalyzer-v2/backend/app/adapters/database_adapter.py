@@ -80,19 +80,25 @@ class DatabaseAdapter:
             hide_commissions
         )
     
-    @staticmethod
-    async def add_anagraphics_async(anag_data: Dict[str, Any], anag_type: str) -> Optional[int]:
-        """Versione async di add_anagraphics_if_not_exists"""
-        def _add_anag():
-            conn = get_connection()
-            try:
-                cursor = conn.cursor()
-                return add_anagraphics_if_not_exists(cursor, anag_data, anag_type)
-            finally:
-                conn.close()
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _add_anag)
+@staticmethod
+async def add_anagraphics_async(anag_data: Dict[str, Any], anag_type: str) -> Optional[int]:
+    """Versione async di add_anagraphics_if_not_exists che gestisce correttamente la transazione."""
+    def _add_anag_and_commit():
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            new_id = add_anagraphics_if_not_exists(cursor, anag_data, anag_type)
+            conn.commit() # Aggiungiamo il commit qui per finalizzare l'inserimento
+            return new_id
+        except Exception as e:
+            logger.error(f"Error in _add_anag_and_commit: {e}", exc_info=True)
+            conn.rollback() # Annulla le modifiche in caso di errore
+            return None
+        finally:
+            conn.close()
+            
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_thread_pool, _add_anag_and_commit)
     
     @staticmethod
     async def add_transactions_async(transactions_df: pd.DataFrame) -> tuple:
