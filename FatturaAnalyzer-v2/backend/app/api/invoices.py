@@ -1,5 +1,5 @@
 """
-Invoices API endpoints
+Invoices API endpoints - Updated to use database adapter consistently
 """
 
 import logging
@@ -36,76 +36,61 @@ async def get_invoices_list(
     try:
         pagination = PaginationParams(page=page, size=size)
         
-        base_query = """
-            SELECT i.id, i.type, i.doc_number, i.doc_date, i.total_amount, i.due_date,
-                   i.payment_status, i.paid_amount, i.payment_method, i.anagraphics_id,
-                   i.unique_hash, i.created_at, i.updated_at, i.notes,
-                   a.denomination as counterparty_name,
-                   (i.total_amount - i.paid_amount) as open_amount
-            FROM Invoices i
-            JOIN Anagraphics a ON i.anagraphics_id = a.id
-        """
+        # Usa il database adapter per consistenza con la logica del core
+        # Prima otteniamo tutti i risultati filtrati usando la logica del core
+        invoices = await db_adapter.get_invoices_async(
+            type_filter=type_filter.value if type_filter else None,
+            status_filter=status_filter.value if status_filter else None,
+            anagraphics_id_filter=anagraphics_id,
+            limit=None  # Non limitiamo qui per permettere filtri aggiuntivi
+        )
         
-        count_query = """
-            SELECT COUNT(*) as total
-            FROM Invoices i
-            JOIN Anagraphics a ON i.anagraphics_id = a.id
-        """
+        # Applica filtri aggiuntivi non supportati dal core
+        filtered_invoices = []
+        for invoice in invoices:
+            # Search filter
+            if search:
+                search_lower = search.lower()
+                if (search_lower not in invoice.get('doc_number', '').lower() and 
+                    search_lower not in invoice.get('counterparty_name', '').lower()):
+                    continue
+            
+            # Date filters
+            if start_date or end_date:
+                try:
+                    # La data potrebbe essere string o datetime
+                    doc_date_str = invoice.get('doc_date')
+                    if isinstance(doc_date_str, str):
+                        invoice_date = datetime.fromisoformat(doc_date_str).date()
+                    else:
+                        invoice_date = doc_date_str
+                    
+                    if start_date and invoice_date < start_date:
+                        continue
+                    if end_date and invoice_date > end_date:
+                        continue
+                except (ValueError, TypeError, AttributeError):
+                    continue
+            
+            # Amount filters
+            total_amount = invoice.get('total_amount', 0)
+            if min_amount is not None and total_amount < min_amount:
+                continue
+            if max_amount is not None and total_amount > max_amount:
+                continue
+            
+            filtered_invoices.append(invoice)
         
-        conditions = []
-        params = []
-        
-        if type_filter:
-            conditions.append("i.type = ?")
-            params.append(type_filter.value)
-        
-        if status_filter:
-            conditions.append("i.payment_status = ?")
-            params.append(status_filter.value)
-        
-        if anagraphics_id:
-            conditions.append("i.anagraphics_id = ?")
-            params.append(anagraphics_id)
-        
-        if search:
-            search_condition = "(i.doc_number LIKE ? OR a.denomination LIKE ?)"
-            conditions.append(search_condition)
-            search_param = f"%{search}%"
-            params.extend([search_param, search_param])
-        
-        if start_date:
-            conditions.append("i.doc_date >= ?")
-            params.append(start_date.isoformat())
-        
-        if end_date:
-            conditions.append("i.doc_date <= ?")
-            params.append(end_date.isoformat())
-        
-        if min_amount is not None:
-            conditions.append("i.total_amount >= ?")
-            params.append(min_amount)
-        
-        if max_amount is not None:
-            conditions.append("i.total_amount <= ?")
-            params.append(max_amount)
-        
-        if conditions:
-            where_clause = " WHERE " + " AND ".join(conditions)
-            base_query += where_clause
-            count_query += where_clause
-        
-        total_result = await db_adapter.execute_query_async(count_query, tuple(params))
-        total = total_result[0]['total'] if total_result else 0
-        
-        base_query += " ORDER BY i.doc_date DESC, i.id DESC LIMIT ? OFFSET ?"
-        params.extend([pagination.limit, pagination.offset])
-        
-        items = await db_adapter.execute_query_async(base_query, tuple(params))
+        # Paginazione manuale
+        total = len(filtered_invoices)
+        start_idx = pagination.offset
+        end_idx = start_idx + pagination.size
+        paginated_items = filtered_invoices[start_idx:end_idx]
         
         pages = (total + pagination.size - 1) // pagination.size
         
         return InvoiceListResponse(
-            items=items,
+            items=paginated_items,
             total=total,
             page=pagination.page,
             size=pagination.size,
@@ -352,16 +337,7 @@ async def get_invoice_reconciliation_links(
 ):
     """Get reconciliation links for invoice"""
     try:
-        query = """
-            SELECT rl.id, rl.transaction_id, rl.reconciled_amount, rl.reconciliation_date,
-                   bt.transaction_date, bt.amount as transaction_amount, bt.description
-            FROM ReconciliationLinks rl
-            JOIN BankTransactions bt ON rl.transaction_id = bt.id
-            WHERE rl.invoice_id = ?
-            ORDER BY rl.reconciliation_date DESC
-        """
-        
-        links = await db_adapter.execute_query_async(query, (invoice_id,))
+        links = await db_adapter.get_reconciliation_links_async("invoice", invoice_id)
         
         return APIResponse(
             success=True,
