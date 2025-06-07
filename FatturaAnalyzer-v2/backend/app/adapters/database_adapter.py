@@ -101,6 +101,62 @@ class DatabaseAdapter:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(_thread_pool, _execute_write)
 
+    # 🔧 FUNZIONE MANCANTE IMPLEMENTATA
+    @staticmethod
+    async def check_duplicate_async(table: str, column: str, value: str) -> bool:
+        """Verifica se esiste già un record con quel valore nella colonna specificata"""
+        def _check_duplicate():
+            conn = None
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
+                
+                query = f"SELECT COUNT(*) as count FROM {table} WHERE {column} = ?"
+                cursor.execute(query, (value,))
+                result = cursor.fetchone()
+                
+                return result['count'] > 0 if result else False
+                
+            except Exception as e:
+                logger.error(f"Errore check_duplicate_async: {e}")
+                return False
+            finally:
+                if conn:
+                    conn.close()
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_thread_pool, _check_duplicate)
+
+    # 🔧 ALTRA FUNZIONE MANCANTE IMPLEMENTATA  
+    @staticmethod
+    async def update_transaction_state_async(
+        transaction_id: int, 
+        reconciliation_status: str, 
+        reconciled_amount: float
+    ) -> bool:
+        """Aggiorna stato riconciliazione transazione"""
+        def _update_state():
+            conn = None
+            try:
+                conn = get_connection()
+                success = update_transaction_reconciliation_state(
+                    conn, transaction_id, reconciliation_status, reconciled_amount
+                )
+                if success:
+                    conn.commit()
+                return success
+            except Exception as e:
+                if conn:
+                    conn.rollback()
+                logger.error(f"Error updating transaction state: {e}")
+                return False
+            finally:
+                if conn:
+                    conn.close()
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_thread_pool, _update_state)
+
     @staticmethod
     async def get_anagraphics_async(type_filter: str = None) -> List[Dict]:
         """Ottiene anagrafiche in modo async"""
