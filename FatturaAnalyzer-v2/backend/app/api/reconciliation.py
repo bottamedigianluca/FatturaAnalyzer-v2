@@ -954,3 +954,453 @@ async def reconciliation_health_check():
     except Exception as e:
         logger.error(f"Error in reconciliation health check: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error performing health check")
+
+
+@router.get("/dashboard")
+async def get_reconciliation_dashboard():
+    """Get comprehensive reconciliation dashboard data"""
+    try:
+        # Combina varie chiamate per dashboard completa
+        status_result = await reconciliation_adapter.get_reconciliation_status_async()
+        
+        if not status_result['success']:
+            raise HTTPException(status_code=500, detail="Error getting reconciliation status")
+        
+        # Ottieni top suggerimenti
+        opportunities = await reconciliation_adapter.get_reconciliation_opportunities_async(limit=5)
+        
+        # Link recenti
+        recent_links = await db_adapter.execute_query_async("""
+            SELECT 
+                rl.reconciled_amount,
+                rl.reconciliation_date,
+                i.doc_number,
+                i.doc_date,
+                bt.description,
+                a.denomination
+            FROM ReconciliationLinks rl
+            JOIN Invoices i ON rl.invoice_id = i.id
+            JOIN BankTransactions bt ON rl.transaction_id = bt.id
+            JOIN Anagraphics a ON i.anagraphics_id = a.id
+            ORDER BY rl.reconciliation_date DESC
+            LIMIT 10
+        """)
+        
+        # Statistiche veloci
+        quick_stats = await db_adapter.execute_query_async("""
+            SELECT 
+                (SELECT COUNT(*) FROM Invoices WHERE payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')) as open_invoices,
+                (SELECT COUNT(*) FROM BankTransactions WHERE reconciliation_status IN ('Da Riconciliare', 'Riconciliato Parz.')) as unreconciled_transactions,
+                (SELECT COUNT(*) FROM ReconciliationLinks WHERE DATE(reconciliation_date) = DATE('now')) as today_reconciliations,
+                (SELECT COALESCE(SUM(reconciled_amount), 0) FROM ReconciliationLinks WHERE DATE(reconciliation_date) = DATE('now')) as today_amount
+        """)
+        
+        dashboard_data = {
+            'summary': status_result['data']['summary'],
+            'quick_stats': quick_stats[0] if quick_stats else {},
+            'top_opportunities': opportunities[:5],
+            'recent_reconciliations': recent_links,
+            'status_breakdown': {
+                'invoices': status_result['data']['invoice_statistics'],
+                'transactions': status_result['data']['transaction_statistics']
+            }
+        }
+        
+        return APIResponse(
+            success=True,
+            message="Reconciliation dashboard data retrieved",
+            data=dashboard_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting reconciliation dashboard: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error retrieving dashboard data")
+
+
+@router.post("/suggestions/manual")
+async def create_manual_suggestion(
+    invoice_id: int = Body(..., description="Invoice ID"),
+    transaction_id: int = Body(..., description="Transaction ID"),
+    confidence: str = Body(..., description="Confidence level: Alta, Media, Bassa"),
+    notes: Optional[str] = Body(None, description="Optional notes")
+):
+    """Create a manual reconciliation suggestion"""
+    try:
+        # Valida input
+        if confidence not in ['Alta', 'Media', 'Bassa']:
+            raise HTTPException(status_code=400, detail="Confidence must be 'Alta', 'Media', or 'Bassa'")
+        
+        # Verifica che fattura e transazione esistano
+        invoice = await db_adapter.get_item_details_async('invoice', invoice_id)
+        if not invoice:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        
+        transaction = await db_adapter.get_item_details_async('transaction', transaction_id)
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        # Verifica che non sia già riconciliata
+        existing_link = await db_adapter.execute_query_async(
+            "SELECT id FROM ReconciliationLinks WHERE invoice_id = ? AND transaction_id = ?",
+            (invoice_id, transaction_id)
+        )
+        
+        if existing_link:
+            raise HTTPException(status_code=409, detail="Reconciliation link already exists")
+        
+        # Calcola importi
+        invoice_open_amount = invoice['total_amount'] - invoice['paid_amount']
+        transaction_remaining = transaction['amount'] - transaction['reconciled_amount']
+        suggested_amount = min(abs(invoice_open_amount), abs(transaction_remaining))
+        
+        # Crea suggerimento manuale
+        manual_suggestion = {
+            'confidence': confidence,
+            'confidence_score': {'Alta': 0.9, 'Media': 0.7, 'Bassa': 0.5}[confidence],
+            'invoice_ids': [invoice_id],
+            'transaction_ids': [transaction_id],
+            'description': f"Manual suggestion: {invoice['doc_number']} <-> {transaction.get('description', 'Transaction')}",
+            'total_amount': suggested_amount,
+            'match_details': {
+                'type': 'manual',
+                'invoice_open_amount': invoice_open_amount,
+                'transaction_remaining': transaction_remaining,
+                'suggested_amount': suggested_amount,
+                'notes': notes
+            },
+            'reasons': ['Manual suggestion by user']
+        }
+        
+        return APIResponse(
+            success=True,
+            message="Manual suggestion created",
+            data=manual_suggestion
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating manual suggestion: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error creating manual suggestion")
+
+
+@router.get("/export/report")
+async def export_reconciliation_report(
+    format: str = Query("json", description="Export format: json, csv"),
+    period_months: int = Query(12, ge=1, le=60, description="Period in months"),
+    include_unmatched: bool = Query(True, description="Include unmatched items")
+):
+    """Export comprehensive reconciliation report"""
+    try:
+        # Usa la funzionalità esistente dall'import/export API
+        from app.api.import_export import export_reconciliation_report as export_func
+        
+        # Delega alla funzione di export esistente
+        return await export_func(format, period_months, include_unmatched)
+        
+    except Exception as e:
+        logger.error(f"Error exporting reconciliation report: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error exporting reconciliation report")
+
+
+# === ENDPOINT DEDICATI SMART RECONCILIATION (CONTINUAZIONE) ===
+
+@router.get("/smart/clients")
+async def get_clients_with_patterns(
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of clients"),
+    min_reliability_score: float = Query(0.0, ge=0.0, le=1.0, description="Minimum reliability score filter")
+):
+    """Get list of clients with payment patterns and reliability scores"""
+    try:
+        # Verifica disponibilità smart reconciliation
+        try:
+            from app.core.smart_client_reconciliation import get_smart_reconciler
+            reconciler = get_smart_reconciler()
+            smart_available = True
+        except ImportError:
+            return APIResponse(
+                success=False,
+                message="Smart reconciliation not available",
+                data=[]
+            )
+        
+        # Ottieni clienti con storico pagamenti
+        clients_query = await db_adapter.execute_query_async("""
+            SELECT 
+                a.id,
+                a.denomination,
+                a.piva,
+                a.cf,
+                COUNT(DISTINCT rl.id) as payment_count,
+                COUNT(DISTINCT i.id) as invoice_count,
+                SUM(rl.reconciled_amount) as total_paid,
+                MIN(rl.reconciliation_date) as first_payment,
+                MAX(rl.reconciliation_date) as last_payment,
+                AVG(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as avg_payment_delay
+            FROM Anagraphics a
+            JOIN Invoices i ON a.id = i.anagraphics_id
+            JOIN ReconciliationLinks rl ON i.id = rl.invoice_id
+            WHERE a.type = 'Cliente'
+              AND rl.reconciliation_date >= date('now', '-2 years')
+            GROUP BY a.id, a.denomination, a.piva, a.cf
+            HAVING payment_count >= 2
+            ORDER BY payment_count DESC, total_paid DESC
+            LIMIT ?
+        """, (limit,))
+        
+        # Arricchisci con dati smart reconciliation
+        enriched_clients = []
+        for client in clients_query:
+            client_data = dict(client)
+            
+            # Ottieni reliability analysis se disponibile
+            try:
+                reliability = await reconciliation_adapter.analyze_client_reliability_async(client['id'])
+                client_data['reliability_analysis'] = reliability
+                
+                # Filtra per reliability score se richiesto
+                if reliability.get('reliability_score', 0) < min_reliability_score:
+                    continue
+                    
+            except Exception as e:
+                logger.warning(f"Could not get reliability for client {client['id']}: {e}")
+                client_data['reliability_analysis'] = {'error': 'Analysis not available'}
+                
+                # Skip se min_reliability_score > 0 e non abbiamo il score
+                if min_reliability_score > 0:
+                    continue
+            
+            # Aggiungi pattern info se disponibile
+            if hasattr(reconciler, 'client_patterns') and client['id'] in reconciler.client_patterns:
+                pattern = reconciler.client_patterns[client['id']]
+                client_data['pattern_info'] = {
+                    'confidence_score': pattern.confidence_score,
+                    'payment_intervals': len(pattern.payment_intervals),
+                    'typical_amounts': len(pattern.typical_amounts),
+                    'description_patterns': len(pattern.description_patterns)
+                }
+            else:
+                client_data['pattern_info'] = None
+            
+            enriched_clients.append(client_data)
+        
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(enriched_clients)} clients with payment patterns",
+            data={
+                "clients": enriched_clients,
+                "filters": {
+                    "limit": limit,
+                    "min_reliability_score": min_reliability_score
+                }
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting clients with patterns: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error retrieving clients with patterns")
+
+
+@router.post("/smart/refresh-patterns")
+async def refresh_client_patterns():
+    """Manually refresh client payment patterns cache"""
+    try:
+        # Verifica disponibilità smart reconciliation
+        try:
+            from app.core.smart_client_reconciliation import get_smart_reconciler
+            reconciler = get_smart_reconciler()
+        except ImportError:
+            raise HTTPException(status_code=501, detail="Smart reconciliation not available")
+        
+        def _refresh_patterns():
+            # Forza refresh della cache
+            reconciler.patterns_cache_time = None
+            reconciler._refresh_patterns_cache()
+            return len(reconciler.client_patterns)
+        
+        import asyncio
+        loop = asyncio.get_event_loop()
+        pattern_count = await loop.run_in_executor(None, _refresh_patterns)
+        
+        return APIResponse(
+            success=True,
+            message=f"Client payment patterns refreshed successfully",
+            data={
+                "active_patterns": pattern_count,
+                "refresh_timestamp": datetime.now().isoformat()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing client patterns: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error refreshing client patterns")
+
+
+@router.get("/smart/suggestions/{transaction_id}")
+async def get_smart_suggestions_for_transaction(
+    transaction_id: int = Path(..., description="Transaction ID"),
+    anagraphics_id: Optional[int] = Query(None, description="Specific client to analyze")
+):
+    """Get smart reconciliation suggestions for a specific transaction"""
+    try:
+        # Verifica che la transazione esista
+        transaction_check = await db_adapter.execute_query_async(
+            "SELECT id, description, amount, reconciled_amount FROM BankTransactions WHERE id = ?",
+            (transaction_id,)
+        )
+        
+        if not transaction_check:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        transaction = transaction_check[0]
+        
+        # Se non è specificato anagraphics_id, prova a identificarlo
+        if not anagraphics_id:
+            anagraphics_id = await reconciliation_adapter.find_anagraphics_from_description_async(
+                transaction['description']
+            )
+        
+        if not anagraphics_id:
+            return APIResponse(
+                success=True,
+                message="No client identified for smart suggestions",
+                data={
+                    "transaction": transaction,
+                    "smart_suggestions": [],
+                    "fallback_suggestions": []
+                }
+            )
+        
+        # Ottieni suggerimenti smart
+        smart_suggestions = await reconciliation_adapter.smart_reconcile_by_client_async(
+            anagraphics_id=anagraphics_id,
+            max_suggestions=10
+        )
+        
+        # Ottieni anche suggerimenti standard per confronto
+        standard_suggestions = await reconciliation_adapter.suggest_1_to_1_matches_async(
+            transaction_id=transaction_id,
+            anagraphics_id_filter=anagraphics_id
+        )
+        
+        return APIResponse(
+            success=True,
+            message=f"Smart suggestions retrieved for transaction {transaction_id}",
+            data={
+                "transaction": transaction,
+                "identified_client_id": anagraphics_id,
+                "smart_suggestions": smart_suggestions,
+                "standard_suggestions": standard_suggestions[:5],  # Top 5 per confronto
+                "suggestion_count": {
+                    "smart": len(smart_suggestions),
+                    "standard": len(standard_suggestions)
+                }
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting smart suggestions for transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error retrieving smart suggestions")
+
+
+@router.get("/metrics/performance")
+async def get_reconciliation_performance_metrics():
+    """Get detailed performance metrics for reconciliation system"""
+    try:
+        # Metriche performance reconciliation
+        performance_metrics = await db_adapter.execute_query_async("""
+            WITH monthly_performance AS (
+                SELECT 
+                    strftime('%Y-%m', reconciliation_date) as month,
+                    COUNT(*) as reconciliations_count,
+                    SUM(reconciled_amount) as total_amount,
+                    AVG(reconciled_amount) as avg_amount,
+                    COUNT(DISTINCT invoice_id) as unique_invoices,
+                    COUNT(DISTINCT transaction_id) as unique_transactions
+                FROM ReconciliationLinks
+                WHERE reconciliation_date >= date('now', '-12 months')
+                GROUP BY strftime('%Y-%m', reconciliation_date)
+            )
+            SELECT 
+                month,
+                reconciliations_count,
+                total_amount,
+                avg_amount,
+                unique_invoices,
+                unique_transactions,
+                ROUND((CAST(unique_invoices AS REAL) / reconciliations_count) * 100, 2) as invoice_efficiency_pct,
+                ROUND((CAST(unique_transactions AS REAL) / reconciliations_count) * 100, 2) as transaction_efficiency_pct
+            FROM monthly_performance
+            ORDER BY month
+        """)
+        
+        # Metriche accuratezza
+        accuracy_metrics = await db_adapter.execute_query_async("""
+            SELECT 
+                COUNT(*) as total_reconciliations,
+                COUNT(CASE WHEN ABS(reconciled_amount - (
+                    SELECT MIN(i.total_amount - i.paid_amount, ABS(bt.amount - bt.reconciled_amount))
+                    FROM Invoices i, BankTransactions bt 
+                    WHERE i.id = rl.invoice_id AND bt.id = rl.transaction_id
+                )) < 0.01 THEN 1 END) as exact_matches,
+                AVG(reconciled_amount) as avg_reconciled_amount,
+                STDDEV(reconciled_amount) as amount_variance
+            FROM ReconciliationLinks rl
+            WHERE reconciliation_date >= date('now', '-6 months')
+        """)
+        
+        # Tempo medio di riconciliazione
+        timing_metrics = await db_adapter.execute_query_async("""
+            SELECT 
+                AVG(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as avg_days_invoice_to_recon,
+                AVG(julianday(rl.reconciliation_date) - julianday(bt.transaction_date)) as avg_days_transaction_to_recon,
+                MIN(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as min_days_invoice_to_recon,
+                MAX(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as max_days_invoice_to_recon
+            FROM ReconciliationLinks rl
+            JOIN Invoices i ON rl.invoice_id = i.id
+            JOIN BankTransactions bt ON rl.transaction_id = bt.id
+            WHERE rl.reconciliation_date >= date('now', '-6 months')
+        """)
+        
+        # Sistema di scoring performance
+        current_month = datetime.now().strftime('%Y-%m')
+        current_performance = next(
+            (p for p in performance_metrics if p['month'] == current_month), 
+            {'reconciliations_count': 0, 'total_amount': 0}
+        )
+        
+        # Score sistema (0-100)
+        performance_score = min(100, max(0, 
+            (current_performance['reconciliations_count'] * 2) + 
+            (min(95, accuracy_metrics[0]['exact_matches'] / max(1, accuracy_metrics[0]['total_reconciliations']) * 100) if accuracy_metrics else 0)
+        ))
+        
+        return APIResponse(
+            success=True,
+            message="Performance metrics retrieved",
+            data={
+                "monthly_performance": performance_metrics,
+                "accuracy_metrics": accuracy_metrics[0] if accuracy_metrics else {},
+                "timing_metrics": timing_metrics[0] if timing_metrics else {},
+                "performance_score": round(performance_score, 1),
+                "score_breakdown": {
+                    "volume_score": min(50, current_performance['reconciliations_count'] * 2),
+                    "accuracy_score": min(50, (accuracy_metrics[0]['exact_matches'] / max(1, accuracy_metrics[0]['total_reconciliations']) * 50) if accuracy_metrics else 0)
+                },
+                "recommendations": [
+                    "Increase reconciliation frequency" if performance_score < 30 else "Good performance",
+                    "Review matching accuracy" if (accuracy_metrics[0]['exact_matches'] / max(1, accuracy_metrics[0]['total_reconciliations']) < 0.8) if accuracy_metrics else False else "Accuracy is good",
+                    "Consider automating more matches" if current_performance['reconciliations_count'] < 10 else "Volume is adequate"
+                ]
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error retrieving performance metrics")
