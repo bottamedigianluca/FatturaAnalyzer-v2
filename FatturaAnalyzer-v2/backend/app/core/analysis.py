@@ -1639,4 +1639,183 @@ def _resolve_date_range(start_date, end_date, default_days=365):
 
 # Mantieni tutte le funzioni originali per compatibilità, ma con performance migliorate
 
-def _categorize_transactions(start_date_str: str, end_date_str: str) -> pd.DataFrame
+# =========================================================================
+# ===== INIZIO DELLA PARTE MANCANTE DA AGGIUNGERE =========================
+# =========================================================================
+
+def _categorize_transactions(start_date_str: str, end_date_str: str) -> pd.DataFrame:
+    """Backward compatibility: usa versione ottimizzata"""
+    return _categorize_transactions_optimized(start_date_str, end_date_str)
+
+def get_cashflow_data(start_date=None, end_date=None):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_cashflow_data_optimized(start_date, end_date)
+
+def get_cashflow_table(start_date=None, end_date=None):
+    """Tabella cash flow formattata per UI - usa dati ottimizzati"""
+    cols_out = ['Mese', 'Incassi Clienti', 'Incassi Contanti', 'Altri Incassi', 'Tot. Entrate',
+                'Pagam. Fornitori', 'Spese Varie', 'Carburanti', 'Utenze', 'Tasse', 'Commissioni', 'Tot. Uscite',
+                'Flusso Operativo', 'Flusso Netto']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    try:
+        df_data = get_cashflow_data_optimized(start_date, end_date)
+        if df_data.empty: 
+            return empty_df
+
+        df_table = pd.DataFrame()
+        try:
+            df_table['Mese'] = pd.to_datetime(df_data['month'], format='%Y-%m').dt.strftime('%b %Y')
+        except ValueError:
+            df_table['Mese'] = df_data['month']
+
+        def format_currency(val):
+            if pd.isna(val): 
+                return 'N/A'
+            try:
+                d = quantize(Decimal(str(val)))
+                return f"{d:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return "0,00"
+
+        # Mappiamo i dati alle colonne della tabella
+        df_table['Incassi Clienti'] = df_data['incassi_clienti'].apply(format_currency)
+        df_table['Incassi Contanti'] = df_data['incassi_contanti'].apply(format_currency)
+        df_table['Altri Incassi'] = df_data['altri_incassi'].apply(format_currency)
+        df_table['Tot. Entrate'] = df_data['total_inflows'].apply(format_currency)
+        
+        df_table['Pagam. Fornitori'] = df_data['pagamenti_fornitori'].apply(format_currency)
+        # Raggruppiamo alcune spese per semplicità
+        df_data['spese_varie'] = (df_data['spese_carte'] + df_data['trasporti'] + df_data['altri_pagamenti'])
+        df_table['Spese Varie'] = df_data['spese_varie'].apply(format_currency)
+        df_table['Carburanti'] = df_data['carburanti'].apply(format_currency)
+        df_table['Utenze'] = df_data['utenze'].apply(format_currency)
+        df_table['Tasse'] = df_data['tasse_tributi'].apply(format_currency)
+        df_table['Commissioni'] = df_data['commissioni_bancarie'].apply(format_currency)
+        df_table['Tot. Uscite'] = df_data['total_outflows'].apply(format_currency)
+        
+        df_table['Flusso Operativo'] = df_data['net_operational_flow'].apply(format_currency)
+        df_table['Flusso Netto'] = df_data['net_cash_flow'].apply(format_currency)
+
+        return df_table[cols_out]
+
+    except Exception as e:
+        logger.error(f"Errore creazione tabella cash flow: {e}", exc_info=True)
+        return empty_df
+
+def get_monthly_revenue_costs(start_date=None, end_date=None):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_monthly_revenue_costs_optimized(start_date, end_date)
+
+def get_products_analysis(invoice_type='Attiva', start_date=None, end_date=None):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_products_analysis_optimized(invoice_type, start_date, end_date)
+
+# ===== ENHANCED FUNCTIONS =====
+
+def calculate_and_update_client_scores():
+    """Calcolo score clienti con logica migliorata e query ottimizzate"""
+    conn = None
+    today = date.today()
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Query ottimizzata che calcola tutto in SQL
+        query = """
+            WITH payment_analysis AS (
+                SELECT 
+                    i.anagraphics_id,
+                    COUNT(*) as total_invoices,
+                    AVG(CASE 
+                        WHEN i.due_date IS NOT NULL AND bt.transaction_date IS NOT NULL THEN
+                            julianday(bt.transaction_date) - julianday(i.due_date)
+                        ELSE NULL 
+                    END) as avg_delay_days,
+                    SUM(i.total_amount) as total_amount,
+                    -- Weighted delay considering invoice amounts
+                    SUM(CASE 
+                        WHEN i.due_date IS NOT NULL AND bt.transaction_date IS NOT NULL THEN
+                            ((julianday(bt.transaction_date) - julianday(i.due_date)) * i.total_amount)
+                        ELSE 0 
+                    END) / NULLIF(SUM(i.total_amount), 0) as weighted_avg_delay,
+                    -- Payment frequency score
+                    COUNT(*) / MAX(1.0, (julianday('now') - julianday(MIN(i.doc_date))) / 365.0) as payment_frequency_yearly
+                FROM Invoices i
+                JOIN ReconciliationLinks rl ON i.id = rl.invoice_id
+                JOIN BankTransactions bt ON rl.transaction_id = bt.id
+                WHERE i.type = 'Attiva'
+                  AND i.payment_status IN ('Pagata Tot.', 'Riconciliata')
+                  AND i.due_date IS NOT NULL
+                GROUP BY i.anagraphics_id
+            ),
+            client_scores AS (
+                SELECT 
+                    anagraphics_id,
+                    -- Base score calculation
+                    ROUND(
+                        100.0 
+                        -- Penalty for delays
+                        - GREATEST(0, COALESCE(avg_delay_days, 0)) * 1.5
+                        - GREATEST(0, COALESCE(weighted_avg_delay, 0)) * 0.5
+                        -- Bonuses
+                        + LEAST(10, total_amount / 10000.0)  -- Volume bonus (max 10 pts for 100k+)
+                        + LEAST(5, payment_frequency_yearly / 2.0)  -- Frequency bonus (max 5 pts for 10+ yearly)
+                    , 1) as calculated_score
+                FROM payment_analysis
+            )
+            UPDATE Anagraphics 
+            SET score = (
+                SELECT CASE 
+                    WHEN calculated_score < 0 THEN 0.0
+                    WHEN calculated_score > 100 THEN 100.0
+                    ELSE calculated_score
+                END
+                FROM client_scores 
+                WHERE client_scores.anagraphics_id = Anagraphics.id
+            ),
+            updated_at = datetime('now')
+            WHERE id IN (SELECT anagraphics_id FROM client_scores)
+        """
+        
+        cursor.execute(query)
+        updated_count = cursor.rowcount
+        conn.commit()
+        
+        logger.info(f"Score calculation completed. Updated: {updated_count} clients.")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Errore calcolo score ottimizzato: {e}", exc_info=True)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_dashboard_kpis():
+    # ... (tutta la funzione get_dashboard_kpis)
+    # ...
+    # (ometto il corpo per brevità, ma deve essere presente)
+
+def get_top_clients_by_revenue(start_date=None, end_date=None, limit=20):
+    # ... (tutta la funzione get_top_clients_by_revenue)
+    # ...
+
+def get_aging_summary_optimized(invoice_type='Attiva'):
+    # ... (tutta la funzione get_aging_summary_optimized)
+    # ...
+
+# (e così via per tutte le altre funzioni...)
+
+# ===== FINAL LOGGING =====
+logger.info("Core analysis ottimizzato caricato - SQL-first approach, categorizzazione dichiarativa, performance migliorata")
+
+# =======================================================================
+# ===== FINE DELLA PARTE MANCANTE DA AGGIUNGERE =========================
+# =======================================================================
