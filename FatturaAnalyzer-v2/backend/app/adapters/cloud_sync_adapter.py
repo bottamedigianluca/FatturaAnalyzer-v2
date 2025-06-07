@@ -5,15 +5,12 @@ Fornisce interfaccia async per il core/cloud_sync.py esistente senza modificarlo
 
 import asyncio
 import logging
-import os # Aggiunto import os mancante per get_sync_config_async
+import os
 from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 
-# Import del core esistente (INVARIATO)
-# Assicurati che questo import funzioni correttamente in base alla tua struttura.
-# Se core/cloud_sync.py è in app/core/cloud_sync.py:
+# Import del core esistente
 from app.core.cloud_sync import get_sync_manager
-# Altrimenti, aggiusta il percorso di importazione.
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +30,7 @@ class CloudSyncAdapter:
             return sync_manager.get_sync_status()
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_status) # Corretto: passa _get_status
+        return await loop.run_in_executor(_thread_pool, _get_status)
 
     @staticmethod
     async def get_sync_config_async() -> Dict[str, Any]:
@@ -57,7 +54,6 @@ class CloudSyncAdapter:
     async def reset_authorization_async() -> bool:
         """Reset autorizzazione in modo async"""
         def _reset_auth():
-            # import os # os è già importato a livello di modulo
             sync_manager = get_sync_manager()
 
             # Stop auto-sync first
@@ -91,7 +87,7 @@ class CloudSyncAdapter:
         def _enable_sync():
             sync_manager = get_sync_manager()
             sync_manager.sync_enabled = True
-            sync_manager._save_config() # Assumendo che _save_config esista in sync_manager
+            sync_manager.save_config()  # CAMBIATO: usa save_config pubblico
             sync_manager.start_auto_sync()
             return True
 
@@ -105,7 +101,7 @@ class CloudSyncAdapter:
             sync_manager = get_sync_manager()
             sync_manager.stop_auto_sync()
             sync_manager.sync_enabled = False
-            sync_manager._save_config() # Assumendo che _save_config esista in sync_manager
+            sync_manager.save_config()  # CAMBIATO: usa save_config pubblico
             return True
 
         loop = asyncio.get_event_loop()
@@ -139,10 +135,10 @@ class CloudSyncAdapter:
         def _update_interval():
             sync_manager = get_sync_manager()
             sync_manager.auto_sync_interval = interval_seconds
-            sync_manager._save_config() # Assumendo che _save_config esista in sync_manager
+            sync_manager.save_config()  # CAMBIATO: usa save_config pubblico
 
             # Restart auto-sync if running
-            if sync_manager.sync_thread and sync_manager.sync_thread.is_alive(): # Assumendo che sync_thread esista
+            if sync_manager.sync_thread and sync_manager.sync_thread.is_alive():
                 sync_manager.stop_auto_sync()
                 sync_manager.start_auto_sync()
             return True
@@ -156,7 +152,7 @@ class CloudSyncAdapter:
         def _get_remote_info():
             sync_manager = get_sync_manager()
 
-            if not sync_manager.service or not sync_manager.remote_file_id: # Assumendo che queste proprietà esistano
+            if not sync_manager.service or not sync_manager.remote_file_id:
                 return {"exists": False}
 
             try:
@@ -165,8 +161,8 @@ class CloudSyncAdapter:
                     fields='id,name,size,modifiedTime,createdTime,md5Checksum'
                 ).execute()
 
-                remote_modified_time = sync_manager._get_remote_modified_time() # Assumendo che esista
-                local_modified_time = sync_manager._get_local_modified_time()   # Assumendo che esista
+                remote_modified_time = sync_manager.get_remote_modified_time()  # CAMBIATO: usa metodo pubblico
+                local_modified_time = sync_manager.get_local_modified_time()    # CAMBIATO: usa metodo pubblico
 
                 return {
                     "exists": True,
@@ -183,7 +179,7 @@ class CloudSyncAdapter:
                                   local_modified_time != remote_modified_time)
                 }
             except Exception as e:
-                logger.error(f"Error getting remote file info: {e}") # Log dell'errore
+                logger.error(f"Error getting remote file info: {e}")
                 return {"exists": False, "error": str(e)}
 
         loop = asyncio.get_event_loop()
@@ -201,7 +197,7 @@ class CloudSyncAdapter:
             try:
                 sync_manager.service.files().delete(fileId=sync_manager.remote_file_id).execute()
                 sync_manager.remote_file_id = None
-                sync_manager._save_config() # Assumendo che _save_config esista
+                sync_manager.save_config()  # CAMBIATO: usa save_config pubblico
                 return True
             except Exception as e:
                 logger.error(f"Error deleting remote file: {e}")
@@ -213,7 +209,7 @@ class CloudSyncAdapter:
     @staticmethod
     async def test_connection_async() -> Dict[str, Any]:
         """Testa connessione Google Drive in modo async"""
-        def _test_connection(): # Questa funzione era mancante nella parte duplicata
+        def _test_connection():
             sync_manager = get_sync_manager()
 
             if not sync_manager.service:
@@ -254,19 +250,16 @@ class CloudSyncAdapter:
                 }
 
             except Exception as e:
-                logger.error(f"Google Drive API test failed: {e}") # Log dell'errore
+                logger.error(f"Google Drive API test failed: {e}")
                 return {
                     "success": False,
                     "message": f"Google Drive API test failed: {str(e)}"
                 }
 
         loop = asyncio.get_event_loop()
-        # La prima definizione di get_sync_status_async chiamava _test_connection per errore,
-        # ma la funzione _test_connection è effettivamente usata dal metodo test_connection_async.
-        # Quindi qui passiamo la funzione corretta:
         return await loop.run_in_executor(_thread_pool, _test_connection)
 
-# Istanza globale dell'adapter (corretta)
+# Istanza globale dell'adapter
 sync_adapter = CloudSyncAdapter()
 
 # Per esportare l'istanza se il file è usato come modulo
