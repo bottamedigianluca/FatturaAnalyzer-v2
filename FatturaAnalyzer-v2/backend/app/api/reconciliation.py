@@ -1,5 +1,5 @@
 """
-Reconciliation API endpoints - Aggiornato per usare adapter pattern completo
+Reconciliation API endpoints - CORRETTO - Errori di scoping risolti
 Tutte le chiamate passano attraverso l'adapter invece di accedere direttamente al core
 """
 
@@ -85,6 +85,18 @@ async def get_client_reconciliation_suggestions(
 ):
     """Get reconciliation suggestions for specific client using smart reconciliation"""
     try:
+        # 🔧 CORREZIONE: Verifica cliente prima di procedere
+        anag_check = await db_adapter.execute_query_async(
+            "SELECT id, denomination FROM Anagraphics WHERE id = ? AND type = 'Cliente'",
+            (anagraphics_id,)
+        )
+        
+        if not anag_check:
+            raise HTTPException(status_code=404, detail="Client not found")
+        
+        # 🔧 CORREZIONE: Salva i dati del cliente in una variabile
+        client_data = anag_check[0]
+        
         # Usa adapter per smart reconciliation
         suggestions = await reconciliation_adapter.smart_reconcile_by_client_async(
             anagraphics_id=anagraphics_id,
@@ -93,9 +105,9 @@ async def get_client_reconciliation_suggestions(
         
         return APIResponse(
             success=True,
-            message=f"Found {len(suggestions)} suggestions for client {anag_check[0]['denomination']}",
+            message=f"Found {len(suggestions)} suggestions for client {client_data['denomination']}",  # 🔧 CORRETTO
             data={
-                "client": anag_check[0],
+                "client": client_data,  # 🔧 CORRETTO
                 "suggestions": suggestions
             }
         )
@@ -113,7 +125,7 @@ async def get_client_payment_patterns(
 ):
     """Get payment patterns for a specific client (Smart Reconciliation)"""
     try:
-        # Verifica che l'anagrafica esista
+        # 🔧 CORREZIONE: Stessa logica per evitare errori di scoping
         anag_check = await db_adapter.execute_query_async(
             "SELECT id, denomination FROM Anagraphics WHERE id = ? AND type = 'Cliente'",
             (anagraphics_id,)
@@ -122,6 +134,8 @@ async def get_client_payment_patterns(
         if not anag_check:
             raise HTTPException(status_code=404, detail="Client not found")
         
+        client_data = anag_check[0]  # 🔧 SALVA DATI CLIENTE
+        
         # Ottieni pattern di pagamento
         patterns = await reconciliation_adapter.get_client_payment_patterns_async(anagraphics_id)
         
@@ -129,14 +143,14 @@ async def get_client_payment_patterns(
             return APIResponse(
                 success=False,
                 message=patterns['error'],
-                data={"client": anag_check[0]}
+                data={"client": client_data}  # 🔧 USA VARIABILE SALVATA
             )
         
         return APIResponse(
             success=True,
-            message=f"Payment patterns retrieved for client {anag_check[0]['denomination']}",
+            message=f"Payment patterns retrieved for client {client_data['denomination']}",  # 🔧 CORRETTO
             data={
-                "client": anag_check[0],
+                "client": client_data,  # 🔧 CORRETTO
                 "patterns": patterns
             }
         )
@@ -154,7 +168,7 @@ async def get_client_reliability_analysis(
 ):
     """Get payment reliability analysis for a specific client"""
     try:
-        # Verifica che l'anagrafica esista
+        # 🔧 CORREZIONE: Pattern corretto per evitare scope errors
         anag_check = await db_adapter.execute_query_async(
             "SELECT id, denomination FROM Anagraphics WHERE id = ? AND type = 'Cliente'",
             (anagraphics_id,)
@@ -163,14 +177,16 @@ async def get_client_reliability_analysis(
         if not anag_check:
             raise HTTPException(status_code=404, detail="Client not found")
         
+        client_data = anag_check[0]  # 🔧 SALVA DATI
+        
         # Analisi affidabilità
         reliability = await reconciliation_adapter.analyze_client_reliability_async(anagraphics_id)
         
         return APIResponse(
             success=True,
-            message=f"Reliability analysis completed for client {anag_check[0]['denomination']}",
+            message=f"Reliability analysis completed for client {client_data['denomination']}",  # 🔧 CORRETTO
             data={
-                "client": anag_check[0],
+                "client": client_data,  # 🔧 CORRETTO
                 "reliability_analysis": reliability
             }
         )
@@ -811,6 +827,67 @@ async def get_matching_rules():
         raise HTTPException(status_code=500, detail="Error retrieving matching rules")
 
 
+@router.get("/smart/overview")
+async def get_smart_reconciliation_overview():
+    """Get overview of smart reconciliation capabilities and status"""
+    try:
+        # Verifica disponibilità smart reconciliation
+        try:
+            from app.core.smart_client_reconciliation import get_smart_reconciler
+            smart_available = True
+            
+            # Ottieni statistiche pattern
+            reconciler = get_smart_reconciler()
+            pattern_count = len(reconciler.client_patterns) if hasattr(reconciler, 'client_patterns') else 0
+            
+        except ImportError:
+            smart_available = False
+            pattern_count = 0
+        
+        # Statistiche clienti con pattern
+        if smart_available:
+            client_pattern_stats = await db_adapter.execute_query_async("""
+                SELECT 
+                    COUNT(DISTINCT i.anagraphics_id) as clients_with_history,
+                    COUNT(DISTINCT rl.transaction_id) as pattern_transactions,
+                    AVG(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as avg_payment_delay
+                FROM ReconciliationLinks rl
+                JOIN Invoices i ON rl.invoice_id = i.id
+                WHERE rl.reconciliation_date >= date('now', '-2 years')
+                  AND i.type = 'Attiva'
+            """)
+            
+            stats = client_pattern_stats[0] if client_pattern_stats else {}
+        else:
+            stats = {}
+        
+        overview_data = {
+            'smart_reconciliation_available': smart_available,
+            'active_client_patterns': pattern_count,
+            'statistics': {
+                'clients_with_payment_history': stats.get('clients_with_history', 0),
+                'historical_pattern_transactions': stats.get('pattern_transactions', 0),
+                'average_payment_delay_days': round(stats.get('avg_payment_delay', 0), 1) if stats.get('avg_payment_delay') else 0
+            },
+            'features': {
+                'client_pattern_analysis': smart_available,
+                'sequence_detection': smart_available,
+                'payment_reliability_scoring': smart_available,
+                'automatic_pattern_learning': smart_available
+            }
+        }
+        
+        return APIResponse(
+            success=True,
+            message="Smart reconciliation overview retrieved",
+            data=overview_data
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting smart reconciliation overview: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error retrieving smart reconciliation overview")
+
+
 @router.get("/health-check")
 async def reconciliation_health_check():
     """Health check for reconciliation system"""
@@ -877,426 +954,3 @@ async def reconciliation_health_check():
     except Exception as e:
         logger.error(f"Error in reconciliation health check: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error performing health check")
-
-
-@router.post("/suggestions/manual")
-async def create_manual_suggestion(
-    invoice_id: int = Body(..., description="Invoice ID"),
-    transaction_id: int = Body(..., description="Transaction ID"),
-    confidence: str = Body(..., description="Confidence level: Alta, Media, Bassa"),
-    notes: Optional[str] = Body(None, description="Optional notes")
-):
-    """Create a manual reconciliation suggestion"""
-    try:
-        # Valida input
-        if confidence not in ['Alta', 'Media', 'Bassa']:
-            raise HTTPException(status_code=400, detail="Confidence must be 'Alta', 'Media', or 'Bassa'")
-        
-        # Verifica che fattura e transazione esistano
-        invoice = await db_adapter.get_item_details_async('invoice', invoice_id)
-        if not invoice:
-            raise HTTPException(status_code=404, detail="Invoice not found")
-        
-        transaction = await db_adapter.get_item_details_async('transaction', transaction_id)
-        if not transaction:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        # Verifica che non sia già riconciliata
-        existing_link = await db_adapter.execute_query_async(
-            "SELECT id FROM ReconciliationLinks WHERE invoice_id = ? AND transaction_id = ?",
-            (invoice_id, transaction_id)
-        )
-        
-        if existing_link:
-            raise HTTPException(status_code=409, detail="Reconciliation link already exists")
-        
-        # Calcola importi
-        invoice_open_amount = invoice['total_amount'] - invoice['paid_amount']
-        transaction_remaining = transaction['amount'] - transaction['reconciled_amount']
-        suggested_amount = min(abs(invoice_open_amount), abs(transaction_remaining))
-        
-        # Crea suggerimento manuale
-        manual_suggestion = {
-            'confidence': confidence,
-            'confidence_score': {'Alta': 0.9, 'Media': 0.7, 'Bassa': 0.5}[confidence],
-            'invoice_ids': [invoice_id],
-            'transaction_ids': [transaction_id],
-            'description': f"Manual suggestion: {invoice['doc_number']} <-> {transaction.get('description', 'Transaction')}",
-            'total_amount': suggested_amount,
-            'match_details': {
-                'type': 'manual',
-                'invoice_open_amount': invoice_open_amount,
-                'transaction_remaining': transaction_remaining,
-                'suggested_amount': suggested_amount,
-                'notes': notes
-            },
-            'reasons': ['Manual suggestion by user']
-        }
-        
-        return APIResponse(
-            success=True,
-            message="Manual suggestion created",
-            data=manual_suggestion
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating manual suggestion: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error creating manual suggestion")
-
-
-@router.get("/export/report")
-async def export_reconciliation_report(
-    format: str = Query("json", description="Export format: json, csv"),
-    period_months: int = Query(12, ge=1, le=60, description="Period in months"),
-    include_unmatched: bool = Query(True, description="Include unmatched items")
-):
-    """Export comprehensive reconciliation report"""
-    try:
-        # Usa la funzionalità esistente dall'import/export API
-        from app.api.import_export import export_reconciliation_report as export_func
-        
-        # Delega alla funzione di export esistente
-        return await export_func(format, period_months, include_unmatched)
-        
-    except Exception as e:
-        logger.error(f"Error exporting reconciliation report: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error exporting reconciliation report")
-
-
-@router.get("/dashboard")
-async def get_reconciliation_dashboard():
-    """Get comprehensive reconciliation dashboard data"""
-    try:
-        # Combina varie chiamate per dashboard completa
-        status_result = await reconciliation_adapter.get_reconciliation_status_async()
-        
-        if not status_result['success']:
-            raise HTTPException(status_code=500, detail="Error getting reconciliation status")
-        
-        # Ottieni top suggerimenti
-        opportunities = await reconciliation_adapter.get_reconciliation_opportunities_async(limit=5)
-        
-        # Link recenti
-        recent_links = await db_adapter.execute_query_async("""
-            SELECT 
-                rl.reconciled_amount,
-                rl.reconciliation_date,
-                i.doc_number,
-                i.doc_date,
-                bt.description,
-                a.denomination
-            FROM ReconciliationLinks rl
-            JOIN Invoices i ON rl.invoice_id = i.id
-            JOIN BankTransactions bt ON rl.transaction_id = bt.id
-            JOIN Anagraphics a ON i.anagraphics_id = a.id
-            ORDER BY rl.reconciliation_date DESC
-            LIMIT 10
-        """)
-        
-        # Statistiche veloci
-        quick_stats = await db_adapter.execute_query_async("""
-            SELECT 
-                (SELECT COUNT(*) FROM Invoices WHERE payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')) as open_invoices,
-                (SELECT COUNT(*) FROM BankTransactions WHERE reconciliation_status IN ('Da Riconciliare', 'Riconciliato Parz.')) as unreconciled_transactions,
-                (SELECT COUNT(*) FROM ReconciliationLinks WHERE DATE(reconciliation_date) = DATE('now')) as today_reconciliations,
-                (SELECT COALESCE(SUM(reconciled_amount), 0) FROM ReconciliationLinks WHERE DATE(reconciliation_date) = DATE('now')) as today_amount
-        """)
-        
-        dashboard_data = {
-            'summary': status_result['data']['summary'],
-            'quick_stats': quick_stats[0] if quick_stats else {},
-            'top_opportunities': opportunities[:5],
-            'recent_reconciliations': recent_links,
-            'status_breakdown': {
-                'invoices': status_result['data']['invoice_statistics'],
-                'transactions': status_result['data']['transaction_statistics']
-            }
-        }
-        
-        return APIResponse(
-            success=True,
-            message="Reconciliation dashboard data retrieved",
-            data=dashboard_data
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting reconciliation dashboard: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error retrieving dashboard data")
-
-
-# === ENDPOINT DEDICATI SMART RECONCILIATION ===
-
-@router.get("/smart/overview")
-async def get_smart_reconciliation_overview():
-    """Get overview of smart reconciliation capabilities and status"""
-    try:
-        # Verifica disponibilità smart reconciliation
-        try:
-            from app.core.smart_client_reconciliation import get_smart_reconciler
-            smart_available = True
-            
-            # Ottieni statistiche pattern
-            reconciler = get_smart_reconciler()
-            pattern_count = len(reconciler.client_patterns) if hasattr(reconciler, 'client_patterns') else 0
-            
-        except ImportError:
-            smart_available = False
-            pattern_count = 0
-        
-        # Statistiche clienti con pattern
-        if smart_available:
-            client_pattern_stats = await db_adapter.execute_query_async("""
-                SELECT 
-                    COUNT(DISTINCT i.anagraphics_id) as clients_with_history,
-                    COUNT(DISTINCT rl.transaction_id) as pattern_transactions,
-                    AVG(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as avg_payment_delay
-                FROM ReconciliationLinks rl
-                JOIN Invoices i ON rl.invoice_id = i.id
-                WHERE rl.reconciliation_date >= date('now', '-2 years')
-                  AND i.type = 'Attiva'
-            """)
-            
-            stats = client_pattern_stats[0] if client_pattern_stats else {}
-        else:
-            stats = {}
-        
-        overview_data = {
-            'smart_reconciliation_available': smart_available,
-            'active_client_patterns': pattern_count,
-            'statistics': {
-                'clients_with_payment_history': stats.get('clients_with_history', 0),
-                'historical_pattern_transactions': stats.get('pattern_transactions', 0),
-                'average_payment_delay_days': round(stats.get('avg_payment_delay', 0), 1) if stats.get('avg_payment_delay') else 0
-            },
-            'features': {
-                'client_pattern_analysis': smart_available,
-                'sequence_detection': smart_available,
-                'payment_reliability_scoring': smart_available,
-                'automatic_pattern_learning': smart_available
-            }
-        }
-        
-        return APIResponse(
-            success=True,
-            message="Smart reconciliation overview retrieved",
-            data=overview_data
-        )
-        
-    except Exception as e:
-        logger.error(f"Error getting smart reconciliation overview: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error retrieving smart reconciliation overview")
-
-
-@router.get("/smart/clients")
-async def get_clients_with_patterns(
-    limit: int = Query(50, ge=1, le=200, description="Maximum number of clients"),
-    min_reliability_score: float = Query(0.0, ge=0.0, le=1.0, description="Minimum reliability score filter")
-):
-    """Get list of clients with payment patterns and reliability scores"""
-    try:
-        # Verifica disponibilità smart reconciliation
-        try:
-            from app.core.smart_client_reconciliation import get_smart_reconciler
-            reconciler = get_smart_reconciler()
-            smart_available = True
-        except ImportError:
-            return APIResponse(
-                success=False,
-                message="Smart reconciliation not available",
-                data=[]
-            )
-        
-        # Ottieni clienti con storico pagamenti
-        clients_query = await db_adapter.execute_query_async("""
-            SELECT 
-                a.id,
-                a.denomination,
-                a.piva,
-                a.cf,
-                COUNT(DISTINCT rl.id) as payment_count,
-                COUNT(DISTINCT i.id) as invoice_count,
-                SUM(rl.reconciled_amount) as total_paid,
-                MIN(rl.reconciliation_date) as first_payment,
-                MAX(rl.reconciliation_date) as last_payment,
-                AVG(julianday(rl.reconciliation_date) - julianday(i.doc_date)) as avg_payment_delay
-            FROM Anagraphics a
-            JOIN Invoices i ON a.id = i.anagraphics_id
-            JOIN ReconciliationLinks rl ON i.id = rl.invoice_id
-            WHERE a.type = 'Cliente'
-              AND rl.reconciliation_date >= date('now', '-2 years')
-            GROUP BY a.id, a.denomination, a.piva, a.cf
-            HAVING payment_count >= 2
-            ORDER BY payment_count DESC, total_paid DESC
-            LIMIT ?
-        """, (limit,))
-        
-        # Arricchisci con dati smart reconciliation
-        enriched_clients = []
-        for client in clients_query:
-            client_data = dict(client)
-            
-            # Ottieni reliability analysis se disponibile
-            try:
-                reliability = await reconciliation_adapter.analyze_client_reliability_async(client['id'])
-                client_data['reliability_analysis'] = reliability
-                
-                # Filtra per reliability score se richiesto
-                if reliability.get('reliability_score', 0) < min_reliability_score:
-                    continue
-                    
-            except Exception as e:
-                logger.warning(f"Could not get reliability for client {client['id']}: {e}")
-                client_data['reliability_analysis'] = {'error': 'Analysis not available'}
-                
-                # Skip se min_reliability_score > 0 e non abbiamo il score
-                if min_reliability_score > 0:
-                    continue
-            
-            # Aggiungi pattern info se disponibile
-            if hasattr(reconciler, 'client_patterns') and client['id'] in reconciler.client_patterns:
-                pattern = reconciler.client_patterns[client['id']]
-                client_data['pattern_info'] = {
-                    'confidence_score': pattern.confidence_score,
-                    'payment_intervals': len(pattern.payment_intervals),
-                    'typical_amounts': len(pattern.typical_amounts),
-                    'description_patterns': len(pattern.description_patterns)
-                }
-            else:
-                client_data['pattern_info'] = None
-            
-            enriched_clients.append(client_data)
-        
-        return APIResponse(
-            success=True,
-            message=f"Retrieved {len(enriched_clients)} clients with payment patterns",
-            data={
-                "clients": enriched_clients,
-                "filters": {
-                    "limit": limit,
-                    "min_reliability_score": min_reliability_score
-                }
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Error getting clients with patterns: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error retrieving clients with patterns")
-
-
-@router.post("/smart/refresh-patterns")
-async def refresh_client_patterns():
-    """Manually refresh client payment patterns cache"""
-    try:
-        # Verifica disponibilità smart reconciliation
-        try:
-            from app.core.smart_client_reconciliation import get_smart_reconciler
-            reconciler = get_smart_reconciler()
-        except ImportError:
-            raise HTTPException(status_code=501, detail="Smart reconciliation not available")
-        
-        def _refresh_patterns():
-            # Forza refresh della cache
-            reconciler.patterns_cache_time = None
-            reconciler._refresh_patterns_cache()
-            return len(reconciler.client_patterns)
-        
-        import asyncio
-        loop = asyncio.get_event_loop()
-        pattern_count = await loop.run_in_executor(None, _refresh_patterns)
-        
-        return APIResponse(
-            success=True,
-            message=f"Client payment patterns refreshed successfully",
-            data={
-                "active_patterns": pattern_count,
-                "refresh_timestamp": datetime.now().isoformat()
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error refreshing client patterns: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error refreshing client patterns")
-
-
-@router.get("/smart/suggestions/{transaction_id}")
-async def get_smart_suggestions_for_transaction(
-    transaction_id: int = Path(..., description="Transaction ID"),
-    anagraphics_id: Optional[int] = Query(None, description="Specific client to analyze")
-):
-    """Get smart reconciliation suggestions for a specific transaction"""
-    try:
-        # Verifica che la transazione esista
-        transaction_check = await db_adapter.execute_query_async(
-            "SELECT id, description, amount, reconciled_amount FROM BankTransactions WHERE id = ?",
-            (transaction_id,)
-        )
-        
-        if not transaction_check:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        transaction = transaction_check[0]
-        
-        # Se non è specificato anagraphics_id, prova a identificarlo
-        if not anagraphics_id:
-            anagraphics_id = await reconciliation_adapter.find_anagraphics_from_description_async(
-                transaction['description']
-            )
-        
-        if not anagraphics_id:
-            return APIResponse(
-                success=True,
-                message="No client identified for smart suggestions",
-                data={
-                    "transaction": transaction,
-                    "smart_suggestions": [],
-                    "fallback_suggestions": []
-                }
-            )
-        
-        # Ottieni suggerimenti smart
-        smart_suggestions = await reconciliation_adapter.smart_reconcile_by_client_async(
-            anagraphics_id=anagraphics_id,
-            max_suggestions=10
-        )
-        
-        # Ottieni anche suggerimenti standard per confronto
-        standard_suggestions = await reconciliation_adapter.suggest_1_to_1_matches_async(
-            transaction_id=transaction_id,
-            anagraphics_id_filter=anagraphics_id
-        )
-        
-        return APIResponse(
-            success=True,
-            message=f"Smart suggestions retrieved for transaction {transaction_id}",
-            data={
-                "transaction": transaction,
-                "identified_client_id": anagraphics_id,
-                "smart_suggestions": smart_suggestions,
-                "standard_suggestions": standard_suggestions[:5],  # Top 5 per confronto
-                "suggestion_count": {
-                    "smart": len(smart_suggestions),
-                    "standard": len(standard_suggestions)
-                }
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting smart suggestions for transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error retrieving smart suggestions") Verifica che l'anagrafica esista
-        anag_check = await db_adapter.execute_query_async(
-            "SELECT id, denomination FROM Anagraphics WHERE id = ? AND type = 'Cliente'",
-            (anagraphics_id,)
-        )
-        
-        if not anag_check:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        #
