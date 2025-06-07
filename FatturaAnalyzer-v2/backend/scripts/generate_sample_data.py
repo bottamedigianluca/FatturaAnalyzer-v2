@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import random
+import hashlib
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -8,6 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.adapters.database_adapter import db_adapter
 from app.core.utils import calculate_invoice_hash
+
+# Funzione di calcolo hash per le transazioni
+def calculate_transaction_hash(trans_date, amount, description):
+    """Calcola hash per transazione bancaria"""
+    hash_input = f"{trans_date.isoformat()}_{amount}_{description}"
+    return hashlib.sha256(hash_input.encode()).hexdigest()
 
 SAMPLE_COMPANIES = [
     {"denomination": "Acme Corporation SRL", "piva": "12345678901", "city": "Milano", "province": "MI"},
@@ -22,13 +29,33 @@ SAMPLE_SUPPLIERS = [
     {"denomination": "Office Supplies SRL", "piva": "89012345678", "city": "Palermo", "province": "PA"},
 ]
 
+async def check_and_setup_database():
+    """Verifica se il database esiste e lo inizializza se necessario"""
+    print("🔍 Checking database status...")
+    
+    db_exists = await db_adapter.check_database_exists_async()
+    
+    if not db_exists:
+        print("📊 Database not found or incomplete. Setting up...")
+        try:
+            await db_adapter.create_tables_async()
+            print("✅ Database tables created successfully")
+        except Exception as e:
+            print(f"❌ Failed to create database tables: {e}")
+            return False
+    else:
+        print("✅ Database found and ready")
+    
+    return True
+
 async def generate_anagraphics():
     print("👥 Generating sample anagraphics...")
     created_anag_ids = []
+    
+    # Genera clienti
     for i, company in enumerate(SAMPLE_COMPANIES, 1):
         anag_data = {
             **company,
-            "type": "Cliente",
             "cf": company["piva"],
             "address": f"Via Roma {i * 10}",
             "cap": f"001{i:02d}",
@@ -36,6 +63,7 @@ async def generate_anagraphics():
             "email": f"info@{company['denomination'].lower().replace(' ', '').replace('srl', '').replace('spa', '')}.it",
             "phone": f"+39 0{i} 123456{i}"
         }
+        
         anag_id = await db_adapter.add_anagraphics_async(anag_data, "Cliente")
         if anag_id:
             print(f"  ✅ Created client: {company['denomination']} (ID: {anag_id})")
@@ -43,10 +71,10 @@ async def generate_anagraphics():
         else:
             print(f"  ⚠️ Failed to create client: {company['denomination']}")
 
+    # Genera fornitori
     for i, supplier in enumerate(SAMPLE_SUPPLIERS, 1):
         anag_data = {
             **supplier,
-            "type": "Fornitore",
             "cf": supplier["piva"],
             "address": f"Via Milano {i * 5}",
             "cap": f"002{i:02d}",
@@ -54,6 +82,7 @@ async def generate_anagraphics():
             "email": f"fatture@{supplier['denomination'].lower().replace(' ', '').replace('srl', '').replace('spa', '')}.it",
             "phone": f"+39 0{i+5} 987654{i}"
         }
+        
         anag_id = await db_adapter.add_anagraphics_async(anag_data, "Fornitore")
         if anag_id:
             print(f"  ✅ Created supplier: {supplier['denomination']} (ID: {anag_id})")
@@ -70,6 +99,7 @@ async def generate_invoices(anagraphics_map):
         return
 
     base_date = date.today() - timedelta(days=180)
+    invoice_count = 0
 
     for i in range(50):
         anag_id = random.choice(list(anagraphics_map.keys()))
@@ -81,6 +111,8 @@ async def generate_invoices(anagraphics_map):
         amount = round(random.uniform(50, 2500), 2)
         doc_number = f"SAMPLE{doc_date.year}{i+1:04d}"
         doc_type = "TD01"
+        
+        # Distribuzione status realistici
         statuses = ["Aperta", "Pagata Tot.", "Pagata Parz.", "Scaduta"]
         weights = [0.3, 0.5, 0.1, 0.1] if invoice_type == "Attiva" else [0.2, 0.6, 0.1, 0.1]
         status = random.choices(statuses, weights=weights)[0]
@@ -92,6 +124,7 @@ async def generate_invoices(anagraphics_map):
         else:
             paid_amount = 0.0
             
+        # Genera hash unico
         unique_hash = calculate_invoice_hash(
             cedente_id=anag_details["piva"] if invoice_type == "Passiva" else "MYCOMPANYPIVA",
             cessionario_id=anag_details["piva"] if invoice_type == "Attiva" else "MYCOMPANYPIVA",
@@ -114,15 +147,19 @@ async def generate_invoices(anagraphics_map):
                 random.choice(["Bonifico", "Carta", "Contanti", "RID"]), unique_hash
             ))
             if invoice_id:
+                invoice_count += 1
                 print(f"  ✅ Created invoice: {doc_number} - {anag_details['denomination']} - €{amount:.2f} - Status: {status}")
             else:
                 print(f"  ⚠️ Failed to create invoice {doc_number} (no ID returned)")
         except Exception as e:
             print(f"  ❌ Error creating invoice {doc_number}: {e}")
+    
+    print(f"📋 Generated {invoice_count} invoices successfully")
 
 async def generate_transactions():
     print("💳 Generating sample bank transactions...")
     base_date = date.today() - timedelta(days=90)
+    
     transaction_types = [
         ("VERSAMENTO CLIENTE", lambda: random.uniform(100, 3000), True),
         ("BONIFICO FORNITORE", lambda: -random.uniform(50, 2000), False),
@@ -134,10 +171,11 @@ async def generate_transactions():
         ("INTERESSI ATTIVI", lambda: random.uniform(1, 50), True)
     ]
 
-    anagraphics_map = {
-        anag["id"]: anag 
-        for anag in await db_adapter.execute_query_async("SELECT id, denomination FROM Anagraphics")
-    }
+    # Ottieni anagrafiche per descrizioni realistiche
+    anagraphics_list = await db_adapter.get_anagraphics_async()
+    anagraphics_map = {anag["id"]: anag for anag in anagraphics_list}
+
+    transaction_count = 0
 
     for i in range(100):
         random_days = random.randint(0, 90)
@@ -148,19 +186,27 @@ async def generate_transactions():
 
         description_parts = [desc_template]
         if "CLIENTE" in desc_template and anagraphics_map:
-            client = random.choice([anag for anag_id, anag in anagraphics_map.items() if anag_id % 3 == 0] or list(anagraphics_map.values()))
-            description_parts.append(client['denomination'][:15])
+            # Seleziona un cliente casuale
+            clients = [anag for anag in anagraphics_map.values() if anag.get("type") == "Cliente"]
+            if clients:
+                client = random.choice(clients)
+                description_parts.append(client['denomination'][:15])
         elif "FORNITORE" in desc_template and anagraphics_map:
-            supplier = random.choice([anag for anag_id, anag in anagraphics_map.items() if anag_id % 3 == 1] or list(anagraphics_map.values()))
-            description_parts.append(supplier['denomination'][:15])
+            # Seleziona un fornitore casuale
+            suppliers = [anag for anag in anagraphics_map.values() if anag.get("type") == "Fornitore"]
+            if suppliers:
+                supplier = random.choice(suppliers)
+                description_parts.append(supplier['denomination'][:15])
         
         description_parts.append(f"RIF{random.randint(1000, 9999)}")
         description = " ".join(description_parts)
 
+        # Status realistici
         recon_status = random.choices(
             ["Da Riconciliare", "Riconciliato Tot.", "Riconciliato Parz.", "Ignorato"],
             weights=[0.5, 0.3, 0.1, 0.1]
         )[0]
+        
         reconciled_amount = 0.0
         if recon_status == "Riconciliato Tot.":
             reconciled_amount = abs(amount)
@@ -181,15 +227,27 @@ async def generate_transactions():
                 description, unique_hash, reconciled_amount, recon_status
             ))
             if trans_id:
+                transaction_count += 1
                 print(f"  ✅ Created transaction: {trans_date.strftime('%d/%m/%y')} - {description[:30]}... - €{amount:.2f} - {recon_status}")
             else:
                 print(f"  ⚠️ Failed to create transaction for {description[:30]}")
         except Exception as e:
-            print(f"  ❌ Error creating transaction for {description[:30]}: {e} (Hash: {unique_hash})")
+            print(f"  ❌ Error creating transaction for {description[:30]}: {e}")
+
+    print(f"💳 Generated {transaction_count} transactions successfully")
 
 async def main_async():
     print("--- STARTING SAMPLE DATA GENERATION ---")
+    
+    # 1. Verifica e setup database
+    if not await check_and_setup_database():
+        print("❌ Failed to setup database. Exiting.")
+        return
+    
+    # 2. Genera anagrafiche
     created_anag_ids = await generate_anagraphics()
+    
+    # 3. Genera fatture se ci sono anagrafiche
     if created_anag_ids:
         anagraphics_details = await db_adapter.execute_query_async(
             f"SELECT id, denomination, type, piva FROM Anagraphics WHERE id IN ({','.join('?'*len(created_anag_ids))})",
@@ -198,13 +256,18 @@ async def main_async():
         anagraphics_map = {row['id']: dict(row) for row in anagraphics_details}
         await generate_invoices(anagraphics_map)
     else:
-        print("Skipping invoice generation as no anagraphics were created/found.")
+        print("⚠️ Skipping invoice generation as no anagraphics were created/found.")
+    
+    # 4. Genera transazioni
     await generate_transactions()
-    print("--- SAMPLE DATA GENERATION COMPLETED ---")
+    
+    print("✅ --- SAMPLE DATA GENERATION COMPLETED ---")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main_async())
     except Exception as e:
         print(f"❌ Critical error during sample data generation: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
