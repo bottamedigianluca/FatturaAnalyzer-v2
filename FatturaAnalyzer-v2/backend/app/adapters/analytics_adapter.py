@@ -1419,4 +1419,9 @@ class AnalyticsAdapter:
         return {
             'forecast': forecast,
             'historical_patterns': historical,
-            'methodology':
+            'methodology': 'hybrid_model_with_scheduled_payments'
+        }
+
+
+# Instance dell'adapter pronta per l'uso
+analytics_adapter = AnalyticsAdapter()
