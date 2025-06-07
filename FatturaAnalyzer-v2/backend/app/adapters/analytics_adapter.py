@@ -10,10 +10,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 from datetime import date, datetime
 
-# Import del core COMPLETO - TUTTE le funzioni
+# Import del core COMPLETO - TUTTE le funzioni (CORRETTO)
 from app.core.analysis import (
-    # Funzioni base già presenti
-    calculate_main_kpis,
+    # Funzioni base già presenti (CORRETTO: calculate_main_kpis -> get_dashboard_kpis)
+    get_dashboard_kpis,  # <-- CORRETTO! Era calculate_main_kpis
     get_monthly_cash_flow_analysis,
     get_monthly_revenue_analysis,
     get_top_clients_by_revenue,
@@ -46,7 +46,6 @@ from app.core.analysis import (
     get_product_monthly_sales,
     get_product_sales_comparison,
     get_top_suppliers_by_cost,
-    get_dashboard_kpis,
     get_due_dates_in_month,
     get_invoices_due_on_date,
     export_analysis_to_excel
@@ -62,13 +61,19 @@ class AnalyticsAdapter:
     Adapter COMPLETO che espone TUTTE le funzioni di analisi del core
     """
     
-    # ===== FUNZIONI BASE GIÀ PRESENTI =====
+    # ===== FUNZIONI BASE GIÀ PRESENTI (CORRETTE) =====
     
     @staticmethod
     async def calculate_main_kpis_async() -> Dict[str, Any]:
-        """Versione async di calculate_main_kpis"""
+        """Versione async di get_dashboard_kpis (nome legacy mantenuto per compatibilità API)"""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, calculate_main_kpis)
+        return await loop.run_in_executor(_thread_pool, get_dashboard_kpis)
+    
+    @staticmethod
+    async def get_dashboard_kpis_async() -> Dict[str, Any]:
+        """Versione async di get_dashboard_kpis"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_thread_pool, get_dashboard_kpis)
     
     @staticmethod
     async def get_monthly_cash_flow_analysis_async(months: int = 12) -> pd.DataFrame:
@@ -451,15 +456,6 @@ class AnalyticsAdapter:
         )
     
     @staticmethod
-    async def get_dashboard_kpis_async() -> Dict[str, Any]:
-        """KPI dashboard avanzati"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_dashboard_kpis
-        )
-    
-    @staticmethod
     async def get_due_dates_in_month_async(year: int, month: int) -> List[date]:
         """Date con scadenze nel mese per calendario"""
         loop = asyncio.get_event_loop()
@@ -789,18 +785,6 @@ class AnalyticsAdapter:
                         WHEN order_frequency >= 5 THEN 'Frequent (5-9)'
                         WHEN order_frequency >= 2 THEN 'Regular (2-4)'
                         ELSE 'Occasional (1)'
-                    END as segment_name,
-                    COUNT(*) as client_count,
-                    SUM(total_revenue) as segment_revenue,
-                    AVG(total_revenue) as avg_revenue_per_client,
-                    AVG(order_frequency) as avg_order_frequency
-                FROM client_frequency
-                GROUP BY 
-                    CASE 
-                        WHEN order_frequency >= 10 THEN 'Very Frequent (10+)'
-                        WHEN order_frequency >= 5 THEN 'Frequent (5-9)'
-                        WHEN order_frequency >= 2 THEN 'Regular (2-4)'
-                        ELSE 'Occasional (1)'
                     END
                 ORDER BY avg_order_frequency DESC
             """
@@ -1074,4 +1058,16 @@ class AnalyticsAdapter:
         }
 
 # Istanza globale dell'adapter COMPLETO
-analytics_adapter = AnalyticsAdapter()
+analytics_adapter = AnalyticsAdapter()-4)'
+                        ELSE 'Occasional (1)'
+                    END as segment_name,
+                    COUNT(*) as client_count,
+                    SUM(total_revenue) as segment_revenue,
+                    AVG(total_revenue) as avg_revenue_per_client,
+                    AVG(order_frequency) as avg_order_frequency
+                FROM client_frequency
+                GROUP BY 
+                    CASE 
+                        WHEN order_frequency >= 10 THEN 'Very Frequent (10+)'
+                        WHEN order_frequency >= 5 THEN 'Frequent (5-9)'
+                        WHEN order_frequency >= 2 THEN 'Regular (2
