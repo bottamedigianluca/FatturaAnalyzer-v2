@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 from datetime import date, datetime
+from typing import Dict, Any, Optional, List
 
 # Import del core COMPLETO - TUTTE le funzioni (CORRETTO)
 from app.core.analysis import (
