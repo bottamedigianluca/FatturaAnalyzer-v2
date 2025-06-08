@@ -1395,7 +1395,9 @@ async def get_reconciliation_performance_metrics():
                 },
                 "recommendations": [
                     "Increase reconciliation frequency" if performance_score < 30 else "Good performance",
-                    "Review matching accuracy" if (accuracy_metrics[0]['exact_matches'] / max(1, accuracy_metrics[0]['total_reconciliations']) < 0.8) if accuracy_metrics else False else "Accuracy is good",
+                    # In backend/app/api/reconciliation.py, riga 1398
+
+("Review matching accuracy" if accuracy_metrics and (accuracy_metrics[0]['exact_matches'] / max(1, accuracy_metrics[0]['total_reconciliations'])) < 0.8 else "Accuracy is good") if accuracy_metrics else "Accuracy N/A",
                     "Consider automating more matches" if current_performance['reconciliations_count'] < 10 else "Volume is adequate"
                 ]
             }
