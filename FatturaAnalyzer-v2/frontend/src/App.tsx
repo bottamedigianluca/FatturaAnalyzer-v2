@@ -7,19 +7,21 @@ import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { FirstRunCheck } from '@/components/FirstRunCheck';
 import { SimpleSetupWizard } from '@/components/setup/SetupWizard';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { InvoicesPage } from '@/pages/InvoicesPage';
-import { InvoiceDetailPage } from '@/pages/InvoiceDetailPage';
-import { TransactionsPage } from '@/pages/TransactionsPage';
-import { TransactionDetailPage } from '@/pages/TransactionDetailPage';
-import { ReconciliationPage } from '@/pages/ReconciliationPage';
-import { AnagraphicsPage } from '@/pages/AnagraphicsPage';
-import { AnagraphicsDetailPage } from '@/pages/AnagraphicsDetailPage';
-import { AnalyticsPage } from '@/pages/AnalyticsPage';
-import { ImportExportPage } from '@/pages/ImportExportPage';
-import { SettingsPage } from '@/pages/SettingsPage';
 import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/store';
+import {
+  DashboardPage,
+  InvoicesPage,
+  InvoiceDetailPage,
+  TransactionsPage,
+  TransactionDetailPage,
+  ReconciliationPage,
+  AnagraphicsPage,
+  AnagraphicsDetailPage,
+  AnalyticsPage,
+  ImportExportPage,
+  SettingsPage
+} from '@/pages';
 import './globals.css';
 
 const queryClient = new QueryClient({
