@@ -1,1321 +1,1638 @@
-import asyncio
-import logging
-from typing import Dict, Any, Optional, List
-from concurrent.futures import ThreadPoolExecutor
-import pandas as pd
-from datetime import date, datetime
+# core/analysis.py - Analisi ottimizzate per business ingrosso frutta e verdura
+# Versione ottimizzata: SQL-first approach, categorizzazione dichiarativa, performance migliorata
 
-from app.core.analysis import (
-    get_dashboard_kpis,
-    get_monthly_cash_flow_analysis,
-    get_monthly_revenue_analysis,
-    get_top_clients_by_revenue,
-    get_top_overdue_invoices,
-    get_product_analysis,
-    get_aging_summary,
-    get_anagraphic_financial_summary,
-    calculate_and_update_client_scores,
-    get_monthly_revenue_costs,
-    get_seasonal_product_analysis,
-    get_business_insights_summary,
-    get_commission_summary,
-    get_clients_by_score,
-    get_product_monthly_sales,
-    get_due_dates_in_month,
-    get_invoices_due_on_date,
-    export_analysis_to_excel,
-    get_cashflow_data,
-    get_cashflow_table,
-    get_products_analysis
-)
+import logging
+import pandas as pd
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, timedelta, datetime
+import sqlite3
+from dateutil.relativedelta import relativedelta
+import re
+from typing import Dict, List, Optional, Tuple, Any
+import numpy as np
+from collections import defaultdict
+
+try:
+    from .database import get_connection, DB_PATH
+    from .utils import to_decimal, quantize, AMOUNT_TOLERANCE, normalize_product_name
+except ImportError:
+    logging.warning("Import relativo fallito in analysis.py, tento import assoluto.")
+    try:
+        from database import get_connection, DB_PATH
+        from utils import to_decimal, quantize, AMOUNT_TOLERANCE, normalize_product_name
+    except ImportError as e:
+        logging.critical(f"Impossibile importare dipendenze database/utils in analysis.py: {e}")
+        raise ImportError(f"Impossibile importare dipendenze database/utils in analysis.py: {e}") from e
 
 logger = logging.getLogger(__name__)
 
-_thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="analytics")
+# ===== CATEGORIZATION RULES SYSTEM (DICHIARATIVO) =====
 
-class AnalyticsAdapter:
+# Sistema di regole dichiarativo per categorizzazione transazioni
+TRANSACTION_CATEGORIES = [
+    {
+        'category': 'Incassi_Clienti',
+        'patterns': [],
+        'conditions': lambda row: row.get('amount', 0) > 0 and row.get('has_active_links', False),
+        'priority': 100
+    },
+    {
+        'category': 'Pagamenti_Fornitori', 
+        'patterns': [],
+        'conditions': lambda row: row.get('amount', 0) < 0 and row.get('has_passive_links', False),
+        'priority': 100
+    },
+    {
+        'category': 'Incassi_Contanti',
+        'patterns': [r'(VERSAMENTO CONTANT|CONTANTI|CASSA)'],
+        'conditions': lambda row: row.get('amount', 0) > 0,
+        'priority': 90
+    },
+    {
+        'category': 'Commissioni_Bancarie',
+        'patterns': [r'^(COMMISSIONI|COMPETENZE BANC|SPESE TENUTA CONTO|IMPOSTA DI BOLLO|CANONE)'],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 90
+    },
+    {
+        'category': 'Spese_Carte',
+        'patterns': [r'\b(POS|PAGOBANCOMAT|CIRRUS|MAESTRO|VISA|MASTERCARD|AMEX|WORLDLINE|ESE COMM)\b'],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 85
+    },
+    {
+        'category': 'Carburanti',
+        'patterns': [r'(BENZINA|GASOLIO|CARBURANTE|DISTRIBUTORE|ENI|AGIP|Q8)'],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 80
+    },
+    {
+        'category': 'Trasporti',
+        'patterns': [r'(AUTOSTRADA|PEDAGGI|TELEPASS|TRASPORT)'],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 80
+    },
+    {
+        'category': 'Utenze',
+        'patterns': [r'(ENEL|GAS|ACQUA|TELEFON|INTERNET|TIM|VODAFONE)'],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 80
+    },
+    {
+        'category': 'Tasse_Tributi',
+        'patterns': [r'(F24|TRIBUTI|INPS|INAIL|AGENZIA ENTRATE)'],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 80
+    },
+    {
+        'category': 'Altri_Incassi',
+        'patterns': [],
+        'conditions': lambda row: row.get('amount', 0) > 0,
+        'priority': 10
+    },
+    {
+        'category': 'Altri_Pagamenti',
+        'patterns': [],
+        'conditions': lambda row: row.get('amount', 0) < 0,
+        'priority': 10
+    }
+]
+
+def _apply_categorization_rules(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applica sistema di regole dichiarativo per categorizzazione.
+    PERFORMANCE: Usa vectorized operations invece di loop row-by-row.
+    """
+    if df.empty:
+        return df
     
-    @staticmethod
-    async def calculate_main_kpis_async() -> Dict[str, Any]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, get_dashboard_kpis)
+    # Prepara dati per categorizzazione
+    df['category'] = 'Altri'
+    df['description_upper'] = df['description'].astype(str).str.upper()
+    df['amount_dec'] = df['amount'].apply(lambda x: quantize(to_decimal(x)))
     
-    @staticmethod
-    async def get_dashboard_kpis_async() -> Dict[str, Any]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, get_dashboard_kpis)
+    # Determina presenza di link
+    df['has_active_links'] = df['linked_invoice_types'].astype(str).str.contains('Attiva', na=False)
+    df['has_passive_links'] = df['linked_invoice_types'].astype(str).str.contains('Passiva', na=False)
+    df['has_links'] = df['link_ids'].notna()
     
-    @staticmethod
-    async def get_monthly_cash_flow_analysis_async(months: int = 12) -> pd.DataFrame:
-        def _get_cash_flow_analysis():
-            return get_cashflow_data(
-                start_date=(datetime.now() - pd.DateOffset(months=months)).strftime('%Y-%m-%d'),
-                end_date=datetime.now().strftime('%Y-%m-%d')
-            )
+    # Applica regole in ordine di priorità
+    sorted_rules = sorted(TRANSACTION_CATEGORIES, key=lambda x: x['priority'], reverse=True)
+    
+    for rule in sorted_rules:
+        # Crea mask per questa regola
+        mask = pd.Series([True] * len(df), index=df.index)
         
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_cash_flow_analysis)
-    
-    @staticmethod
-    async def get_monthly_revenue_analysis_async(
-        months: int = 12, 
-        invoice_type: Optional[str] = None
-    ) -> pd.DataFrame:
-        def _get_revenue_analysis():
-            start_date = (datetime.now() - pd.DateOffset(months=months)).strftime('%Y-%m-%d')
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            return get_monthly_revenue_costs(start_date, end_date)
+        # Applica pattern regex se presenti
+        if rule['patterns']:
+            pattern_mask = pd.Series([False] * len(df), index=df.index)
+            for pattern in rule['patterns']:
+                pattern_mask |= df['description_upper'].str.contains(pattern, regex=True, na=False)
+            mask &= pattern_mask
         
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_revenue_analysis)
-    
-    @staticmethod
-    async def get_top_clients_by_revenue_async(
-        limit: int = 20,
-        period_months: int = 12,
-        min_revenue: Optional[float] = None
-    ) -> pd.DataFrame:
-        def _get_top_clients():
-            start_date = (datetime.now() - pd.DateOffset(months=period_months)).strftime('%Y-%m-%d')
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            result = get_top_clients_by_revenue(start_date, end_date, limit)
-            
-            if min_revenue and isinstance(result, pd.DataFrame) and not result.empty:
-                result['revenue_numeric'] = result['Fatturato Totale'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').astype(float)
-                result = result[result['revenue_numeric'] >= min_revenue]
-                result = result.drop('revenue_numeric', axis=1)
-            
-            return result
+        # Applica condizioni funzionali
+        if rule['conditions']:
+            condition_mask = df.apply(rule['conditions'], axis=1)
+            mask &= condition_mask
         
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_top_clients)
+        # Applica categoria solo dove non è già stata assegnata una categoria di priorità più alta
+        final_mask = mask & (df['category'] == 'Altri')
+        df.loc[final_mask, 'category'] = rule['category']
     
-    @staticmethod
-    async def get_top_overdue_invoices_async(
-        limit: int = 20,
-        priority_sort: bool = True
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_top_overdue_invoices,
-            limit
-        )
+    return df
+
+# ===== UTILITY FUNCTIONS (CENTRALIZED DATE HANDLING) =====
+
+def _resolve_date_range(start_date, end_date, default_days=365):
+    """
+    Helper centralizzato per gestione date.
+    ROBUSTEZZA: Logica di date unificata e riutilizzabile.
+    """
+    if end_date:
+        end_date_obj = pd.to_datetime(end_date, errors='coerce').date()
+        if pd.isna(end_date_obj):
+            end_date_obj = date.today()
+    else:
+        end_date_obj = date.today()
     
-    @staticmethod
-    async def get_product_analysis_async(
-        limit: int = 50,
-        period_months: int = 12,
-        min_quantity: Optional[float] = None,
-        invoice_type: Optional[str] = None
-    ) -> pd.DataFrame:
-        def _get_product_analysis():
-            start_date = (datetime.now() - pd.DateOffset(months=period_months)).strftime('%Y-%m-%d')
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            result = get_products_analysis(
-                invoice_type or 'Attiva',
-                start_date,
-                end_date
-            )
-            
-            if isinstance(result, pd.DataFrame) and not result.empty:
-                if min_quantity:
-                    result['quantity_numeric'] = result['Quantità Tot.'].str.replace(',', '.').astype(float)
-                    result = result[result['quantity_numeric'] >= min_quantity]
-                    result = result.drop('quantity_numeric', axis=1)
-                
-                result = result.head(limit)
-            
-            return result
+    if start_date:
+        start_date_obj = pd.to_datetime(start_date, errors='coerce').date()
+        if pd.isna(start_date_obj):
+            start_date_obj = end_date_obj - timedelta(days=default_days)
+    else:
+        start_date_obj = end_date_obj - timedelta(days=default_days)
+    
+    return start_date_obj, end_date_obj
+
+# ===== OPTIMIZED CORE FUNCTIONS (SQL-FIRST APPROACH) =====
+
+def _categorize_transactions_optimized(start_date_str: str, end_date_str: str) -> pd.DataFrame:
+    """
+    Categorizzazione transazioni ottimizzata: usa query SQL aggregate invece di caricare tutto in memoria.
+    PERFORMANCE: Riduce significativamente l'uso di memoria e migliora velocità.
+    """
+    conn = None
+    try:
+        conn = get_connection()
         
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_product_analysis)
-    
-    @staticmethod
-    async def get_aging_summary_async(invoice_type: str = "Attiva") -> Dict[str, Dict]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_aging_summary,
-            invoice_type
-        )
-    
-    @staticmethod
-    async def get_anagraphic_financial_summary_async(anagraphics_id: int) -> Dict[str, Any]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_anagraphic_financial_summary,
-            anagraphics_id
-        )
-    
-    @staticmethod
-    async def calculate_and_update_client_scores_async() -> bool:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            calculate_and_update_client_scores
-        )
-    
-    @staticmethod
-    async def get_monthly_revenue_costs_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_monthly_revenue_costs,
-            start_date,
-            end_date
-        )
-    
-    @staticmethod
-    async def get_seasonal_product_analysis_async(
-        product_category: str = 'all',
-        years_back: int = 3
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_seasonal_product_analysis,
-            product_category,
-            years_back
-        )
-    
-    @staticmethod
-    async def get_top_clients_performance_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        limit: int = 20
-    ) -> pd.DataFrame:
-        def _get_clients_performance():
-            return get_top_clients_by_revenue(start_date, end_date, limit)
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_clients_performance)
-    
-    @staticmethod
-    async def get_supplier_analysis_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        def _get_supplier_analysis():
-            return get_products_analysis('Passiva', start_date, end_date)
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_supplier_analysis)
-    
-    @staticmethod
-    async def get_advanced_cashflow_analysis_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_cashflow_data,
-            start_date,
-            end_date
-        )
-    
-    @staticmethod
-    async def get_waste_and_spoilage_analysis_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> Dict[str, Any]:
-        def _get_waste_analysis():
-            try:
-                from app.core.database import get_connection
-                conn = get_connection()
-                
-                query = """
-                    SELECT 
-                        il.description,
-                        SUM(CASE WHEN il.quantity < 0 THEN ABS(il.quantity) ELSE 0 END) as waste_quantity,
-                        SUM(CASE WHEN il.quantity < 0 THEN ABS(il.total_price) ELSE 0 END) as waste_value
-                    FROM InvoiceLines il
-                    JOIN Invoices i ON il.invoice_id = i.id
-                    WHERE i.doc_date BETWEEN COALESCE(?, date('now', '-1 year')) AND COALESCE(?, date('now'))
-                      AND (il.quantity < 0 OR LOWER(il.description) LIKE '%scarto%' OR LOWER(il.description) LIKE '%deteriorat%')
-                    GROUP BY il.description
-                    HAVING waste_quantity > 0
-                    ORDER BY waste_value DESC
-                """
-                
-                df = pd.read_sql_query(query, conn, params=(start_date, end_date))
-                conn.close()
-                
-                total_waste_value = df['waste_value'].sum() if not df.empty else 0
-                total_waste_quantity = df['waste_quantity'].sum() if not df.empty else 0
-                
-                return {
-                    'total_waste_value': float(total_waste_value),
-                    'total_waste_quantity': float(total_waste_quantity),
-                    'waste_by_product': df.to_dict('records') if not df.empty else [],
-                    'analysis_period': f"{start_date or 'ultimo anno'} - {end_date or 'oggi'}"
-                }
-                
-            except Exception as e:
-                logger.error(f"Errore analisi scarti: {e}")
-                return {
-                    'total_waste_value': 0.0,
-                    'total_waste_quantity': 0.0,
-                    'waste_by_product': [],
-                    'error': str(e)
-                }
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_waste_analysis)
-    
-    @staticmethod
-    async def get_inventory_turnover_analysis_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        def _get_turnover_analysis():
-            try:
-                from app.core.database import get_connection
-                conn = get_connection()
-                
-                query = """
-                    WITH product_sales AS (
-                        SELECT 
-                            il.description,
-                            SUM(CASE WHEN i.type = 'Attiva' THEN il.quantity ELSE 0 END) as sold_quantity,
-                            SUM(CASE WHEN i.type = 'Passiva' THEN il.quantity ELSE 0 END) as purchased_quantity,
-                            SUM(CASE WHEN i.type = 'Attiva' THEN il.total_price ELSE 0 END) as sales_value,
-                            COUNT(DISTINCT i.doc_date) as sales_days
-                        FROM InvoiceLines il
-                        JOIN Invoices i ON il.invoice_id = i.id
-                        WHERE i.doc_date BETWEEN COALESCE(?, date('now', '-1 year')) AND COALESCE(?, date('now'))
-                        GROUP BY il.description
-                        HAVING sold_quantity > 0 AND purchased_quantity > 0
-                    )
-                    SELECT 
-                        description,
-                        sold_quantity,
-                        purchased_quantity,
-                        sales_value,
-                        CASE 
-                            WHEN purchased_quantity > 0 THEN ROUND(sold_quantity / purchased_quantity, 2)
-                            ELSE 0 
-                        END as turnover_ratio,
-                        CASE 
-                            WHEN sales_days > 0 THEN ROUND(sold_quantity / sales_days, 2)
-                            ELSE 0
-                        END as avg_daily_sales,
-                        CASE 
-                            WHEN sold_quantity / purchased_quantity >= 0.8 THEN 'Veloce'
-                            WHEN sold_quantity / purchased_quantity >= 0.5 THEN 'Medio'
-                            ELSE 'Lento'
-                        END as turnover_category
-                    FROM product_sales
-                    ORDER BY turnover_ratio DESC
-                """
-                
-                df = pd.read_sql_query(query, conn, params=(start_date, end_date))
-                conn.close()
-                
-                return df
-                
-            except Exception as e:
-                logger.error(f"Errore analisi rotazione: {e}")
-                return pd.DataFrame()
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_turnover_analysis)
-    
-    @staticmethod
-    async def get_price_trend_analysis_async(
-        product_name: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> Dict[str, Any]:
-        def _get_price_trends():
-            if product_name:
-                df = get_product_monthly_sales(product_name, start_date, end_date)
-                if not df.empty:
-                    return {
-                        'product': product_name,
-                        'monthly_data': df.to_dict('records'),
-                        'trend': 'available'
-                    }
-            
-            return {
-                'product': product_name or 'all',
-                'monthly_data': [],
-                'trend': 'no_data',
-                'message': 'Usa get_product_monthly_sales per analisi dettagliate'
-            }
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_price_trends)
-    
-    @staticmethod
-    async def get_market_basket_analysis_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        min_support: float = 0.01
-    ) -> Dict[str, Any]:
-        def _get_basket_analysis():
-            try:
-                from app.core.database import get_connection
-                conn = get_connection()
-                
-                query = """
-                    WITH invoice_products AS (
-                        SELECT 
-                            i.id as invoice_id,
-                            GROUP_CONCAT(il.description) as products
-                        FROM Invoices i
-                        JOIN InvoiceLines il ON i.id = il.invoice_id
-                        WHERE i.type = 'Attiva'
-                          AND i.doc_date BETWEEN COALESCE(?, date('now', '-6 months')) AND COALESCE(?, date('now'))
-                        GROUP BY i.id
-                        HAVING COUNT(il.id) > 1
-                    )
-                    SELECT 
-                        products,
-                        COUNT(*) as frequency
-                    FROM invoice_products
-                    GROUP BY products
-                    ORDER BY frequency DESC
-                    LIMIT 20
-                """
-                
-                df = pd.read_sql_query(query, conn, params=(start_date, end_date))
-                conn.close()
-                
-                associations = []
-                if not df.empty:
-                    for _, row in df.iterrows():
-                        products = row['products'].split(',')
-                        if len(products) >= 2:
-                            associations.append({
-                                'products': products[:5],
-                                'frequency': row['frequency']
-                            })
-                
-                return {
-                    'associations': associations,
-                    'total_analyzed': len(df),
-                    'min_support_used': min_support
-                }
-                
-            except Exception as e:
-                logger.error(f"Errore market basket: {e}")
-                return {'associations': [], 'error': str(e)}
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_basket_analysis)
-    
-    @staticmethod
-    async def get_customer_rfm_analysis_async(
-        analysis_date: Optional[str] = None
-    ) -> Dict[str, Any]:
-        def _get_rfm_analysis():
-            try:
-                from app.core.database import get_connection
-                import numpy as np
-                
-                conn = get_connection()
-                analysis_date_str = analysis_date or datetime.now().strftime('%Y-%m-%d')
-                
-                query = """
-                    SELECT 
-                        a.id,
-                        a.denomination,
-                        MAX(i.doc_date) as last_order_date,
-                        COUNT(i.id) as frequency,
-                        SUM(i.total_amount) as monetary_value,
-                        julianday(?) - julianday(MAX(i.doc_date)) as recency_days
-                    FROM Anagraphics a
-                    JOIN Invoices i ON a.id = i.anagraphics_id
-                    WHERE a.type = 'Cliente' AND i.type = 'Attiva'
-                    GROUP BY a.id, a.denomination
-                    HAVING frequency > 0
-                """
-                
-                df = pd.read_sql_query(query, conn, params=(analysis_date_str,))
-                conn.close()
-                
-                if df.empty:
-                    return {'segments': {}, 'total_customers': 0}
-                
-                df['R_score'] = pd.qcut(df['recency_days'], 5, labels=[5,4,3,2,1])
-                df['F_score'] = pd.qcut(df['frequency'].rank(method='first'), 5, labels=[1,2,3,4,5])
-                df['M_score'] = pd.qcut(df['monetary_value'].rank(method='first'), 5, labels=[1,2,3,4,5])
-                
-                def rfm_segment(row):
-                    r, f, m = int(row['R_score']), int(row['F_score']), int(row['M_score'])
-                    if r >= 4 and f >= 4 and m >= 4:
-                        return 'Champions'
-                    elif r >= 3 and f >= 3 and m >= 3:
-                        return 'Loyal Customers'
-                    elif r >= 4 and f <= 2:
-                        return 'New Customers'
-                    elif r <= 2 and f >= 3:
-                        return 'At Risk'
-                    elif r <= 2 and f <= 2:
-                        return 'Lost Customers'
-                    else:
-                        return 'Regular Customers'
-                
-                df['segment'] = df.apply(rfm_segment, axis=1)
-                
-                segments = df.groupby('segment').agg({
-                    'id': 'count',
-                    'monetary_value': ['sum', 'mean'],
-                    'frequency': 'mean',
-                    'recency_days': 'mean'
-                }).round(2)
-                
-                segments_dict = {}
-                for segment in segments.index:
-                    segments_dict[segment] = {
-                        'customer_count': int(segments.loc[segment, ('id', 'count')]),
-                        'total_value': float(segments.loc[segment, ('monetary_value', 'sum')]),
-                        'avg_value': float(segments.loc[segment, ('monetary_value', 'mean')]),
-                        'avg_frequency': float(segments.loc[segment, ('frequency', 'mean')]),
-                        'avg_recency': float(segments.loc[segment, ('recency_days', 'mean')])
-                    }
-                
-                return {
-                    'segments': segments_dict,
-                    'total_customers': len(df),
-                    'analysis_date': analysis_date_str
-                }
-                
-            except Exception as e:
-                logger.error(f"Errore RFM analysis: {e}")
-                return {'segments': {}, 'error': str(e)}
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_rfm_analysis)
-    
-    @staticmethod
-    async def get_customer_churn_analysis_async() -> pd.DataFrame:
-        def _get_churn_analysis():
-            try:
-                from app.core.database import get_connection
-                conn = get_connection()
-                
-                query = """
-                    SELECT 
-                        a.id,
-                        a.denomination,
-                        a.city,
-                        a.score,
-                        MAX(i.doc_date) as last_order_date,
-                        COUNT(i.id) as total_orders,
-                        SUM(i.total_amount) as total_value,
-                        AVG(i.total_amount) as avg_order_value,
-                        julianday('now') - julianday(MAX(i.doc_date)) as days_since_last_order
-                    FROM Anagraphics a
-                    LEFT JOIN Invoices i ON a.id = i.anagraphics_id AND i.type = 'Attiva'
-                    WHERE a.type = 'Cliente'
-                    GROUP BY a.id, a.denomination, a.city, a.score
-                """
-                
-                df = pd.read_sql_query(query, conn)
-                conn.close()
-                
-                if df.empty:
-                    return pd.DataFrame()
-                
-                def calculate_churn_risk(row):
-                    days = row['days_since_last_order'] if pd.notna(row['days_since_last_order']) else 9999
-                    score = row['score'] if pd.notna(row['score']) else 50
-                    orders = row['total_orders'] if pd.notna(row['total_orders']) else 0
-                    
-                    if days > 365 or orders == 0:
-                        return 'Critico'
-                    elif days > 180 or score < 30:
-                        return 'Alto'
-                    elif days > 90 or score < 50:
-                        return 'Medio'
-                    else:
-                        return 'Basso'
-                
-                df['risk_category'] = df.apply(calculate_churn_risk, axis=1)
-                
-                def suggest_action(row):
-                    risk = row['risk_category']
-                    if risk == 'Critico':
-                        return 'Contatto immediato + offerta speciale'
-                    elif risk == 'Alto':
-                        return 'Campagna re-engagement'
-                    elif risk == 'Medio':
-                        return 'Newsletter + promozioni'
-                    else:
-                        return 'Mantenimento normale'
-                
-                df['suggested_action'] = df.apply(suggest_action, axis=1)
-                
-                return df.sort_values('days_since_last_order', ascending=False)
-                
-            except Exception as e:
-                logger.error(f"Errore churn analysis: {e}")
-                return pd.DataFrame()
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_churn_analysis)
-    
-    @staticmethod
-    async def get_payment_behavior_analysis_async() -> Dict[str, Any]:
-        def _get_payment_behavior():
-            try:
-                from app.core.database import get_connection
-                conn = get_connection()
-                
-                query = """
-                    SELECT 
-                        payment_status,
-                        COUNT(*) as count,
-                        AVG(total_amount) as avg_amount,
-                        SUM(total_amount) as total_amount,
-                        AVG(CASE 
-                            WHEN due_date IS NOT NULL THEN 
-                                julianday('now') - julianday(due_date)
-                            ELSE NULL 
-                        END) as avg_days_from_due
-                    FROM Invoices
-                    WHERE type = 'Attiva'
-                    GROUP BY payment_status
-                """
-                
-                df = pd.read_sql_query(query, conn)
-                conn.close()
-                
-                behavior_data = {}
-                if not df.empty:
-                    for _, row in df.iterrows():
-                        behavior_data[row['payment_status']] = {
-                            'count': int(row['count']),
-                            'avg_amount': float(row['avg_amount']) if pd.notna(row['avg_amount']) else 0,
-                            'total_amount': float(row['total_amount']) if pd.notna(row['total_amount']) else 0,
-                            'avg_days_from_due': float(row['avg_days_from_due']) if pd.notna(row['avg_days_from_due']) else 0
-                        }
-                
-                return {
-                    'payment_behavior': behavior_data,
-                    'analysis_date': datetime.now().strftime('%Y-%m-%d')
-                }
-                
-            except Exception as e:
-                logger.error(f"Errore payment behavior: {e}")
-                return {'payment_behavior': {}, 'error': str(e)}
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_payment_behavior)
-    
-    @staticmethod
-    async def get_competitive_analysis_async() -> pd.DataFrame:
-        def _get_competitive_analysis():
-            try:
-                from app.core.database import get_connection
-                conn = get_connection()
-                
-                query = """
-                    WITH product_margins AS (
-                        SELECT 
-                            il_sell.description,
-                            AVG(il_sell.unit_price) as avg_sell_price,
-                            AVG(il_buy.unit_price) as avg_buy_price,
-                            COUNT(DISTINCT i_sell.id) as sell_transactions,
-                            COUNT(DISTINCT i_buy.id) as buy_transactions
-                        FROM InvoiceLines il_sell
-                        JOIN Invoices i_sell ON il_sell.invoice_id = i_sell.id
-                        LEFT JOIN InvoiceLines il_buy ON il_sell.description = il_buy.description
-                        LEFT JOIN Invoices i_buy ON il_buy.invoice_id = i_buy.id AND i_buy.type = 'Passiva'
-                        WHERE i_sell.type = 'Attiva'
-                          AND i_sell.doc_date >= date('now', '-6 months')
-                        GROUP BY il_sell.description
-                        HAVING avg_sell_price > 0 AND avg_buy_price > 0
-                    )
-                    SELECT 
-                        description,
-                        ROUND(avg_sell_price, 2) as avg_sell_price,
-                        ROUND(avg_buy_price, 2) as avg_buy_price,
-                        ROUND(((avg_sell_price - avg_buy_price) / avg_sell_price) * 100, 2) as margin_percent,
-                        sell_transactions,
-                        buy_transactions
-                    FROM product_margins
-                    WHERE margin_percent IS NOT NULL
-                    ORDER BY margin_percent DESC
-                """
-                
-                df = pd.read_sql_query(query, conn)
-                conn.close()
-                
-                return df
-                
-            except Exception as e:
-                logger.error(f"Errore competitive analysis: {e}")
-                return pd.DataFrame()
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_competitive_analysis)
-    
-    @staticmethod
-    async def get_business_insights_summary_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> Dict[str, Any]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_business_insights_summary,
-            start_date,
-            end_date
-        )
-    
-    @staticmethod
-    async def get_sales_forecast_async(
-        product_name: Optional[str] = None,
-        months_ahead: int = 3
-    ) -> pd.DataFrame:
-        def _get_sales_forecast():
-            try:
-                from app.core.database import get_connection
-                import numpy as np
-                
-                conn = get_connection()
-                
-                if product_name:
-                    query = """
-                        SELECT 
-                            strftime('%Y-%m', i.doc_date) as month,
-                            SUM(il.quantity) as quantity,
-                            SUM(il.total_price) as value
-                        FROM InvoiceLines il
-                        JOIN Invoices i ON il.invoice_id = i.id
-                        WHERE i.type = 'Attiva'
-                          AND il.description LIKE ?
-                          AND i.doc_date >= date('now', '-2 years')
-                        GROUP BY month
-                        ORDER BY month
-                    """
-                    df = pd.read_sql_query(query, conn, params=(f'%{product_name}%',))
-                else:
-                    query = """
-                        SELECT 
-                            strftime('%Y-%m', doc_date) as month,
-                            COUNT(*) as invoice_count,
-                            SUM(total_amount) as total_value
-                        FROM Invoices
-                        WHERE type = 'Attiva'
-                          AND doc_date >= date('now', '-2 years')
-                        GROUP BY month
-                        ORDER BY month
-                    """
-                    df = pd.read_sql_query(query, conn)
-                
-                conn.close()
-                
-                if df.empty or len(df) < 3:
-                    return pd.DataFrame()
-                
-                if product_name:
-                    df['trend'] = df['quantity'].rolling(window=3, min_periods=1).mean()
-                    value_col = 'quantity'
-                else:
-                    df['trend'] = df['total_value'].rolling(window=3, min_periods=1).mean()
-                    value_col = 'total_value'
-                
-                last_values = df[value_col].tail(6).values
-                if len(last_values) >= 3:
-                    x = np.arange(len(last_values))
-                    z = np.polyfit(x, last_values, 1)
-                    trend_slope = z[0]
-                    last_value = last_values[-1]
-                    
-                    forecasts = []
-                    current_date = pd.to_datetime(df['month'].iloc[-1])
-                    
-                    for i in range(1, months_ahead + 1):
-                        forecast_date = current_date + pd.DateOffset(months=i)
-                        forecast_value = max(0, last_value + (trend_slope * i))
-                        
-                        forecasts.append({
-                            'month': forecast_date.strftime('%Y-%m'),
-                            'forecasted_value': round(forecast_value, 2),
-                            'type': 'forecast',
-                            'confidence': 'medium' if i <= 2 else 'low'
-                        })
-                    
-                    return pd.DataFrame(forecasts)
-                
-                return pd.DataFrame()
-                
-            except Exception as e:
-                logger.error(f"Errore sales forecast: {e}")
-                return pd.DataFrame()
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_sales_forecast)
-    
-    @staticmethod
-    async def get_commission_summary_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_commission_summary,
-            start_date,
-            end_date
-        )
-    
-    @staticmethod
-    async def get_clients_by_score_async(
-        order: str = 'DESC',
-        limit: int = 20
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_clients_by_score,
-            order,
-            limit
-        )
-    
-    @staticmethod
-    async def get_product_monthly_sales_async(
-        normalized_description: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_product_monthly_sales,
-            normalized_description,
-            start_date,
-            end_date
-        )
-    
-    @staticmethod
-    async def get_product_sales_comparison_async(
-        normalized_description: str,
-        year1: int,
-        year2: int
-    ) -> pd.DataFrame:
-        def _get_comparison():
-            start_year1 = f"{year1}-01-01"
-            end_year1 = f"{year1}-12-31"
-            start_year2 = f"{year2}-01-01"
-            end_year2 = f"{year2}-12-31"
-            
-            df1 = get_product_monthly_sales(normalized_description, start_year1, end_year1)
-            df2 = get_product_monthly_sales(normalized_description, start_year2, end_year2)
-            
-            if df1.empty and df2.empty:
-                return pd.DataFrame()
-            
-            comparison_data = []
-            months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
-                     'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']
-            
-            for month in months:
-                row1 = df1[df1['Mese'].str.contains(month, na=False)]
-                row2 = df2[df2['Mese'].str.contains(month, na=False)]
-                
-                val1 = row1['Valore'].iloc[0] if not row1.empty else '0,00€'
-                val2 = row2['Valore'].iloc[0] if not row2.empty else '0,00€'
-                
-                comparison_data.append({
-                    'Mese': month,
-                    f'Anno {year1}': val1,
-                    f'Anno {year2}': val2
-                })
-            
-            return pd.DataFrame(comparison_data)
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_comparison)
-    
-    @staticmethod
-    async def get_top_suppliers_by_cost_async(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        limit: int = 20
-    ) -> pd.DataFrame:
-        def _get_top_suppliers():
-            return get_top_clients_by_revenue(start_date, end_date, limit)
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_top_suppliers)
-    
-    @staticmethod
-    async def get_due_dates_in_month_async(year: int, month: int) -> List[date]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_due_dates_in_month,
-            year,
-            month
-        )
-    
-    @staticmethod
-    async def get_invoices_due_on_date_async(due_date_py: date) -> pd.DataFrame:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            get_invoices_due_on_date,
-            due_date_py
-        )
-    
-    @staticmethod
-    async def export_analysis_to_excel_async(
-        analysis_type: str,
-        data: Any,
-        filename: Optional[str] = None
-    ) -> Optional[str]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _thread_pool,
-            export_analysis_to_excel,
-            analysis_type,
-            data,
-            filename
-        )
-    
-    @staticmethod
-    async def get_dashboard_data_async() -> Dict[str, Any]:
-        def _get_dashboard_data():
-            try:
-                kpis = get_dashboard_kpis()
-                
-                six_months_ago = (datetime.now() - pd.DateOffset(months=6)).strftime('%Y-%m-%d')
-                today = datetime.now().strftime('%Y-%m-%d')
-                cash_flow_df = get_cashflow_data(six_months_ago, today)
-                cash_flow_summary = cash_flow_df.to_dict('records') if not cash_flow_df.empty else []
-                
-                top_clients_df = get_top_clients_by_revenue(six_months_ago, today, 10)
-                top_clients = top_clients_df.to_dict('records') if not top_clients_df.empty else []
-                
-                overdue_invoices_df = get_top_overdue_invoices(5)
-                overdue_invoices = overdue_invoices_df.to_dict('records') if not overdue_invoices_df.empty else []
-                
-                return {
-                    'kpis': kpis,
-                    'cash_flow_summary': cash_flow_summary,
-                    'top_clients': top_clients,
-                    'overdue_invoices': overdue_invoices
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting dashboard data: {e}")
-                return {
-                    'kpis': {},
-                    'cash_flow_summary': [],
-                    'top_clients': [],
-                    'overdue_invoices': []
-                }
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_dashboard_data)
-    
-    @staticmethod
-    async def get_executive_dashboard_async() -> Dict[str, Any]:
-        def _get_executive_dashboard():
-            try:
-                insights = get_business_insights_summary()
-                
-                seasonal_df = get_seasonal_product_analysis('all', 2)
-                seasonal_data = seasonal_df.to_dict('records') if not seasonal_df.empty else []
-                
-                revenue_costs_df = get_monthly_revenue_costs()
-                profitability = revenue_costs_df.to_dict('records') if not revenue_costs_df.empty else []
-                
-                return {
-                    'business_insights': insights,
-                    'seasonal_analysis': seasonal_data,
-                    'profitability_trends': profitability,
-                    'timestamp': datetime.now().isoformat()
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting executive dashboard: {e}")
-                return {
-                    'business_insights': {},
-                    'seasonal_analysis': [],
-                    'profitability_trends': [],
-                    'error': str(e)
-                }
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_thread_pool, _get_executive_dashboard)
-    
-    @staticmethod
-    async def get_operations_dashboard_async() -> Dict[str, Any]:
-        async def _get_operations_dashboard():
-            try:
-                waste_analysis = await AnalyticsAdapter.get_waste_and_spoilage_analysis_async()
-                
-                inventory_df = await AnalyticsAdapter.get_inventory_turnover_analysis_async()
-                slow_moving = inventory_df[inventory_df['turnover_category'] == 'Lento'].head(10).to_dict('records') if not inventory_df.empty else []
-                
-                suppliers_df = await AnalyticsAdapter.get_supplier_analysis_async()
-                supplier_issues = suppliers_df.head(10).to_dict('records') if not suppliers_df.empty else []
-                
-                basket_analysis = await AnalyticsAdapter.get_market_basket_analysis_async()
-                
-                return {
-                    'waste_analysis': waste_analysis,
-                    'slow_moving_products': slow_moving,
-                    'supplier_performance': supplier_issues,
-                    'cross_selling_opportunities': basket_analysis
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting operations dashboard: {e}")
-                return {
-                    'waste_analysis': {},
-                    'slow_moving_products': [],
-                    'supplier_performance': [],
-                    'cross_selling_opportunities': {}
-                }
-        
-        return await _get_operations_dashboard()
-    
-    @staticmethod
-    async def get_revenue_trends_async(
-        period: str = "monthly",
-        months_back: int = 12
-    ) -> List[Dict[str, Any]]:
-        from app.adapters.database_adapter import db_adapter
-        
-        if period == "daily":
-            date_trunc = "date(doc_date)"
-        elif period == "weekly":
-            date_trunc = "strftime('%Y-W%W', doc_date)"
-        elif period == "quarterly":
-            date_trunc = "strftime('%Y', doc_date) || '-Q' || ((CAST(strftime('%m', doc_date) AS INTEGER) - 1) / 3 + 1)"
-        else:
-            date_trunc = "strftime('%Y-%m', doc_date)"
-        
-        trends_query = f"""
-            SELECT 
-                {date_trunc} as period,
-                type,
-                COUNT(*) as invoice_count,
-                SUM(total_amount) as total_revenue,
-                AVG(total_amount) as avg_invoice_amount,
-                SUM(paid_amount) as total_paid,
-                SUM(total_amount - paid_amount) as total_outstanding
-            FROM Invoices
-            WHERE doc_date >= date('now', '-{months_back} months')
-            GROUP BY {date_trunc}, type
-            ORDER BY period, type
+        # Query ottimizzata che fa JOIN e aggregazione direttamente in SQL
+        query_trans = """
+            SELECT
+                bt.id as transaction_id,
+                bt.transaction_date,
+                bt.amount,
+                bt.description,
+                GROUP_CONCAT(DISTINCT rl.id) as link_ids,
+                GROUP_CONCAT(DISTINCT i.type) as linked_invoice_types,
+                COALESCE(SUM(rl.reconciled_amount), 0) as total_linked_amount,
+                CASE WHEN COUNT(rl.id) > 0 THEN 1 ELSE 0 END as has_links
+            FROM BankTransactions bt
+            LEFT JOIN ReconciliationLinks rl ON bt.id = rl.transaction_id
+            LEFT JOIN Invoices i ON rl.invoice_id = i.id
+            WHERE bt.transaction_date BETWEEN ? AND ?
+              AND bt.reconciliation_status != 'Ignorato'
+            GROUP BY bt.id, bt.transaction_date, bt.amount, bt.description
+            ORDER BY bt.transaction_date
         """
         
-        return await db_adapter.execute_query_async(trends_query)
-    
-    @staticmethod
-    async def get_payment_performance_async() -> Dict[str, Any]:
-        from app.adapters.database_adapter import db_adapter
+        df = pd.read_sql_query(query_trans, conn, params=(start_date_str, end_date_str), parse_dates=['transaction_date'])
+
+        if df.empty:
+            logger.info("Nessuna transazione trovata nel periodo per la categorizzazione.")
+            return pd.DataFrame(columns=['transaction_id', 'transaction_date', 'amount', 'description', 'category', 'amount_dec'])
+
+        # Applica sistema di categorizzazione dichiarativo
+        df = _apply_categorization_rules(df)
         
-        payment_performance_query = """
-            WITH payment_times AS (
-                SELECT 
-                    i.id,
-                    i.doc_date,
-                    i.due_date,
-                    i.total_amount,
-                    i.payment_status,
+        return df[['transaction_id', 'transaction_date', 'amount', 'description', 'category', 'amount_dec']]
+
+    except Exception as e:
+        logger.error(f"Errore durante la categorizzazione delle transazioni: {e}", exc_info=True)
+        return pd.DataFrame(columns=['transaction_id', 'transaction_date', 'amount', 'description', 'category', 'amount_dec'])
+    finally:
+        if conn: 
+            conn.close()
+
+def get_cashflow_data_optimized(start_date=None, end_date=None):
+    """
+    Cash flow data ottimizzato: usa aggregazione SQL invece di Pandas groupby su grandi dataset.
+    PERFORMANCE: Query SQL fa il lavoro pesante, Python riceve solo risultati aggregati.
+    """
+    # Usa helper per standardizzare date
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+    
+    cols_out = ['month', 'incassi_clienti', 'incassi_contanti', 'altri_incassi', 
+                'pagamenti_fornitori', 'spese_carte', 'carburanti', 'trasporti', 
+                'utenze', 'tasse_tributi', 'commissioni_bancarie', 'altri_pagamenti',
+                'net_operational_flow', 'total_inflows', 'total_outflows', 'net_cash_flow']
+    
+    empty_df = pd.DataFrame(columns=cols_out).astype(float)
+    empty_df['month'] = pd.Series(dtype='str')
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Query SQL ottimizzata che fa categorizzazione e aggregazione direttamente nel database
+        cashflow_query = """
+            WITH categorized_transactions AS (
+                SELECT
+                    strftime('%Y-%m', bt.transaction_date) as month,
+                    bt.amount,
+                    bt.description,
+                    CASE WHEN COUNT(rl.id) > 0 THEN 1 ELSE 0 END as has_links,
+                    GROUP_CONCAT(DISTINCT i.type) as linked_types,
+                    -- Categorizzazione in SQL usando CASE WHEN
                     CASE 
-                        WHEN i.payment_status = 'Pagata Tot.' THEN
-                            (SELECT MAX(reconciliation_date) FROM ReconciliationLinks rl WHERE rl.invoice_id = i.id)
-                        ELSE NULL
-                    END as estimated_payment_date
-                FROM Invoices i
-                WHERE i.type = 'Attiva'
-                  AND i.payment_status IN ('Pagata Tot.', 'Aperta', 'Scaduta', 'Pagata Parz.')
+                        WHEN bt.amount > 0 AND GROUP_CONCAT(DISTINCT i.type) LIKE '%Attiva%' THEN 'incassi_clienti'
+                        WHEN bt.amount < 0 AND GROUP_CONCAT(DISTINCT i.type) LIKE '%Passiva%' THEN 'pagamenti_fornitori'
+                        WHEN bt.amount > 0 AND (UPPER(bt.description) LIKE '%VERSAMENTO CONTANT%' OR UPPER(bt.description) LIKE '%CONTANTI%') THEN 'incassi_contanti'
+                        WHEN bt.amount < 0 AND (UPPER(bt.description) LIKE 'COMMISSIONI%' OR UPPER(bt.description) LIKE 'COMPETENZE BANC%') THEN 'commissioni_bancarie'
+                        WHEN bt.amount < 0 AND (UPPER(bt.description) LIKE '%POS%' OR UPPER(bt.description) LIKE '%PAGOBANCOMAT%') THEN 'spese_carte'
+                        WHEN bt.amount < 0 AND (UPPER(bt.description) LIKE '%BENZINA%' OR UPPER(bt.description) LIKE '%CARBURANTE%') THEN 'carburanti'
+                        WHEN bt.amount < 0 AND (UPPER(bt.description) LIKE '%AUTOSTRADA%' OR UPPER(bt.description) LIKE '%TRASPORT%') THEN 'trasporti'
+                        WHEN bt.amount < 0 AND (UPPER(bt.description) LIKE '%ENEL%' OR UPPER(bt.description) LIKE '%GAS%' OR UPPER(bt.description) LIKE '%TELEFON%') THEN 'utenze'
+                        WHEN bt.amount < 0 AND (UPPER(bt.description) LIKE '%F24%' OR UPPER(bt.description) LIKE '%TRIBUTI%') THEN 'tasse_tributi'
+                        WHEN bt.amount > 0 THEN 'altri_incassi'
+                        WHEN bt.amount < 0 THEN 'altri_pagamenti'
+                        ELSE 'altri'
+                    END as category
+                FROM BankTransactions bt
+                LEFT JOIN ReconciliationLinks rl ON bt.id = rl.transaction_id
+                LEFT JOIN Invoices i ON rl.invoice_id = i.id
+                WHERE bt.transaction_date BETWEEN ? AND ?
+                  AND bt.reconciliation_status != 'Ignorato'
+                GROUP BY bt.id, bt.transaction_date, bt.amount, bt.description
             )
             SELECT 
-                payment_status,
-                COUNT(*) as count,
-                AVG(
-                    CASE 
-                        WHEN estimated_payment_date IS NOT NULL THEN
-                            julianday(estimated_payment_date) - julianday(doc_date)
-                        WHEN due_date IS NOT NULL THEN
-                            julianday('now') - julianday(due_date)
-                        ELSE NULL
-                    END
-                ) as avg_days,
-                SUM(total_amount) as total_amount
-            FROM payment_times
-            GROUP BY payment_status
+                month,
+                COALESCE(SUM(CASE WHEN category = 'incassi_clienti' THEN amount ELSE 0 END), 0) as incassi_clienti,
+                COALESCE(SUM(CASE WHEN category = 'incassi_contanti' THEN amount ELSE 0 END), 0) as incassi_contanti,
+                COALESCE(SUM(CASE WHEN category = 'altri_incassi' THEN amount ELSE 0 END), 0) as altri_incassi,
+                COALESCE(SUM(CASE WHEN category = 'pagamenti_fornitori' THEN ABS(amount) ELSE 0 END), 0) as pagamenti_fornitori,
+                COALESCE(SUM(CASE WHEN category = 'spese_carte' THEN ABS(amount) ELSE 0 END), 0) as spese_carte,
+                COALESCE(SUM(CASE WHEN category = 'carburanti' THEN ABS(amount) ELSE 0 END), 0) as carburanti,
+                COALESCE(SUM(CASE WHEN category = 'trasporti' THEN ABS(amount) ELSE 0 END), 0) as trasporti,
+                COALESCE(SUM(CASE WHEN category = 'utenze' THEN ABS(amount) ELSE 0 END), 0) as utenze,
+                COALESCE(SUM(CASE WHEN category = 'tasse_tributi' THEN ABS(amount) ELSE 0 END), 0) as tasse_tributi,
+                COALESCE(SUM(CASE WHEN category = 'commissioni_bancarie' THEN ABS(amount) ELSE 0 END), 0) as commissioni_bancarie,
+                COALESCE(SUM(CASE WHEN category = 'altri_pagamenti' THEN ABS(amount) ELSE 0 END), 0) as altri_pagamenti
+            FROM categorized_transactions
+            GROUP BY month
+            ORDER BY month
         """
         
-        performance = await db_adapter.execute_query_async(payment_performance_query)
+        df = pd.read_sql_query(cashflow_query, conn, params=(start_str, end_str))
         
-        collection_query = """
+        if df.empty:
+            return empty_df
+        
+        # Calcola totali e flussi netti
+        inflow_cols = ['incassi_clienti', 'incassi_contanti', 'altri_incassi']
+        outflow_cols = ['pagamenti_fornitori', 'spese_carte', 'carburanti', 'trasporti', 
+                       'utenze', 'tasse_tributi', 'commissioni_bancarie', 'altri_pagamenti']
+        
+        df['total_inflows'] = df[inflow_cols].sum(axis=1)
+        df['total_outflows'] = df[outflow_cols].sum(axis=1)
+        df['net_cash_flow'] = df['total_inflows'] - df['total_outflows']
+        df['net_operational_flow'] = df['incassi_clienti'] + df['incassi_contanti'] - df['pagamenti_fornitori']
+
+        return df[cols_out]
+
+    except Exception as e:
+        logger.error(f"Errore recupero dati cash flow ottimizzato: {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+def get_monthly_revenue_costs_optimized(start_date=None, end_date=None):
+    """
+    Analisi ricavi e costi ottimizzata: query SQL diretta con pivot incorporato.
+    PERFORMANCE: Evita il caricamento di tutte le fatture in memoria.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+    
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Query SQL ottimizzata con pivot incorporato
+        revenue_costs_query = """
             SELECT 
-                strftime('%Y-%m', doc_date) as month,
-                COUNT(*) as invoices_issued,
-                COUNT(CASE WHEN payment_status = 'Pagata Tot.' THEN 1 END) as invoices_paid,
-                SUM(total_amount) as total_issued,
-                SUM(paid_amount) as total_collected,
-                (CAST(COUNT(CASE WHEN payment_status = 'Pagata Tot.' THEN 1 END) AS REAL) / COUNT(*)) * 100 as collection_rate_pct
+                strftime('%Y-%m', doc_date) AS month,
+                COALESCE(SUM(CASE WHEN type = 'Attiva' THEN total_amount ELSE 0 END), 0) as revenue,
+                COALESCE(SUM(CASE WHEN type = 'Passiva' THEN total_amount ELSE 0 END), 0) as cost,
+                (COALESCE(SUM(CASE WHEN type = 'Attiva' THEN total_amount ELSE 0 END), 0) - 
+                 COALESCE(SUM(CASE WHEN type = 'Passiva' THEN total_amount ELSE 0 END), 0)) as gross_margin,
+                CASE 
+                    WHEN SUM(CASE WHEN type = 'Attiva' THEN total_amount ELSE 0 END) > 0 THEN
+                        ROUND(((SUM(CASE WHEN type = 'Attiva' THEN total_amount ELSE 0 END) - 
+                               SUM(CASE WHEN type = 'Passiva' THEN total_amount ELSE 0 END)) / 
+                              SUM(CASE WHEN type = 'Attiva' THEN total_amount ELSE 0 END)) * 100, 2)
+                    ELSE 0 
+                END as margin_percent
             FROM Invoices
-            WHERE type = 'Attiva'
-              AND doc_date >= date('now', '-12 months')
+            WHERE doc_date BETWEEN ? AND ?
             GROUP BY strftime('%Y-%m', doc_date)
             ORDER BY month
         """
         
-        collection = await db_adapter.execute_query_async(collection_query)
+        df = pd.read_sql_query(revenue_costs_query, conn, params=(start_str, end_str))
         
-        return {
-            'payment_performance': performance,
-            'collection_efficiency': collection
-        }
+        if df.empty:
+            logger.info("Nessuna fattura trovata nel periodo per revenue/costs.")
+            return pd.DataFrame(columns=['month', 'revenue', 'cost', 'gross_margin', 'margin_percent'])
+
+        return df
+
+    except Exception as e:
+        logger.error(f"Errore calcolo revenue/cost ottimizzato: {e}", exc_info=True)
+        return pd.DataFrame(columns=['month', 'revenue', 'cost', 'gross_margin', 'margin_percent'])
+    finally:
+        if conn: 
+            conn.close()
+
+def get_products_analysis_optimized(invoice_type='Attiva', start_date=None, end_date=None, limit=50):
+    """
+    Analisi prodotti ottimizzata: aggregazione SQL con normalizzazione incorporata.
+    PERFORMANCE: Riduce drasticamente l'uso di memoria per grandi dataset di righe fattura.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=90)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
     
-    @staticmethod
-    async def get_client_segmentation_async(
-        segmentation_type: str = "revenue",
-        period_months: int = 12
-    ) -> List[Dict[str, Any]]:
-        from app.adapters.database_adapter import db_adapter
+    cols_out = ['Prodotto Normalizzato', 'Quantità Tot.', 'Valore Totale', 'N. Fatture', 'Prezzo Medio', 'Descrizioni Originali']
+    empty_df = pd.DataFrame(columns=cols_out)
+
+    conn = None
+    try:
+        conn = get_connection()
         
-        if segmentation_type == "revenue":
-            segmentation_query = f"""
-                WITH client_metrics AS (
-                    SELECT 
-                        a.id,
-                        a.denomination,
-                        COUNT(i.id) as invoice_count,
-                        SUM(i.total_amount) as total_revenue,
-                        AVG(i.total_amount) as avg_order_value,
-                        MAX(i.doc_date) as last_order_date,
-                        MIN(i.doc_date) as first_order_date
-                    FROM Anagraphics a
-                    JOIN Invoices i ON a.id = i.anagraphics_id
-                    WHERE a.type = 'Cliente'
-                      AND i.type = 'Attiva'
-                      AND i.doc_date >= date('now', '-{period_months} months')
-                    GROUP BY a.id, a.denomination
-                ),
-                revenue_quartiles AS (
-                    SELECT 
-                        *,
-                        NTILE(4) OVER (ORDER BY total_revenue) as revenue_quartile
-                    FROM client_metrics
-                )
-                SELECT 
-                    revenue_quartile,
-                    CASE 
-                        WHEN revenue_quartile = 4 THEN 'High Value'
-                        WHEN revenue_quartile = 3 THEN 'Medium-High Value'
-                        WHEN revenue_quartile = 2 THEN 'Medium Value'
-                        ELSE 'Low Value'
-                    END as segment_name,
-                    COUNT(*) as client_count,
-                    SUM(total_revenue) as segment_revenue,
-                    AVG(total_revenue) as avg_revenue_per_client,
-                    AVG(invoice_count) as avg_orders_per_client,
-                    AVG(avg_order_value) as avg_order_value
-                FROM revenue_quartiles
-                GROUP BY revenue_quartile
-                ORDER BY revenue_quartile DESC
-            """
-            
-        elif segmentation_type == "frequency":
-            segmentation_query = f"""
-                WITH client_frequency AS (
-                    SELECT 
-                        a.id,
-                        a.denomination,
-                        COUNT(i.id) as order_frequency,
-                        SUM(i.total_amount) as total_revenue
-                    FROM Anagraphics a
-                    JOIN Invoices i ON a.id = i.anagraphics_id
-                    WHERE a.type = 'Cliente'
-                      AND i.type = 'Attiva'
-                      AND i.doc_date >= date('now', '-{period_months} months')
-                    GROUP BY a.id, a.denomination
-                )
-                SELECT 
-                    CASE 
-                        WHEN order_frequency >= 10 THEN 'Very Frequent (10+)'
-                        WHEN order_frequency >= 5 THEN 'Frequent (5-9)'
-                        WHEN order_frequency >= 2 THEN 'Regular (2-4)'
-                        ELSE 'Occasional (1)'
-                    END as segment_name,
-                    COUNT(*) as client_count,
-                    SUM(total_revenue) as segment_revenue,
-                    AVG(total_revenue) as avg_revenue_per_client,
-                    AVG(order_frequency) as avg_order_frequency
-                FROM client_frequency
-                GROUP BY 
-                    CASE 
-                        WHEN order_frequency >= 10 THEN 'Very Frequent (10+)'
-                        WHEN order_frequency >= 5 THEN 'Frequent (5-9)'
-                        WHEN order_frequency >= 2 THEN 'Regular (2-4)'
-                        ELSE 'Occasional (1)'
-                    END
-                ORDER BY avg_order_frequency DESC
-            """
-            
-        elif segmentation_type == "recency":
-            segmentation_query = """
-                WITH client_recency AS (
-                    SELECT 
-                        a.id,
-                        a.denomination,
-                        MAX(i.doc_date) as last_order_date,
-                        julianday('now') - julianday(MAX(i.doc_date)) as days_since_last_order,
-                        COUNT(i.id) as total_orders,
-                        SUM(i.total_amount) as total_revenue
-                    FROM Anagraphics a
-                    JOIN Invoices i ON a.id = i.anagraphics_id
-                    WHERE a.type = 'Cliente'
-                      AND i.type = 'Attiva'
-                    GROUP BY a.id, a.denomination
-                )
-                SELECT 
-                    CASE 
-                        WHEN days_since_last_order <= 30 THEN 'Active (≤30 days)'
-                        WHEN days_since_last_order <= 90 THEN 'Recent (31-90 days)'
-                        WHEN days_since_last_order <= 180 THEN 'Lapsed (91-180 days)'
-                        WHEN days_since_last_order <= 365 THEN 'At Risk (181-365 days)'
-                        ELSE 'Lost (>365 days)'
-                    END as segment_name,
-                    COUNT(*) as client_count,
-                    SUM(total_revenue) as segment_revenue,
-                    AVG(total_revenue) as avg_revenue_per_client,
-                    AVG(days_since_last_order) as avg_days_since_last_order
-                FROM client_recency
-                GROUP BY 
-                    CASE 
-                        WHEN days_since_last_order <= 30 THEN 'Active (≤30 days)'
-                        WHEN days_since_last_order <= 90 THEN 'Recent (31-90 days)'
-                        WHEN days_since_last_order <= 180 THEN 'Lapsed (91-180 days)'
-                        WHEN days_since_last_order <= 365 THEN 'At Risk (181-365 days)'
-                        ELSE 'Lost (>365 days)'
-                    END
-                ORDER BY avg_days_since_last_order
-            """
-        else:
-            raise ValueError(f"Unsupported segmentation type: {segmentation_type}")
-        
-        return await db_adapter.execute_query_async(segmentation_query)
-    
-    @staticmethod
-    async def get_cash_flow_forecast_async(
-        months_ahead: int = 6,
-        include_scheduled: bool = True
-    ) -> Dict[str, Any]:
-        from app.adapters.database_adapter import db_adapter
-        from datetime import datetime, timedelta
-        
-        historical_query = """
-            SELECT 
-                strftime('%m', transaction_date) as month_num,
-                AVG(monthly_inflow) as avg_inflow,
-                AVG(monthly_outflow) as avg_outflow,
-                AVG(monthly_net) as avg_net
-            FROM (
-                SELECT 
-                    strftime('%Y-%m', transaction_date) as year_month,
-                    transaction_date,
-                    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as monthly_inflow,
-                    SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as monthly_outflow,
-                    SUM(amount) as monthly_net
-                FROM BankTransactions
-                WHERE transaction_date >= date('now', '-24 months')
-                GROUP BY strftime('%Y-%m', transaction_date)
-            ) monthly_data
-            GROUP BY strftime('%m', transaction_date)
-            ORDER BY month_num
+        # Query SQL ottimizzata che fa aggregazione direttamente nel database
+        products_query = """
+            WITH product_aggregation AS (
+                SELECT
+                    il.description,
+                    SUM(il.quantity) as total_quantity,
+                    SUM(il.total_price) as total_value,
+                    AVG(il.unit_price) as avg_unit_price,
+                    COUNT(DISTINCT i.id) as num_invoices,
+                    GROUP_CONCAT(DISTINCT il.description) as original_descriptions
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                WHERE i.type = ? AND i.doc_date BETWEEN ? AND ?
+                  AND il.description IS NOT NULL AND TRIM(il.description) != ''
+                  AND il.quantity IS NOT NULL AND il.total_price IS NOT NULL
+                GROUP BY il.description
+                HAVING total_value > 0
+                ORDER BY total_value DESC
+                LIMIT ?
+            )
+            SELECT *
+            FROM product_aggregation
         """
         
-        historical = await db_adapter.execute_query_async(historical_query)
+        df = pd.read_sql_query(products_query, conn, params=(invoice_type, start_str, end_str, limit))
+
+        if df.empty:
+            return empty_df
+
+        # Applica normalizzazione solo ai risultati aggregati (molto più efficiente)
+        df['normalized_product'] = df['description'].apply(normalize_product_name)
+        df = df.dropna(subset=['normalized_product'])
+
+        if df.empty:
+            return empty_df
+
+        # Aggrega ulteriormente per prodotto normalizzato
+        df_final = df.groupby('normalized_product').agg(
+            total_quantity=('total_quantity', 'sum'),
+            total_value=('total_value', 'sum'),
+            avg_unit_price=('avg_unit_price', 'mean'),
+            num_invoices=('num_invoices', 'sum'),
+            original_descriptions=('original_descriptions', lambda x: '|'.join(sorted(set('|'.join(x).split('|')))))
+        ).reset_index()
+
+        # Formattazione finale
+        df_final['Prodotto Normalizzato'] = df_final['normalized_product']
+        df_final['Quantità Tot.'] = df_final['total_quantity'].apply(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        df_final['Valore Totale'] = df_final['total_value'].apply(lambda x: f"{x:,.2f}€")
+        df_final['N. Fatture'] = df_final['num_invoices']
+        df_final['Prezzo Medio'] = df_final['avg_unit_price'].apply(lambda x: f"{x:,.2f}€" if pd.notna(x) else '0,00€')
+        df_final['Descrizioni Originali'] = df_final['original_descriptions']
+
+        return df_final[cols_out].sort_values(by='total_value', ascending=False)
+
+    except Exception as e:
+        logging.error(f"Errore analisi prodotti ottimizzata ({invoice_type}): {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn: 
+            conn.close()
+
+# ===== BACKWARD COMPATIBILITY LAYER =====
+
+def _categorize_transactions(start_date_str: str, end_date_str: str) -> pd.DataFrame:
+    """Backward compatibility: usa versione ottimizzata"""
+    return _categorize_transactions_optimized(start_date_str, end_date_str)
+
+def get_cashflow_data(start_date=None, end_date=None):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_cashflow_data_optimized(start_date, end_date)
+
+def get_cashflow_table(start_date=None, end_date=None):
+    """Tabella cash flow formattata per UI - usa dati ottimizzati"""
+    cols_out = ['Mese', 'Incassi Clienti', 'Incassi Contanti', 'Altri Incassi', 'Tot. Entrate',
+                'Pagam. Fornitori', 'Spese Varie', 'Carburanti', 'Utenze', 'Tasse', 'Commissioni', 'Tot. Uscite',
+                'Flusso Operativo', 'Flusso Netto']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    try:
+        df_data = get_cashflow_data_optimized(start_date, end_date)
+        if df_data.empty: 
+            return empty_df
+
+        df_table = pd.DataFrame()
+        try:
+            df_table['Mese'] = pd.to_datetime(df_data['month'], format='%Y-%m').dt.strftime('%b %Y')
+        except ValueError:
+            df_table['Mese'] = df_data['month']
+
+        def format_currency(val):
+            if pd.isna(val): 
+                return 'N/A'
+            try:
+                d = quantize(Decimal(str(val)))
+                return f"{d:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return "0,00"
+
+        # Mappiamo i dati alle colonne della tabella
+        df_table['Incassi Clienti'] = df_data['incassi_clienti'].apply(format_currency)
+        df_table['Incassi Contanti'] = df_data['incassi_contanti'].apply(format_currency)
+        df_table['Altri Incassi'] = df_data['altri_incassi'].apply(format_currency)
+        df_table['Tot. Entrate'] = df_data['total_inflows'].apply(format_currency)
         
-        scheduled_receivables = []
-        scheduled_payables = []
+        df_table['Pagam. Fornitori'] = df_data['pagamenti_fornitori'].apply(format_currency)
+        # Raggruppiamo alcune spese per semplicità
+        df_data['spese_varie'] = (df_data['spese_carte'] + df_data['trasporti'] + df_data['altri_pagamenti'])
+        df_table['Spese Varie'] = df_data['spese_varie'].apply(format_currency)
+        df_table['Carburanti'] = df_data['carburanti'].apply(format_currency)
+        df_table['Utenze'] = df_data['utenze'].apply(format_currency)
+        df_table['Tasse'] = df_data['tasse_tributi'].apply(format_currency)
+        df_table['Commissioni'] = df_data['commissioni_bancarie'].apply(format_currency)
+        df_table['Tot. Uscite'] = df_data['total_outflows'].apply(format_currency)
         
-        if include_scheduled:
-            scheduled_receivables_query = f"""
+        df_table['Flusso Operativo'] = df_data['net_operational_flow'].apply(format_currency)
+        df_table['Flusso Netto'] = df_data['net_cash_flow'].apply(format_currency)
+
+        return df_table[cols_out]
+
+    except Exception as e:
+        logger.error(f"Errore creazione tabella cash flow: {e}", exc_info=True)
+        return empty_df
+
+def get_monthly_revenue_costs(start_date=None, end_date=None):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_monthly_revenue_costs_optimized(start_date, end_date)
+
+def get_products_analysis(invoice_type='Attiva', start_date=None, end_date=None):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_products_analysis_optimized(invoice_type, start_date, end_date)
+
+# ===== ENHANCED FUNCTIONS =====
+
+def calculate_and_update_client_scores():
+    """Calcolo score clienti con logica migliorata e query ottimizzate"""
+    conn = None
+    today = date.today()
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Query ottimizzata che calcola tutto in SQL
+        query = """
+            WITH payment_analysis AS (
                 SELECT 
-                    strftime('%Y-%m', due_date) as due_month,
-                    SUM(total_amount - paid_amount) as expected_inflow,
-                    COUNT(*) as invoice_count
+                    i.anagraphics_id,
+                    COUNT(*) as total_invoices,
+                    AVG(CASE 
+                        WHEN i.due_date IS NOT NULL AND bt.transaction_date IS NOT NULL THEN
+                            julianday(bt.transaction_date) - julianday(i.due_date)
+                        ELSE NULL 
+                    END) as avg_delay_days,
+                    SUM(i.total_amount) as total_amount,
+                    -- Weighted delay considering invoice amounts
+                    SUM(CASE 
+                        WHEN i.due_date IS NOT NULL AND bt.transaction_date IS NOT NULL THEN
+                            ((julianday(bt.transaction_date) - julianday(i.due_date)) * i.total_amount)
+                        ELSE 0 
+                    END) / NULLIF(SUM(i.total_amount), 0) as weighted_avg_delay,
+                    -- Payment frequency score
+                    COUNT(*) / MAX(1.0, (julianday('now') - julianday(MIN(i.doc_date))) / 365.0) as payment_frequency_yearly
+                FROM Invoices i
+                JOIN ReconciliationLinks rl ON i.id = rl.invoice_id
+                JOIN BankTransactions bt ON rl.transaction_id = bt.id
+                WHERE i.type = 'Attiva'
+                  AND i.payment_status IN ('Pagata Tot.', 'Riconciliata')
+                  AND i.due_date IS NOT NULL
+                GROUP BY i.anagraphics_id
+            ),
+            client_scores AS (
+                SELECT 
+                    anagraphics_id,
+                    -- Base score calculation
+                    ROUND(
+                        100.0 
+                        -- Penalty for delays
+                        - GREATEST(0, COALESCE(avg_delay_days, 0)) * 1.5
+                        - GREATEST(0, COALESCE(weighted_avg_delay, 0)) * 0.5
+                        -- Bonuses
+                        + LEAST(10, total_amount / 10000.0)  -- Volume bonus (max 10 pts for 100k+)
+                        + LEAST(5, payment_frequency_yearly / 2.0)  -- Frequency bonus (max 5 pts for 10+ yearly)
+                    , 1) as calculated_score
+                FROM payment_analysis
+            )
+            UPDATE Anagraphics 
+            SET score = (
+                SELECT CASE 
+                    WHEN calculated_score < 0 THEN 0.0
+                    WHEN calculated_score > 100 THEN 100.0
+                    ELSE calculated_score
+                END
+                FROM client_scores 
+                WHERE client_scores.anagraphics_id = Anagraphics.id
+            ),
+            updated_at = datetime('now')
+            WHERE id IN (SELECT anagraphics_id FROM client_scores)
+        """
+        
+        cursor.execute(query)
+        updated_count = cursor.rowcount
+        conn.commit()
+        
+        logger.info(f"Score calculation completed. Updated: {updated_count} clients.")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Errore calcolo score ottimizzato: {e}", exc_info=True)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_dashboard_kpis():
+    """KPI dashboard ottimizzati con query SQL unificate"""
+    conn = None
+    kpis = {
+        'total_receivables': Decimal('0.0'),
+        'total_payables': Decimal('0.0'),
+        'overdue_receivables_count': 0,
+        'overdue_receivables_amount': Decimal('0.0'),
+        'overdue_payables_count': 0,
+        'overdue_payables_amount': Decimal('0.0'),
+        'revenue_ytd': Decimal('0.0'),
+        'revenue_prev_year_ytd': Decimal('0.0'),
+        'revenue_yoy_change_ytd': None,
+        'gross_margin_ytd': Decimal('0.0'),
+        'margin_percent_ytd': None,
+        'avg_days_to_payment': None,
+        'inventory_turnover_estimate': None,
+        'active_customers_month': 0,
+        'new_customers_month': 0
+    }
+    
+    today = date.today()
+    today_str = today.isoformat()
+    start_of_year = date(today.year, 1, 1).isoformat()
+    start_of_prev_year_period = date(today.year - 1, 1, 1).isoformat()
+    end_of_prev_year_period = date(today.year - 1, today.month, today.day).isoformat()
+    start_of_month = date(today.year, today.month, 1).isoformat()
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Query unificata per tutti i KPI principali
+        unified_kpi_query = """
+            WITH kpi_base AS (
+                SELECT 
+                    type,
+                    payment_status,
+                    doc_date,
+                    due_date,
+                    total_amount,
+                    paid_amount,
+                    (total_amount - paid_amount) as open_amount,
+                    anagraphics_id,
+                    CASE WHEN due_date < ? THEN 1 ELSE 0 END as is_overdue
+                FROM Invoices
+                WHERE payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.', 'Pagata Tot.')
+            )
+            SELECT 
+                type,
+                -- Open balances
+                SUM(CASE WHEN payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') THEN open_amount ELSE 0 END) as total_open,
+                -- Overdue amounts and counts  
+                SUM(CASE WHEN payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') AND is_overdue = 1 THEN open_amount ELSE 0 END) as overdue_amount,
+                SUM(CASE WHEN payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') AND is_overdue = 1 THEN 1 ELSE 0 END) as overdue_count,
+                -- YTD revenue
+                SUM(CASE WHEN doc_date >= ? AND doc_date <= ? THEN total_amount ELSE 0 END) as revenue_ytd,
+                -- Previous year YTD
+                SUM(CASE WHEN doc_date BETWEEN ? AND ? THEN total_amount ELSE 0 END) as revenue_prev_ytd,
+                -- Active customers this month
+                COUNT(DISTINCT CASE WHEN doc_date >= ? AND doc_date <= ? AND type = 'Attiva' THEN anagraphics_id END) as active_customers_month
+            FROM kpi_base
+            GROUP BY type
+        """
+        
+        cursor.execute(unified_kpi_query, (
+            today_str, start_of_year, today_str, 
+            start_of_prev_year_period, end_of_prev_year_period,
+            start_of_month, today_str
+        ))
+        
+        for row in cursor.fetchall():
+            invoice_type = row['type']
+            if invoice_type == 'Attiva':
+                kpis['total_receivables'] = quantize(to_decimal(row['total_open']))
+                kpis['overdue_receivables_amount'] = quantize(to_decimal(row['overdue_amount']))
+                kpis['overdue_receivables_count'] = row['overdue_count'] or 0
+                kpis['revenue_ytd'] = quantize(to_decimal(row['revenue_ytd']))
+                kpis['revenue_prev_year_ytd'] = quantize(to_decimal(row['revenue_prev_ytd']))
+                kpis['active_customers_month'] = row['active_customers_month'] or 0
+            elif invoice_type == 'Passiva':
+                kpis['total_payables'] = quantize(to_decimal(row['total_open']))
+                kpis['overdue_payables_amount'] = quantize(to_decimal(row['overdue_amount']))
+                kpis['overdue_payables_count'] = row['overdue_count'] or 0
+
+        # Calcola YoY change
+        if kpis['revenue_prev_year_ytd'] != Decimal('0.0'):
+            try:
+                change = ((kpis['revenue_ytd'] - kpis['revenue_prev_year_ytd']) / kpis['revenue_prev_year_ytd']) * 100
+                kpis['revenue_yoy_change_ytd'] = round(float(change), 1)
+            except Exception:
+                kpis['revenue_yoy_change_ytd'] = None
+
+        # Query separata per costi YTD e margine
+        cursor.execute("""
+            SELECT SUM(total_amount) as costs_ytd
+            FROM Invoices
+            WHERE type = 'Passiva' AND doc_date >= ? AND doc_date <= ?
+        """, (start_of_year, today_str))
+        
+        costs_data = cursor.fetchone()
+        if costs_data and costs_data['costs_ytd'] is not None:
+            costs_ytd = quantize(to_decimal(costs_data['costs_ytd']))
+            kpis['gross_margin_ytd'] = kpis['revenue_ytd'] - costs_ytd
+            if kpis['revenue_ytd'] > 0:
+                kpis['margin_percent_ytd'] = round(float((kpis['gross_margin_ytd'] / kpis['revenue_ytd']) * 100), 1)
+
+        # Giorni medi di pagamento ottimizzato
+        cursor.execute("""
+            SELECT AVG(payment_delay) as avg_payment_days
+            FROM (
+                SELECT 
+                    julianday(MAX(bt.transaction_date)) - julianday(i.due_date) as payment_delay
+                FROM Invoices i
+                JOIN ReconciliationLinks rl ON i.id = rl.invoice_id
+                JOIN BankTransactions bt ON rl.transaction_id = bt.id
+                WHERE i.type = 'Attiva' 
+                  AND i.payment_status = 'Pagata Tot.'
+                  AND i.due_date IS NOT NULL
+                  AND i.doc_date >= ?
+                GROUP BY i.id
+            )
+        """, (start_of_year,))
+        
+        payment_days_data = cursor.fetchone()
+        if payment_days_data and payment_days_data['avg_payment_days'] is not None:
+            kpis['avg_days_to_payment'] = round(payment_days_data['avg_payment_days'], 1)
+
+        # Nuovi clienti nel mese
+        cursor.execute("""
+            SELECT COUNT(*) as new_customers
+            FROM (
+                SELECT anagraphics_id
                 FROM Invoices
                 WHERE type = 'Attiva'
-                  AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
-                  AND due_date IS NOT NULL
-                  AND due_date <= date('now', '+{months_ahead} months')
-                  AND (total_amount - paid_amount) > 0
-                GROUP BY strftime('%Y-%m', due_date)
-                ORDER BY due_month
-            """
-            
-            scheduled_payables_query = f"""
-                SELECT 
-                    strftime('%Y-%m', due_date) as due_month,
-                    SUM(total_amount - paid_amount) as expected_outflow,
-                    COUNT(*) as invoice_count
-                FROM Invoices
-                WHERE type = 'Passiva'
-                  AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
-                  AND due_date IS NOT NULL
-                  AND due_date <= date('now', '+{months_ahead} months')
-                  AND (total_amount - paid_amount) > 0
-                GROUP BY strftime('%Y-%m', due_date)
-                ORDER BY due_month
-            """
-            
-            scheduled_receivables = await db_adapter.execute_query_async(scheduled_receivables_query)
-            scheduled_payables = await db_adapter.execute_query_async(scheduled_payables_query)
-        
-        forecast = []
-        current_date = datetime.now()
-        
-        for i in range(months_ahead):
-            forecast_date = current_date + timedelta(days=30 * i)
-            month_num = forecast_date.strftime('%m')
-            year_month = forecast_date.strftime('%Y-%m')
-            
-            historical_pattern = next(
-                (h for h in historical if h['month_num'] == month_num), 
-                {'avg_inflow': 0, 'avg_outflow': 0, 'avg_net': 0}
+                GROUP BY anagraphics_id
+                HAVING MIN(doc_date) >= ? AND MIN(doc_date) <= ?
             )
-            
-            scheduled_in = next(
-                (s['expected_inflow'] for s in scheduled_receivables if s['due_month'] == year_month),
-                0
-            )
-            scheduled_out = next(
-                (s['expected_outflow'] for s in scheduled_payables if s['due_month'] == year_month),
-                0
-            )
-            
-            forecast_inflow = (historical_pattern['avg_inflow'] or 0) + scheduled_in
-            forecast_outflow = (historical_pattern['avg_outflow'] or 0) + scheduled_out
-            forecast_net = forecast_inflow - forecast_outflow
-            
-            forecast.append({
-                'month': year_month,
-                'forecasted_inflow': forecast_inflow,
-                'forecasted_outflow': forecast_outflow,
-                'forecasted_net': forecast_net,
-                'scheduled_receivables': scheduled_in,
-                'scheduled_payables': scheduled_out,
-                'historical_avg_inflow': historical_pattern['avg_inflow'] or 0,
-                'historical_avg_outflow': historical_pattern['avg_outflow'] or 0
-            })
+        """, (start_of_month, today_str))
         
-        return {
-            'forecast': forecast,
-            'historical_patterns': historical,
-            'methodology': 'hybrid_model_with_scheduled_payments'
-        }
+        new_data = cursor.fetchone()
+        if new_data:
+            kpis['new_customers_month'] = new_data['new_customers'] or 0
 
-analytics_adapter = AnalyticsAdapter()
+        logger.debug(f"KPI Dashboard ottimizzati calcolati: {kpis}")
+        return kpis
+        
+    except Exception as e:
+        logger.error(f"Errore calcolo KPI dashboard ottimizzato: {e}", exc_info=True)
+        return kpis
+    finally:
+        if conn:
+            conn.close()
+
+def get_top_clients_by_revenue(start_date=None, end_date=None, limit=20):
+    """Top clienti ottimizzato con query SQL unificata"""
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+    
+    cols_out = ['ID', 'Denominazione', 'Fatturato Totale', 'N. Fatture', 'Score', 'Ticket Medio', 'Margine %']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Query ottimizzata che calcola tutto in SQL
+        query = """
+            WITH client_metrics AS (
+                SELECT 
+                    a.id, 
+                    a.denomination, 
+                    a.score,
+                    SUM(i.total_amount) AS total_revenue,
+                    COUNT(i.id) AS invoice_count, 
+                    AVG(i.total_amount) AS avg_ticket,
+                    -- Stima margine basata su confronto prezzi vendita vs acquisto medio
+                    (SELECT AVG(
+                        CASE WHEN il_sell.unit_price > 0 AND avg_buy_price.avg_price > 0 
+                        THEN ((il_sell.unit_price - avg_buy_price.avg_price) / il_sell.unit_price) * 100 
+                        ELSE NULL END
+                    ) FROM InvoiceLines il_sell 
+                    JOIN Invoices i_sell ON il_sell.invoice_id = i_sell.id
+                    LEFT JOIN (
+                        SELECT description, AVG(unit_price) as avg_price
+                        FROM InvoiceLines il_buy 
+                        JOIN Invoices i_buy ON il_buy.invoice_id = i_buy.id 
+                        WHERE i_buy.type = 'Passiva'
+                        GROUP BY description
+                    ) avg_buy_price ON il_sell.description = avg_buy_price.description
+                    WHERE i_sell.anagraphics_id = a.id AND i_sell.type = 'Attiva'
+                    AND i_sell.doc_date BETWEEN ? AND ?
+                    ) AS estimated_margin
+                FROM Invoices i 
+                JOIN Anagraphics a ON i.anagraphics_id = a.id
+                WHERE i.type = 'Attiva' AND i.doc_date BETWEEN ? AND ?
+                GROUP BY a.id, a.denomination, a.score 
+                ORDER BY total_revenue DESC 
+                LIMIT ?
+            )
+            SELECT * FROM client_metrics
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(start_str, end_str, start_str, end_str, limit))
+
+        if df.empty:
+            return empty_df
+
+        # Formattazione ottimizzata
+        df['ID'] = df['id']
+        df['Denominazione'] = df['denomination']
+        df['Fatturato Totale'] = df['total_revenue'].apply(lambda x: f"{quantize(to_decimal(x)):,.2f}€")
+        df['N. Fatture'] = df['invoice_count']
+        df['Score'] = df['score'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else 'N/D')
+        df['Ticket Medio'] = df['avg_ticket'].apply(lambda x: f"{quantize(to_decimal(x)):,.2f}€")
+        df['Margine %'] = df['estimated_margin'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) and x > 0 else 'N/D')
+        
+        return df[cols_out]
+        
+    except Exception as e:
+        logger.error(f"Errore top clienti ottimizzato: {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+def get_aging_summary_optimized(invoice_type='Attiva'):
+    """Aging analysis ottimizzato con query SQL diretta"""
+    conn = None
+    today = date.today()
+    today_str = today.isoformat()
+    
+    try:
+        conn = get_connection()
+        
+        # Query SQL ottimizzata che fa tutto il calcolo aging nel database
+        query = """
+            WITH aging_buckets AS (
+                SELECT 
+                    id, 
+                    due_date, 
+                    (total_amount - paid_amount) AS open_amount,
+                    CASE 
+                        WHEN due_date IS NULL OR due_date >= ? THEN 'Non Scaduto'
+                        WHEN julianday(?) - julianday(due_date) <= 7 THEN '1-7 gg'
+                        WHEN julianday(?) - julianday(due_date) <= 15 THEN '8-15 gg'
+                        WHEN julianday(?) - julianday(due_date) <= 30 THEN '16-30 gg'
+                        WHEN julianday(?) - julianday(due_date) <= 60 THEN '31-60 gg'
+                        WHEN julianday(?) - julianday(due_date) <= 90 THEN '61-90 gg'
+                        ELSE '>90 gg'
+                    END as aging_bucket
+                FROM Invoices
+                WHERE type = ? 
+                  AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
+                  AND (total_amount - paid_amount) > 0.01
+            )
+            SELECT 
+                aging_bucket,
+                SUM(open_amount) as total_amount,
+                COUNT(*) as invoice_count
+            FROM aging_buckets
+            GROUP BY aging_bucket
+        """
+        
+        cursor = conn.cursor()
+        cursor.execute(query, (today_str, today_str, today_str, today_str, today_str, today_str, invoice_type))
+        rows = cursor.fetchall()
+
+        # Inizializza bucket con valori zero
+        buckets = ['Non Scaduto', '1-7 gg', '8-15 gg', '16-30 gg', '31-60 gg', '61-90 gg', '>90 gg']
+        aging_summary = {label: {'amount': Decimal('0.0'), 'count': 0} for label in buckets}
+
+        # Popola con dati reali
+        for row in rows:
+            bucket = row['aging_bucket']
+            if bucket in aging_summary:
+                aging_summary[bucket]['amount'] = quantize(to_decimal(row['total_amount']))
+                aging_summary[bucket]['count'] = row['invoice_count']
+
+        return aging_summary
+        
+    except Exception as e:
+        logger.error(f"Errore calcolo aging ottimizzato ({invoice_type}): {e}", exc_info=True)
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def get_aging_summary(invoice_type='Attiva'):
+    """Backward compatibility: usa versione ottimizzata"""
+    return get_aging_summary_optimized(invoice_type)
+
+# ===== ADVANCED ANALYSIS FUNCTIONS =====
+
+def get_seasonal_product_analysis(product_category='all', years_back=3):
+    """Analisi stagionalità prodotti con query SQL ottimizzata"""
+    start_date_obj, end_date_obj = _resolve_date_range(None, None, default_days=years_back * 365)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+    
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Query ottimizzata che fa aggregazione direttamente in SQL
+        query = """
+            WITH product_seasonality AS (
+                SELECT 
+                    strftime('%m', i.doc_date) as month_num,
+                    strftime('%Y', i.doc_date) as year,
+                    il.description,
+                    SUM(il.quantity) as total_quantity,
+                    SUM(il.total_price) as total_value,
+                    COUNT(DISTINCT i.id) as invoice_count,
+                    AVG(il.unit_price) as avg_unit_price
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                WHERE i.type = 'Attiva' 
+                  AND i.doc_date BETWEEN ? AND ?
+                  AND il.description IS NOT NULL 
+                  AND TRIM(il.description) != ''
+                  AND il.quantity > 0
+                GROUP BY month_num, year, il.description
+            ),
+            monthly_aggregation AS (
+                SELECT 
+                    month_num,
+                    description,
+                    SUM(total_quantity) as sum_quantity,
+                    SUM(total_value) as sum_value,
+                    AVG(avg_unit_price) as avg_price
+                FROM product_seasonality
+                GROUP BY month_num, description
+            ),
+            yearly_averages AS (
+                SELECT 
+                    description,
+                    AVG(sum_value) as yearly_avg_value
+                FROM monthly_aggregation
+                GROUP BY description
+            )
+            SELECT 
+                ma.month_num,
+                ma.description,
+                ma.sum_quantity as total_quantity,
+                ma.sum_value as total_value,
+                ma.avg_price as avg_unit_price,
+                CASE 
+                    WHEN ya.yearly_avg_value > 0 THEN ma.sum_value / ya.yearly_avg_value
+                    ELSE 0 
+                END as seasonality_index
+            FROM monthly_aggregation ma
+            JOIN yearly_averages ya ON ma.description = ya.description
+            ORDER BY ma.description, ma.month_num
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(start_str, end_str))
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Applica normalizzazione prodotti solo sui risultati aggregati
+        df['normalized_product'] = df['description'].apply(normalize_product_name)
+        df = df.dropna(subset=['normalized_product'])
+        
+        # Filtro per categoria se specificato
+        if product_category != 'all':
+            fruit_keywords = ['mela', 'pera', 'banana', 'arancia', 'limone', 'uva', 'pesca', 'albicocca', 'ciliegia', 'fragola', 'kiwi', 'ananas', 'cocco', 'melone', 'anguria', 'pompelmo', 'mandarino']
+            vegetable_keywords = ['pomodoro', 'lattuga', 'carota', 'cipolla', 'patata', 'zucchina', 'melanzana', 'peperone', 'broccoli', 'cavolo', 'spinaci', 'finocchio', 'sedano', 'rucola', 'basilico', 'prezzemolo']
+            
+            if product_category == 'frutta':
+                df = df[df['normalized_product'].str.contains('|'.join(fruit_keywords), case=False, na=False)]
+            elif product_category == 'verdura':
+                df = df[df['normalized_product'].str.contains('|'.join(vegetable_keywords), case=False, na=False)]
+        
+        # Aggrega per prodotto normalizzato
+        seasonal_data = df.groupby(['normalized_product', 'month_num']).agg({
+            'total_quantity': 'sum',
+            'total_value': 'sum',
+            'avg_unit_price': 'mean',
+            'seasonality_index': 'mean'
+        }).reset_index()
+        
+        # Aggiungi nomi mesi
+        seasonal_data['month_name'] = seasonal_data['month_num'].map({
+            '01': 'Gen', '02': 'Feb', '03': 'Mar', '04': 'Apr',
+            '05': 'Mag', '06': 'Giu', '07': 'Lug', '08': 'Ago',
+            '09': 'Set', '10': 'Ott', '11': 'Nov', '12': 'Dic'
+        })
+        
+        return seasonal_data.sort_values(['normalized_product', 'month_num'])
+        
+    except Exception as e:
+        logger.error(f"Errore analisi stagionalità ottimizzata: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn: 
+            conn.close()
+
+def get_commission_summary(start_date=None, end_date=None):
+    """Analisi commissioni bancarie ottimizzata"""
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+    
+    cols_out = ['Mese', 'Totale Commissioni', 'N. Operazioni', 'Commissione Media', 'Tipo Principale']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    conn = None
+    try:
+        conn = get_connection()
+
+        # Query SQL ottimizzata per commissioni
+        query = """
+            WITH commission_analysis AS (
+                SELECT
+                    strftime('%Y-%m', transaction_date) AS month,
+                    ABS(amount) AS commission_amount,
+                    description,
+                    COUNT(*) OVER (PARTITION BY strftime('%Y-%m', transaction_date)) as monthly_operations,
+                    SUM(ABS(amount)) OVER (PARTITION BY strftime('%Y-%m', transaction_date)) as monthly_total,
+                    AVG(ABS(amount)) OVER (PARTITION BY strftime('%Y-%m', transaction_date)) as monthly_avg,
+                    ROW_NUMBER() OVER (PARTITION BY strftime('%Y-%m', transaction_date) ORDER BY ABS(amount) DESC) as rn
+                FROM BankTransactions
+                WHERE transaction_date BETWEEN ? AND ?
+                  AND amount < 0
+                  AND reconciliation_status != 'Ignorato'
+                  AND (LOWER(description) LIKE '%commissioni%' OR
+                       LOWER(description) LIKE '%competenze banc%' OR
+                       LOWER(description) LIKE '%spese tenuta conto%' OR
+                       LOWER(description) LIKE '%imposta di bollo%' OR
+                       LOWER(description) LIKE '%canone%')
+            )
+            SELECT DISTINCT
+                month,
+                monthly_total as total_commissions,
+                monthly_operations as operation_count,
+                monthly_avg as avg_commission,
+                FIRST_VALUE(description) OVER (PARTITION BY month ORDER BY commission_amount DESC) as main_type
+            FROM commission_analysis
+            ORDER BY month
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(start_str, end_str))
+
+        if df.empty:
+            return empty_df
+
+        # Formattazione ottimizzata
+        try:
+            df['Mese'] = pd.to_datetime(df['month'], format='%Y-%m').dt.strftime('%b %Y')
+        except ValueError:
+            df['Mese'] = df['month']
+
+        def format_currency(val):
+            if pd.isna(val):
+                return 'N/A'
+            try:
+                d = quantize(to_decimal(val))
+                return f"{d.copy_abs():,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return "0,00"
+
+        df['Totale Commissioni'] = df['total_commissions'].apply(format_currency)
+        df['N. Operazioni'] = df['operation_count']
+        df['Commissione Media'] = df['avg_commission'].apply(format_currency)
+        df['Tipo Principale'] = df['main_type'].str.title()
+
+        return df[cols_out]
+
+    except Exception as e:
+        logger.error(f"Errore sommario commissioni ottimizzato: {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+def get_clients_by_score(order='DESC', limit=20):
+    """Clienti ordinati per score ottimizzato con query SQL unificata"""
+    conn = None
+    cols_out = ['ID', 'Denominazione', 'P.IVA', 'C.F.', 'Città', 'Score', 'Ultimo Ordine', 'Fatturato YTD']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    try:
+        conn = get_connection()
+        sort_order = "ASC" if order.upper() == 'ASC' else "DESC"
+        current_year = date.today().year
+        
+        # Query ottimizzata che calcola tutto in SQL
+        query = f"""
+            WITH client_metrics AS (
+                SELECT 
+                    a.id, 
+                    a.denomination, 
+                    a.piva, 
+                    a.cf, 
+                    a.city, 
+                    a.score,
+                    MAX(i.doc_date) as ultimo_ordine,
+                    SUM(CASE WHEN strftime('%Y', i.doc_date) = '{current_year}' THEN i.total_amount ELSE 0 END) as fatturato_ytd
+                FROM Anagraphics a
+                LEFT JOIN Invoices i ON a.id = i.anagraphics_id AND i.type = 'Attiva'
+                WHERE a.type = 'Cliente'
+                GROUP BY a.id, a.denomination, a.piva, a.cf, a.city, a.score
+            )
+            SELECT * FROM client_metrics
+            ORDER BY 
+                CASE WHEN score IS NULL THEN {1 if sort_order == 'ASC' else 0} ELSE {0 if sort_order == 'ASC' else 1} END,
+                score {sort_order}, 
+                denomination COLLATE NOCASE
+            LIMIT ?
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(limit,))
+
+        if df.empty:
+            return empty_df
+
+        # Formattazione ottimizzata
+        df['ID'] = df['id']
+        df['Denominazione'] = df['denomination']
+        df['P.IVA'] = df['piva'].fillna('')
+        df['C.F.'] = df['cf'].fillna('')
+        df['Città'] = df['city'].fillna('')
+        df['Score'] = df['score'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else 'N/D')
+        df['Ultimo Ordine'] = pd.to_datetime(df['ultimo_ordine'], errors='coerce').dt.strftime('%d/%m/%Y').fillna('Mai')
+        df['Fatturato YTD'] = df['fatturato_ytd'].apply(lambda x: f"{quantize(to_decimal(x)):,.0f}€" if pd.notna(x) and x > 0 else '0€')
+        
+        return df[cols_out]
+        
+    except Exception as e:
+        logger.error(f"Errore clienti per score ottimizzato: {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+def get_product_monthly_sales(normalized_description, start_date=None, end_date=None):
+    """Vendite mensili prodotto ottimizzate con query SQL diretta"""
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=730)  # 2 anni default
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+    
+    cols_out = ['Mese', 'Quantità', 'Valore', 'Prezzo Medio', 'Trend %']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    conn = None
+    try:
+        conn = get_connection()
+
+        # Query ottimizzata che fa tutto in SQL
+        query = """
+            WITH product_monthly AS (
+                SELECT 
+                    strftime('%Y-%m', i.doc_date) as month,
+                    SUM(il.quantity) as monthly_quantity,
+                    SUM(il.total_price) as monthly_value,
+                    AVG(il.unit_price) as avg_unit_price
+                FROM InvoiceLines il 
+                JOIN Invoices i ON il.invoice_id = i.id
+                WHERE i.type = 'Attiva' 
+                  AND i.doc_date BETWEEN ? AND ?
+                  AND il.description IS NOT NULL 
+                  AND TRIM(il.description) != ''
+                  AND LOWER(TRIM(il.description)) LIKE LOWER(?)
+                GROUP BY strftime('%Y-%m', i.doc_date)
+                ORDER BY month
+            ),
+            product_with_trends AS (
+                SELECT 
+                    month,
+                    monthly_quantity,
+                    monthly_value,
+                    avg_unit_price,
+                    LAG(monthly_value) OVER (ORDER BY month) as prev_month_value,
+                    CASE 
+                        WHEN LAG(monthly_value) OVER (ORDER BY month) > 0 THEN
+                            ((monthly_value - LAG(monthly_value) OVER (ORDER BY month)) / LAG(monthly_value) OVER (ORDER BY month)) * 100
+                        ELSE NULL
+                    END as trend_percent
+                FROM product_monthly
+            )
+            SELECT * FROM product_with_trends
+            ORDER BY month
+        """
+        
+        # Usa pattern matching per il prodotto normalizzato
+        pattern = f'%{normalized_description}%'
+        df = pd.read_sql_query(query, conn, params=(start_str, end_str, pattern))
+
+        if df.empty:
+            return empty_df
+
+        # Formattazione finale
+        try:
+            df['Mese'] = pd.to_datetime(df['month'], format='%Y-%m').dt.strftime('%b %Y')
+        except:
+            df['Mese'] = df['month']
+            
+        df['Quantità'] = df['monthly_quantity'].apply(lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notna(x) else '0,00')
+        df['Valore'] = df['monthly_value'].apply(lambda x: f"{quantize(to_decimal(x)):,.2f}€" if pd.notna(x) else '0,00€')
+        df['Prezzo Medio'] = df['avg_unit_price'].apply(lambda x: f"{quantize(to_decimal(x)):,.2f}€" if pd.notna(x) else '0,00€')
+        df['Trend %'] = df['trend_percent'].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else 'N/D')
+        
+        return df[cols_out]
+        
+    except Exception as e:
+        logger.error(f"Errore vendite mensili ottimizzate '{normalized_description}': {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+def get_anagraphic_financial_summary(anagraphic_id):
+    """Sommario finanziario anagrafica ottimizzato con query SQL unificata"""
+    summary = {
+        'total_invoiced': Decimal('0.0'),
+        'total_paid': Decimal('0.0'),
+        'open_balance': Decimal('0.0'),
+        'overdue_amount': Decimal('0.0'),
+        'overdue_count': 0,
+        'avg_payment_days': None,
+        'avg_order_value_ytd': None,
+        'revenue_ytd': Decimal('0.0'),
+        'customer_segment': None,
+        'preferred_products': []
+    }
+    
+    if anagraphic_id is None:
+        return summary
+
+    conn = None
+    today = date.today()
+    today_str = today.isoformat()
+    start_of_year = date(today.year, 1, 1).isoformat()
+    six_months_ago = (today - relativedelta(months=6)).isoformat()
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Query unificata per tutti i dati principali
+        unified_query = """
+            WITH anagraphic_metrics AS (
+                SELECT
+                    SUM(CASE WHEN type = 'Attiva' THEN total_amount ELSE 0 END) as total_revenue,
+                    SUM(CASE WHEN type = 'Attiva' THEN paid_amount ELSE 0 END) as total_received,
+                    COUNT(CASE WHEN type = 'Attiva' THEN 1 END) as total_invoices,
+                    MAX(CASE WHEN type = 'Attiva' THEN doc_date END) as last_order_date,
+                    -- Scaduti
+                    SUM(CASE WHEN type = 'Attiva' AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') AND due_date < ? THEN (total_amount - paid_amount) ELSE 0 END) as overdue_amount,
+                    COUNT(CASE WHEN type = 'Attiva' AND payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.') AND due_date < ? THEN 1 END) as overdue_count,
+                    -- YTD
+                    SUM(CASE WHEN type = 'Attiva' AND doc_date >= ? AND doc_date <= ? THEN total_amount ELSE 0 END) as revenue_ytd,
+                    COUNT(CASE WHEN type = 'Attiva' AND doc_date >= ? AND doc_date <= ? THEN 1 END) as count_ytd
+                FROM Invoices
+                WHERE anagraphics_id = ?
+            )
+            SELECT * FROM anagraphic_metrics
+        """
+        
+        cursor.execute(unified_query, (today_str, today_str, start_of_year, today_str, start_of_year, today_str, anagraphic_id))
+        totals = cursor.fetchone()
+        
+        if totals:
+            summary['total_invoiced'] = quantize(to_decimal(totals['total_revenue'])) if totals['total_revenue'] else Decimal('0.0')
+            summary['total_paid'] = quantize(to_decimal(totals['total_received'])) if totals['total_received'] else Decimal('0.0')
+            summary['open_balance'] = summary['total_invoiced'] - summary['total_paid']
+            summary['overdue_amount'] = quantize(to_decimal(totals['overdue_amount'])) if totals['overdue_amount'] else Decimal('0.0')
+            summary['overdue_count'] = totals['overdue_count'] or 0
+            summary['revenue_ytd'] = quantize(to_decimal(totals['revenue_ytd'])) if totals['revenue_ytd'] else Decimal('0.0')
+            
+            if totals['count_ytd'] and totals['count_ytd'] > 0:
+                summary['avg_order_value_ytd'] = quantize(summary['revenue_ytd'] / Decimal(totals['count_ytd']))
+
+        # Segmentazione cliente
+        revenue_ytd_float = float(summary['revenue_ytd'])
+        if revenue_ytd_float >= 100000:
+            summary['customer_segment'] = 'Platinum'
+        elif revenue_ytd_float >= 50000:
+            summary['customer_segment'] = 'Gold'
+        elif revenue_ytd_float >= 10000:
+            summary['customer_segment'] = 'Silver'
+        elif revenue_ytd_float > 0:
+            summary['customer_segment'] = 'Bronze'
+        else:
+            summary['customer_segment'] = 'Inactive'
+
+        # Top 3 prodotti preferiti con query ottimizzata
+        cursor.execute("""
+            SELECT 
+                il.description,
+                SUM(il.total_price) as total_value,
+                SUM(il.quantity) as total_quantity
+            FROM InvoiceLines il
+            JOIN Invoices i ON il.invoice_id = i.id
+            WHERE i.anagraphics_id = ?
+              AND i.type = 'Attiva'
+              AND i.doc_date >= ?
+              AND il.description IS NOT NULL
+            GROUP BY il.description
+            ORDER BY total_value DESC
+            LIMIT 3
+        """, (anagraphic_id, six_months_ago))
+        
+        preferred_products = cursor.fetchall()
+        summary['preferred_products'] = [
+            {
+                'product': row['description'],
+                'value': f"{quantize(to_decimal(row['total_value'])):,.2f}€",
+                'quantity': f"{quantize(to_decimal(row['total_quantity'])):,.2f}"
+            }
+            for row in preferred_products
+        ]
+
+    except Exception as e:
+        logger.error(f"Errore sommario finanziario ottimizzato per ID {anagraphic_id}: {e}", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
+
+    return summary
+
+def get_top_overdue_invoices(limit=10):
+    """Top fatture scadute ottimizzato con query SQL diretta"""
+    conn = None
+    today_py = date.today()
+    today_str = today_py.isoformat()
+    cols_out = ['id', 'type', 'doc_number', 'due_date_fmt', 'counterparty_name', 'open_amount_fmt', 'days_overdue', 'priority']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    try:
+        conn = get_connection()
+        
+        # Query ottimizzata che calcola priorità direttamente in SQL
+        query = """
+            WITH overdue_with_priority AS (
+                SELECT
+                    i.id, 
+                    i.type, 
+                    i.doc_number, 
+                    i.due_date,
+                    a.denomination AS counterparty_name,
+                    (i.total_amount - i.paid_amount) AS open_amount,
+                    a.score as customer_score,
+                    julianday(?) - julianday(i.due_date) as days_overdue,
+                    -- Calcolo priorità in SQL
+                    (((i.total_amount - i.paid_amount) / 1000.0) * 0.4 +
+                     ((julianday(?) - julianday(i.due_date)) / 10.0) * 0.4 +
+                     ((100 - COALESCE(a.score, 50)) / 20.0) * 0.2) as priority_score
+                FROM Invoices i 
+                JOIN Anagraphics a ON i.anagraphics_id = a.id
+                WHERE i.type = 'Attiva'
+                  AND i.payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
+                  AND i.due_date IS NOT NULL 
+                  AND date(i.due_date) < date(?)
+                  AND (i.total_amount - i.paid_amount) > 0.01
+            )
+            SELECT 
+                id, type, doc_number, due_date, counterparty_name, open_amount, days_overdue,
+                CASE 
+                    WHEN priority_score >= 10 THEN 'Critica'
+                    WHEN priority_score >= 5 THEN 'Alta' 
+                    WHEN priority_score >= 2 THEN 'Media'
+                    ELSE 'Bassa'
+                END as priority
+            FROM overdue_with_priority
+            ORDER BY priority_score DESC
+            LIMIT ?
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(today_str, today_str, today_str, limit))
+
+        if df.empty:
+            return empty_df
+
+        # Formattazione finale
+        df['due_date_fmt'] = pd.to_datetime(df['due_date']).dt.strftime('%d/%m/%Y')
+        df['open_amount_fmt'] = df['open_amount'].apply(lambda x: f"{quantize(to_decimal(x)):,.2f}€")
+        df['days_overdue'] = df['days_overdue'].astype(int)
+
+        return df[cols_out]
+        
+    except Exception as e:
+        logger.error(f"Errore recupero top fatture scadute ottimizzato: {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+def get_due_dates_in_month(year, month):
+    """Date con scadenze nel mese ottimizzato"""
+    conn = None
+    try:
+        conn = get_connection()
+        start_date = date(year, month, 1)
+        end_date = start_date + relativedelta(months=1) - timedelta(days=1)
+        start_str, end_str = start_date.isoformat(), end_date.isoformat()
+        
+        # Query ottimizzata
+        query = """
+            SELECT DISTINCT date(due_date) as due_day
+            FROM Invoices
+            WHERE payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
+              AND due_date BETWEEN ? AND ?
+              AND (total_amount - paid_amount) > 0.01
+            ORDER BY due_day
+        """
+        
+        cursor = conn.cursor()
+        cursor.execute(query, (start_str, end_str))
+        dates = [date.fromisoformat(row['due_day']) for row in cursor.fetchall() if row['due_day']]
+        return dates
+        
+    except Exception as e:
+        logger.error(f"Errore recupero date scadenza ottimizzato per {year}-{month}: {e}", exc_info=True)
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def get_invoices_due_on_date(due_date_py):
+    """Fatture in scadenza in una data specifica ottimizzato"""
+    conn = None
+    today_py = date.today()
+    cols_out = ['id', 'type', 'doc_number', 'counterparty_name', 'open_amount_fmt', 'days_overdue']
+    empty_df = pd.DataFrame(columns=cols_out)
+    
+    try:
+        conn = get_connection()
+        due_date_str = due_date_py.isoformat()
+        today_str = today_py.isoformat()
+        
+        # Query ottimizzata
+        query = """
+            SELECT
+                i.id, 
+                i.type, 
+                i.doc_number, 
+                a.denomination AS counterparty_name,
+                (i.total_amount - i.paid_amount) AS open_amount,
+                julianday(?) - julianday(i.due_date) as days_overdue
+            FROM Invoices i 
+            JOIN Anagraphics a ON i.anagraphics_id = a.id
+            WHERE date(i.due_date) = date(?)
+              AND i.payment_status IN ('Aperta', 'Scaduta', 'Pagata Parz.')
+              AND (i.total_amount - i.paid_amount) > 0.01
+            ORDER BY a.denomination COLLATE NOCASE, i.type
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(today_str, due_date_str))
+
+        if df.empty:
+            return empty_df
+
+        # Formattazione
+        df['days_overdue'] = df['days_overdue'].astype(int)
+        df['open_amount_fmt'] = df['open_amount'].apply(lambda x: f"{quantize(to_decimal(x)):,.2f}€")
+
+        return df[cols_out]
+        
+    except Exception as e:
+        logger.error(f"Errore recupero fatture per scadenza ottimizzato {due_date_str}: {e}", exc_info=True)
+        return empty_df
+    finally:
+        if conn:
+            conn.close()
+
+# ===== BUSINESS INTELLIGENCE FUNCTIONS =====
+
+def get_business_insights_summary(start_date=None, end_date=None):
+    """Riepilogo insights business ottimizzato"""
+    insights = {
+        'seasonal_trends': {},
+        'top_performing_products': [],
+        'cash_flow_health': '',
+        'customer_retention': 0.0,
+        'inventory_alerts': [],
+        'profitability_trend': '',
+        'recommendations': []
+    }
+    
+    try:
+        # Analisi stagionalità ottimizzata
+        seasonal_data = get_seasonal_product_analysis('all', 2)
+        if not seasonal_data.empty:
+            monthly_sales = seasonal_data.groupby('month_num')['total_value'].sum()
+            if not monthly_sales.empty:
+                peak_month = monthly_sales.idxmax()
+                insights['seasonal_trends']['peak_month'] = peak_month
+                insights['seasonal_trends']['peak_value'] = f"{monthly_sales[peak_month]:,.2f}€"
+        
+        # Cash flow health ottimizzato
+        cashflow_data = get_cashflow_data_optimized(start_date, end_date)
+        if not cashflow_data.empty:
+            avg_net_flow = cashflow_data['net_cash_flow'].mean()
+            if avg_net_flow > 10000:
+                insights['cash_flow_health'] = 'Eccellente'
+            elif avg_net_flow > 5000:
+                insights['cash_flow_health'] = 'Buono'
+            elif avg_net_flow > 0:
+                insights['cash_flow_health'] = 'Stabile'
+            else:
+                insights['cash_flow_health'] = 'Critico'
+        
+        # Prodotti top performance ottimizzato
+        products_analysis = get_products_analysis_optimized('Attiva', start_date, end_date, 5)
+        if not products_analysis.empty:
+            insights['top_performing_products'] = products_analysis['Prodotto Normalizzato'].tolist()
+        
+        # Raccomandazioni
+        recommendations = []
+        if 'peak_month' in insights['seasonal_trends']:
+            peak = insights['seasonal_trends']['peak_month']
+            if peak in ['11', '12', '01']:
+                recommendations.append("Incrementa stock agrumi e verdure invernali per il periodo di picco")
+            elif peak in ['06', '07', '08']:
+                recommendations.append("Pianifica maggiori approvvigionamenti frutta estiva")
+        
+        if insights['cash_flow_health'] == 'Critico':
+            recommendations.append("Rivedere termini di pagamento clienti e ottimizzare incassi")
+        
+        insights['recommendations'] = recommendations
+        return insights
+        
+    except Exception as e:
+        logger.error(f"Errore generazione business insights ottimizzato: {e}", exc_info=True)
+        return insights
+
+# ===== EXPORT UTILITIES =====
+
+def export_analysis_to_excel(analysis_type, data, filename=None):
+    """Esporta analisi in formato Excel per condivisione"""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"analisi_{analysis_type}_{timestamp}.xlsx"
+    
+    try:
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            if isinstance(data, dict):
+                for sheet_name, df in data.items():
+                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+            elif isinstance(data, pd.DataFrame) and not data.empty:
+                data.to_excel(writer, sheet_name='Analisi', index=False)
+        
+        logger.info(f"Analisi esportata in: {filename}")
+        return filename
+        
+    except Exception as e:
+        logger.error(f"Errore esportazione Excel: {e}", exc_info=True)
+        return None
+
+# ===== COMPATIBILITY ALIASES =====
+
+def get_monthly_cash_flow_analysis(months: int = 12) -> pd.DataFrame:
+    """Compatibility alias for get_cashflow_data"""
+    start_date = (datetime.now() - pd.DateOffset(months=months)).strftime('%Y-%m-%d')
+    return get_cashflow_data_optimized(start_date, None)
+
+def get_monthly_revenue_analysis(months: int = 12, invoice_type: Optional[str] = None) -> pd.DataFrame:
+    """Compatibility alias for get_monthly_revenue_costs"""
+    start_date = (datetime.now() - pd.DateOffset(months=months)).strftime('%Y-%m-%d')
+    return get_monthly_revenue_costs_optimized(start_date, None)
+
+def get_product_analysis(limit: int = 50, period_months: int = 12, min_quantity: Optional[float] = None, invoice_type: Optional[str] = None) -> pd.DataFrame:
+    """Compatibility alias for get_products_analysis_optimized"""
+    start_date = (datetime.now() - pd.DateOffset(months=period_months)).strftime('%Y-%m-%d')
+    return get_products_analysis_optimized(invoice_type or 'Attiva', start_date, None, limit)
+
+# ===== STUB FUNCTIONS FOR ADVANCED FEATURES =====
+
+def get_top_clients_performance(start_date=None, end_date=None, limit=20):
+    """Stub: usa get_top_clients_by_revenue come fallback"""
+    return get_top_clients_by_revenue(start_date, end_date, limit)
+
+def get_supplier_analysis(start_date=None, end_date=None):
+    """Stub: usa get_products_analysis per fornitori"""
+    return get_products_analysis_optimized('Passiva', start_date, end_date)
+
+def get_advanced_cashflow_analysis(start_date=None, end_date=None):
+    """Stub: usa get_cashflow_data_optimized"""
+    return get_cashflow_data_optimized(start_date, end_date)
+
+def get_waste_and_spoilage_analysis(start_date=None, end_date=None):
+    """Stub: analisi base scarti"""
+    return {'message': 'Funzione disponibile tramite adapter', 'data': []}
+
+def get_inventory_turnover_analysis(start_date=None, end_date=None):
+    """Stub: analisi rotazione base"""
+    return pd.DataFrame({'message': ['Funzione disponibile tramite adapter']})
+
+def get_price_trend_analysis(product_name=None, start_date=None, end_date=None):
+    """Stub: analisi trend prezzi base"""
+    if product_name:
+        return {'product': product_name, 'message': 'Usa get_product_monthly_sales per analisi dettagliate'}
+    return {'message': 'Funzione disponibile tramite adapter'}
+
+def get_market_basket_analysis(start_date=None, end_date=None, min_support=0.01):
+    """Stub: market basket base"""
+    return {'message': 'Funzione disponibile tramite adapter', 'associations': []}
+
+def get_customer_rfm_analysis(analysis_date=None):
+    """Stub: RFM base"""
+    return {'message': 'Funzione disponibile tramite adapter', 'segments': {}}
+
+def get_customer_churn_analysis():
+    """Stub: churn analysis base"""
+    return pd.DataFrame({'message': ['Funzione disponibile tramite adapter']})
+
+def get_payment_behavior_analysis():
+    """Stub: payment behavior base"""
+    return {'message': 'Funzione disponibile tramite adapter'}
+
+def get_competitive_analysis():
+    """Stub: competitive analysis base"""
+    return pd.DataFrame({'message': ['Funzione disponibile tramite adapter']})
+
+def get_sales_forecast(product_name=None, months_ahead=3):
+    """Stub: sales forecast base"""
+    return pd.DataFrame({'message': ['Funzione disponibile tramite adapter']})
+
+def get_top_suppliers_by_cost(start_date=None, end_date=None, limit=20):
+    """Stub: usa get_top_clients_by_revenue per fornitori"""
+    return get_top_clients_by_revenue(start_date, end_date, limit)
+
+def get_product_sales_comparison(normalized_description, year1, year2):
+    """Stub: confronto vendite prodotto"""
+    return pd.DataFrame({'message': ['Funzione disponibile tramite adapter']})
+
+# ===== LEGACY COMPATIBILITY =====
+
+def get_cashflow_data_original(*args, **kwargs):
+    """Legacy alias - deprecato"""
+    logger.warning("get_cashflow_data_original è deprecata, usa get_cashflow_data")
+    return get_cashflow_data_optimized(*args, **kwargs)
+
+def get_cashflow_table_original(*args, **kwargs):
+    """Legacy alias - deprecato"""
+    logger.warning("get_cashflow_table_original è deprecata, usa get_cashflow_table")
+    return get_cashflow_table(*args, **kwargs)
+
+def _get_categorized_transactions(*args, **kwargs):
+    """Legacy alias - deprecato"""
+    logger.warning("_get_categorized_transactions è deprecata, usa _categorize_transactions_optimized")
+    return _categorize_transactions_optimized(*args, **kwargs)
+
+# ===== FINAL LOGGING =====
+
+logger.info("Core analysis ottimizzato caricato - SQL-first approach, categorizzazione dichiarativa, performance migliorata")
