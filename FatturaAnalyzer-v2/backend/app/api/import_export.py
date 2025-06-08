@@ -1116,4 +1116,3 @@ async def validate_batch_files(
     except Exception as e:
         logger.error(f"Error in batch validation: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error during batch validation")
-                '
