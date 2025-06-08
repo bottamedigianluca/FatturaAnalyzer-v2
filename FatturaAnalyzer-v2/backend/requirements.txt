@@ -1,5 +1,5 @@
 # FatturaAnalyzer v2 Backend Requirements
-# Optimized for broader Python compatibility (3.9+) and macOS ARM architecture
+# VERSIONE COMPLETA E CORRETTA - Include tutte le dipendenze
 
 # --- Core Framework ---
 fastapi>=0.109.0,<0.112.0
@@ -12,8 +12,9 @@ gunicorn>=21.2.0,<23.0.0; sys_platform != 'win32'
 pydantic>=2.6.0,<3.0.0
 pydantic-settings>=2.1.0,<3.0.0
 
-# --- Data Handling & Excel ---
+# --- Data Handling & Analysis ---
 pandas>=2.1.0,<3.0.0
+numpy>=1.26.0,<2.0.0
 openpyxl>=3.1.0,<4.0.0
 
 # --- HTTP & Networking ---
@@ -42,10 +43,11 @@ python-dateutil>=2.8.2,<3.0.0
 pytz>=2024.1
 tzdata>=2024.1; sys_platform != 'win32'
 
-# --- API & Security ---
+# --- API, Security & System ---
 slowapi>=0.1.9,<0.2.0
 bcrypt>=4.1.0,<5.0.0
 PyJWT>=2.8.0,<3.0.0
+psutil>=5.9.8,<6.0.0
 
 # --- Utilities ---
 python-dotenv>=1.0.0,<2.0.0
