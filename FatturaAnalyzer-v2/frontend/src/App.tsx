@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/tauri';
-
-// Layout and Global UI
 import { Layout } from '@/components/layout/Layout';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/providers/ThemeProvider';
-
-// Core Components
 import { FirstRunCheck } from '@/components/FirstRunCheck';
-import { SimpleSetupWizard } from '@/components/setup/SetupWizard'; // Assicurati che questo percorso sia corretto
-
-// Page Components
+import { SimpleSetupWizard } from '@/components/setup/SetupWizard';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
 import { InvoiceDetailPage } from '@/pages/InvoiceDetailPage';
@@ -24,21 +18,16 @@ import { AnagraphicsDetailPage } from '@/pages/AnagraphicsDetailPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { ImportExportPage } from '@/pages/ImportExportPage';
 import { SettingsPage } from '@/pages/SettingsPage';
-import { Button } from '@/components/ui/button'; // Importa Button
-
-// Store
+import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/store';
+import './globals.css';
 
-// Styles
-import './globals.css'; // Assumi che questo file sia corretto ora
-
-// Create the query client instance outside the component to prevent re-creation
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 5 * 60 * 1000,
     },
   },
 });
@@ -66,7 +55,7 @@ function App() {
   }, []);
 
   const handleSetupNeeded = () => setAppState('setup_needed');
-  
+
   const handleSetupComplete = () => {
     addNotification({
       type: 'success',
@@ -76,7 +65,7 @@ function App() {
     });
     setAppState('ready');
   };
-  
+
   const handleError = () => setAppState('error');
 
   const renderContent = () => {
@@ -105,25 +94,25 @@ function App() {
         );
       case 'ready':
         return (
-          <Router>
+          <BrowserRouter>
             <Layout>
               <Routes>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="invoices" element={<InvoicesPage />} />
-                <Route path="invoices/:id" element={<InvoiceDetailPage />} />
-                <Route path="transactions" element={<TransactionsPage />} />
-                <Route path="transactions/:id" element={<TransactionDetailPage />} />
-                <Route path="reconciliation" element={<ReconciliationPage />} />
-                <Route path="anagraphics" element={<AnagraphicsPage />} />
-                <Route path="anagraphics/:id" element={<AnagraphicsDetailPage />} />
-                <Route path="analytics" element={<AnalyticsPage />} />
-                <Route path="import" element={<ImportExportPage />} />
-                <Route path="settings" element={<SettingsPage />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/invoices" element={<InvoicesPage />} />
+                <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+                <Route path="/transactions" element={<TransactionsPage />} />
+                <Route path="/transactions/:id" element={<TransactionDetailPage />} />
+                <Route path="/reconciliation" element={<ReconciliationPage />} />
+                <Route path="/anagraphics" element={<AnagraphicsPage />} />
+                <Route path="/anagraphics/:id" element={<AnagraphicsDetailPage />} />
+                <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route path="/import" element={<ImportExportPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </Layout>
-          </Router>
+          </BrowserRouter>
         );
     }
   };
