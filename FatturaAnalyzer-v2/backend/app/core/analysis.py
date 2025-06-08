@@ -1,5 +1,6 @@
 # core/analysis.py - Analisi ottimizzate per business ingrosso frutta e verdura
-# Versione ottimizzata: SQL-first approach, categorizzazione dichiarativa, performance migliorata
+
+# Versione Enhanced 2.0: SQL-first, ML-ready, Performance-optimized, Sector-specific
 
 import logging
 import pandas as pd
@@ -11,6 +12,9 @@ import re
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 from collections import defaultdict
+from functools import lru_cache
+import warnings
+warnings.filterwarnings('ignore')
 
 try:
     from .database import get_connection, DB_PATH
@@ -29,6 +33,7 @@ logger = logging.getLogger(__name__)
 # ===== CATEGORIZATION RULES SYSTEM (DICHIARATIVO) =====
 
 # Sistema di regole dichiarativo per categorizzazione transazioni
+
 TRANSACTION_CATEGORIES = [
     {
         'category': 'Incassi_Clienti',
@@ -37,7 +42,7 @@ TRANSACTION_CATEGORIES = [
         'priority': 100
     },
     {
-        'category': 'Pagamenti_Fornitori', 
+        'category': 'Pagamenti_Fornitori',
         'patterns': [],
         'conditions': lambda row: row.get('amount', 0) < 0 and row.get('has_passive_links', False),
         'priority': 100
@@ -98,6 +103,44 @@ TRANSACTION_CATEGORIES = [
     }
 ]
 
+# Categorizzazione prodotti ortofrutticoli
+
+PRODUCE_CATEGORIES = {
+    'Foglie_3gg': {
+        'patterns': ['insalat', 'lattug', 'rucol', 'spinac', 'radicchi', 'cicori', 'indivia'],
+        'shelf_life': 3
+    },
+    'Berries_5gg': {
+        'patterns': ['fragol', 'frutti di bosco', 'more', 'lamponi', 'mirtill', 'ribes'],
+        'shelf_life': 5
+    },
+    'Ortaggi_7gg': {
+        'patterns': ['pomodor', 'zucchin', 'peperon', 'melanza', 'cetrioli', 'fagiol'],
+        'shelf_life': 7
+    },
+    'Frutta_10gg': {
+        'patterns': ['mela', 'pera', 'pesca', 'albicocc', 'susina', 'prugna', 'kiwi'],
+        'shelf_life': 10
+    },
+    'Agrumi_15gg': {
+        'patterns': ['aranc', 'mandarin', 'limon', 'pompelm', 'cedro', 'bergamotto'],
+        'shelf_life': 15
+    },
+    'Conservabili_30gg': {
+        'patterns': ['patata', 'cipoll', 'aglio', 'carote', 'rape', 'barbabiet'],
+        'shelf_life': 30
+    }
+}
+
+@lru_cache(maxsize=1024)
+def get_produce_category(description: str) -> Tuple[str, int]:
+    """Determina categoria e shelf life di un prodotto (cached)"""
+    desc_lower = description.lower()
+    for category, info in PRODUCE_CATEGORIES.items():
+        if any(pattern in desc_lower for pattern in info['patterns']):
+            return category, info['shelf_life']
+    return 'Standard_7gg', 7
+
 def _apply_categorization_rules(df: pd.DataFrame) -> pd.DataFrame:
     """
     Applica sistema di regole dichiarativo per categorizzazione.
@@ -105,20 +148,20 @@ def _apply_categorization_rules(df: pd.DataFrame) -> pd.DataFrame:
     """
     if df.empty:
         return df
-    
+
     # Prepara dati per categorizzazione
     df['category'] = 'Altri'
     df['description_upper'] = df['description'].astype(str).str.upper()
     df['amount_dec'] = df['amount'].apply(lambda x: quantize(to_decimal(x)))
-    
+
     # Determina presenza di link
     df['has_active_links'] = df['linked_invoice_types'].astype(str).str.contains('Attiva', na=False)
     df['has_passive_links'] = df['linked_invoice_types'].astype(str).str.contains('Passiva', na=False)
     df['has_links'] = df['link_ids'].notna()
-    
+
     # Applica regole in ordine di priorità
     sorted_rules = sorted(TRANSACTION_CATEGORIES, key=lambda x: x['priority'], reverse=True)
-    
+
     for rule in sorted_rules:
         # Crea mask per questa regola
         mask = pd.Series([True] * len(df), index=df.index)
@@ -138,7 +181,7 @@ def _apply_categorization_rules(df: pd.DataFrame) -> pd.DataFrame:
         # Applica categoria solo dove non è già stata assegnata una categoria di priorità più alta
         final_mask = mask & (df['category'] == 'Altri')
         df.loc[final_mask, 'category'] = rule['category']
-    
+
     return df
 
 # ===== UTILITY FUNCTIONS (CENTRALIZED DATE HANDLING) =====
@@ -154,14 +197,14 @@ def _resolve_date_range(start_date, end_date, default_days=365):
             end_date_obj = date.today()
     else:
         end_date_obj = date.today()
-    
+
     if start_date:
         start_date_obj = pd.to_datetime(start_date, errors='coerce').date()
         if pd.isna(start_date_obj):
             start_date_obj = end_date_obj - timedelta(days=default_days)
     else:
         start_date_obj = end_date_obj - timedelta(days=default_days)
-    
+
     return start_date_obj, end_date_obj
 
 # ===== OPTIMIZED CORE FUNCTIONS (SQL-FIRST APPROACH) =====
@@ -174,7 +217,7 @@ def _categorize_transactions_optimized(start_date_str: str, end_date_str: str) -
     conn = None
     try:
         conn = get_connection()
-        
+
         # Query ottimizzata che fa JOIN e aggregazione direttamente in SQL
         query_trans = """
             SELECT
@@ -221,12 +264,12 @@ def get_cashflow_data_optimized(start_date=None, end_date=None):
     # Usa helper per standardizzare date
     start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
     start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
-    
+
     cols_out = ['month', 'incassi_clienti', 'incassi_contanti', 'altri_incassi', 
                 'pagamenti_fornitori', 'spese_carte', 'carburanti', 'trasporti', 
                 'utenze', 'tasse_tributi', 'commissioni_bancarie', 'altri_pagamenti',
                 'net_operational_flow', 'total_inflows', 'total_outflows', 'net_cash_flow']
-    
+
     empty_df = pd.DataFrame(columns=cols_out).astype(float)
     empty_df['month'] = pd.Series(dtype='str')
 
@@ -314,7 +357,7 @@ def get_monthly_revenue_costs_optimized(start_date=None, end_date=None):
     """
     start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
     start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
-    
+
     conn = None
     try:
         conn = get_connection()
@@ -362,7 +405,7 @@ def get_products_analysis_optimized(invoice_type='Attiva', start_date=None, end_
     """
     start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=90)
     start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
-    
+
     cols_out = ['Prodotto Normalizzato', 'Quantità Tot.', 'Valore Totale', 'N. Fatture', 'Prezzo Medio', 'Descrizioni Originali']
     empty_df = pd.DataFrame(columns=cols_out)
 
@@ -426,11 +469,1019 @@ def get_products_analysis_optimized(invoice_type='Attiva', start_date=None, end_
         return df_final[cols_out].sort_values(by='total_value', ascending=False)
 
     except Exception as e:
-        logging.error(f"Errore analisi prodotti ottimizzata ({invoice_type}): {e}", exc_info=True)
+        logger.error(f"Errore analisi prodotti ottimizzata ({invoice_type}): {e}", exc_info=True)
         return empty_df
     finally:
         if conn: 
             conn.close()
+
+# ===== NUOVE FUNZIONI SPECIFICHE ORTOFRUTTICOLO =====
+
+def get_product_freshness_analysis(start_date=None, end_date=None):
+    """
+    Analisi freschezza prodotti con calcolo perdite per deperibilità.
+    NUOVO: Specifico per ortofrutticolo con tracking shelf life.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=30)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Query ottimizzata per analisi freschezza
+        freshness_query = """
+            WITH product_flow AS (
+                SELECT 
+                    il.description,
+                    i.type,
+                    i.doc_date,
+                    il.quantity,
+                    il.unit_price,
+                    il.total_price,
+                    -- Calcola giorni da acquisto per prodotti venduti
+                    CASE 
+                        WHEN i.type = 'Attiva' THEN (
+                            SELECT MIN(julianday(i.doc_date) - julianday(i_buy.doc_date))
+                            FROM InvoiceLines il_buy
+                            JOIN Invoices i_buy ON il_buy.invoice_id = i_buy.id
+                            WHERE i_buy.type = 'Passiva' 
+                              AND i_buy.doc_date <= i.doc_date
+                              AND il_buy.description = il.description
+                              AND i_buy.doc_date >= date(i.doc_date, '-14 days')
+                        )
+                        ELSE NULL
+                    END as days_from_purchase,
+                    -- Stima categoria prodotto per shelf life
+                    CASE 
+                        WHEN LOWER(il.description) LIKE '%insalat%' OR LOWER(il.description) LIKE '%lattug%' 
+                             OR LOWER(il.description) LIKE '%rucol%' OR LOWER(il.description) LIKE '%spinac%' THEN 'Foglie_3gg'
+                        WHEN LOWER(il.description) LIKE '%fragol%' OR LOWER(il.description) LIKE '%frutti di bosco%' 
+                             OR LOWER(il.description) LIKE '%more%' OR LOWER(il.description) LIKE '%lamponi%' THEN 'Berries_5gg'
+                        WHEN LOWER(il.description) LIKE '%pomodor%' OR LOWER(il.description) LIKE '%zucchin%' 
+                             OR LOWER(il.description) LIKE '%peperon%' OR LOWER(il.description) LIKE '%melanza%' THEN 'Ortaggi_7gg'
+                        WHEN LOWER(il.description) LIKE '%mela%' OR LOWER(il.description) LIKE '%pera%' 
+                             OR LOWER(il.description) LIKE '%pesca%' OR LOWER(il.description) LIKE '%albicocc%' THEN 'Frutta_10gg'
+                        WHEN LOWER(il.description) LIKE '%aranc%' OR LOWER(il.description) LIKE '%mandarin%' 
+                             OR LOWER(il.description) LIKE '%limon%' OR LOWER(il.description) LIKE '%pompelm%' THEN 'Agrumi_15gg'
+                        WHEN LOWER(il.description) LIKE '%patata%' OR LOWER(il.description) LIKE '%cipoll%' 
+                             OR LOWER(il.description) LIKE '%aglio%' THEN 'Conservabili_30gg'
+                        ELSE 'Standard_7gg'
+                    END as freshness_category,
+                    -- Estrai shelf life standard dal nome categoria
+                    CAST(
+                        CASE 
+                            WHEN LOWER(il.description) LIKE '%insalat%' OR LOWER(il.description) LIKE '%lattug%' THEN 3
+                            WHEN LOWER(il.description) LIKE '%fragol%' OR LOWER(il.description) LIKE '%frutti di bosco%' THEN 5
+                            WHEN LOWER(il.description) LIKE '%pomodor%' OR LOWER(il.description) LIKE '%zucchin%' THEN 7
+                            WHEN LOWER(il.description) LIKE '%mela%' OR LOWER(il.description) LIKE '%pera%' THEN 10
+                            WHEN LOWER(il.description) LIKE '%aranc%' OR LOWER(il.description) LIKE '%mandarin%' THEN 15
+                            WHEN LOWER(il.description) LIKE '%patata%' OR LOWER(il.description) LIKE '%cipoll%' THEN 30
+                            ELSE 7
+                        END AS INTEGER
+                    ) as standard_shelf_life
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                WHERE i.doc_date BETWEEN ? AND ?
+                  AND il.quantity > 0
+            ),
+            freshness_analysis AS (
+                SELECT 
+                    description,
+                    freshness_category,
+                    standard_shelf_life,
+                    -- Quantità acquistate
+                    SUM(CASE WHEN type = 'Passiva' THEN quantity ELSE 0 END) as qty_purchased,
+                    -- Quantità vendute entro shelf life
+                    SUM(CASE WHEN type = 'Attiva' AND days_from_purchase <= standard_shelf_life THEN quantity ELSE 0 END) as qty_sold_fresh,
+                    -- Quantità vendute dopo shelf life (potenziale scarto)
+                    SUM(CASE WHEN type = 'Attiva' AND days_from_purchase > standard_shelf_life THEN quantity ELSE 0 END) as qty_sold_old,
+                    -- Valore vendite fresche
+                    SUM(CASE WHEN type = 'Attiva' AND days_from_purchase <= standard_shelf_life THEN total_price ELSE 0 END) as value_fresh,
+                    -- Tempo medio da acquisto a vendita
+                    AVG(CASE WHEN type = 'Attiva' AND days_from_purchase IS NOT NULL THEN days_from_purchase END) as avg_days_to_sale,
+                    COUNT(DISTINCT CASE WHEN type = 'Attiva' THEN il.invoice_id END) as sale_count
+                FROM product_flow
+                GROUP BY description, freshness_category, standard_shelf_life
+                HAVING qty_purchased > 0
+            )
+            SELECT 
+                description as 'Prodotto',
+                freshness_category as 'Categoria',
+                standard_shelf_life as 'Shelf Life (gg)',
+                ROUND(qty_purchased, 2) as 'Q.tà Acquistata',
+                ROUND(qty_sold_fresh, 2) as 'Q.tà Venduta Fresca',
+                ROUND(qty_sold_old, 2) as 'Q.tà Venduta Vecchia',
+                ROUND((qty_purchased - qty_sold_fresh - qty_sold_old), 2) as 'Q.tà Non Venduta',
+                ROUND(CASE WHEN qty_purchased > 0 THEN (qty_sold_fresh / qty_purchased) * 100 ELSE 0 END, 1) as 'Freshness Rate %',
+                ROUND(CASE WHEN qty_purchased > 0 THEN ((qty_purchased - qty_sold_fresh - qty_sold_old) / qty_purchased) * 100 ELSE 0 END, 1) as 'Potential Waste %',
+                ROUND(value_fresh, 2) as 'Valore Vendite Fresche €',
+                ROUND(avg_days_to_sale, 1) as 'Giorni Medi a Vendita',
+                sale_count as 'N. Vendite'
+            FROM freshness_analysis
+            ORDER BY qty_purchased DESC
+            LIMIT 50
+        """
+        
+        df = pd.read_sql_query(freshness_query, conn, params=(start_str, end_str))
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Applica normalizzazione prodotti
+        df['Prodotto Normalizzato'] = df['Prodotto'].apply(normalize_product_name)
+        
+        # Riordina colonne per output
+        cols_order = ['Prodotto Normalizzato', 'Categoria', 'Shelf Life (gg)', 
+                     'Q.tà Acquistata', 'Q.tà Venduta Fresca', 'Q.tà Venduta Vecchia',
+                     'Q.tà Non Venduta', 'Freshness Rate %', 'Potential Waste %',
+                     'Valore Vendite Fresche €', 'Giorni Medi a Vendita', 'N. Vendite']
+        
+        return df[cols_order]
+        
+    except Exception as e:
+        logger.error(f"Errore analisi freschezza prodotti: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+def get_supplier_quality_analysis(start_date=None, end_date=None):
+    """
+    Analisi qualità fornitori con metriche specifiche ortofrutticolo.
+    NUOVO: Tracking puntualità, qualità prodotti, resi.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=90)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        supplier_query = """
+            WITH supplier_metrics AS (
+                SELECT 
+                    i.anagraphics_id,
+                    a.denomination as supplier_name,
+                    COUNT(DISTINCT i.id) as total_orders,
+                    SUM(i.total_amount) as total_purchases,
+                    AVG(i.total_amount) as avg_order_value,
+                    -- Analisi puntualità (basata su date fattura vs scadenza tipica)
+                    AVG(CASE 
+                        WHEN i.due_date IS NOT NULL THEN 
+                            julianday(i.due_date) - julianday(i.doc_date)
+                        ELSE 30 
+                    END) as avg_payment_terms,
+                    -- Analisi prodotti
+                    COUNT(DISTINCT il.description) as product_variety,
+                    SUM(il.quantity) as total_quantity,
+                    AVG(il.unit_price) as avg_unit_price,
+                    -- Stima qualità basata su rivendibilità
+                    (SELECT COUNT(DISTINCT il2.description)
+                     FROM InvoiceLines il2
+                     JOIN Invoices i2 ON il2.invoice_id = i2.id
+                     WHERE i2.type = 'Attiva'
+                       AND i2.doc_date BETWEEN i.doc_date AND date(i.doc_date, '+7 days')
+                       AND il2.description IN (
+                           SELECT DISTINCT il3.description 
+                           FROM InvoiceLines il3 
+                           WHERE il3.invoice_id = i.id
+                       )
+                    ) as fast_moving_products,
+                    -- Analisi resi/note credito
+                    (SELECT COUNT(*) 
+                     FROM Invoices i_nc 
+                     WHERE i_nc.anagraphics_id = i.anagraphics_id 
+                       AND i_nc.type = 'Nota Credito Passiva'
+                       AND i_nc.doc_date BETWEEN ? AND ?
+                    ) as credit_notes_count,
+                    (SELECT SUM(ABS(i_nc.total_amount))
+                     FROM Invoices i_nc 
+                     WHERE i_nc.anagraphics_id = i.anagraphics_id 
+                       AND i_nc.type = 'Nota Credito Passiva'
+                       AND i_nc.doc_date BETWEEN ? AND ?
+                    ) as credit_notes_value
+                FROM Invoices i
+                JOIN Anagraphics a ON i.anagraphics_id = a.id
+                JOIN InvoiceLines il ON i.id = il.invoice_id
+                WHERE i.type = 'Passiva'
+                  AND i.doc_date BETWEEN ? AND ?
+                  AND a.type = 'Fornitore'
+                GROUP BY i.anagraphics_id, a.denomination
+            ),
+            supplier_scores AS (
+                SELECT 
+                    *,
+                    -- Calcola score qualità (0-100)
+                    ROUND(
+                        GREATEST(0, LEAST(100,
+                            50 +  -- Base score
+                            (CASE WHEN total_orders >= 10 THEN 10 ELSE total_orders END) +  -- Frequenza ordini
+                            (CASE WHEN product_variety >= 20 THEN 10 ELSE product_variety / 2 END) +  -- Varietà prodotti
+                            (CASE WHEN credit_notes_count = 0 THEN 20 
+                                  WHEN credit_notes_count <= 2 THEN 10 
+                                  ELSE 0 END) +  -- Penalità note credito
+                            (CASE WHEN fast_moving_products > product_variety * 0.5 THEN 10 ELSE 5 END)  -- Prodotti fast-moving
+                        ))
+                    , 1) as quality_score,
+                    -- Calcola return rate
+                    ROUND(
+                        CASE 
+                            WHEN total_purchases > 0 THEN 
+                                (COALESCE(credit_notes_value, 0) / total_purchases) * 100 
+                            ELSE 0 
+                        END
+                    , 2) as return_rate_percent
+                FROM supplier_metrics
+            )
+            SELECT 
+                supplier_name as 'Fornitore',
+                total_orders as 'N. Ordini',
+                ROUND(total_purchases, 2) as 'Acquisti Tot. €',
+                ROUND(avg_order_value, 2) as 'Ordine Medio €',
+                product_variety as 'Varietà Prodotti',
+                ROUND(total_quantity, 0) as 'Q.tà Totale',
+                ROUND(avg_unit_price, 2) as 'Prezzo Unit. Medio €',
+                ROUND(avg_payment_terms, 0) as 'Termini Pag. (gg)',
+                credit_notes_count as 'Note Credito',
+                return_rate_percent as 'Tasso Resi %',
+                quality_score as 'Score Qualità',
+                CASE 
+                    WHEN quality_score >= 80 THEN 'Eccellente'
+                    WHEN quality_score >= 60 THEN 'Buono'
+                    WHEN quality_score >= 40 THEN 'Sufficiente'
+                    ELSE 'Da Migliorare'
+                END as 'Valutazione'
+            FROM supplier_scores
+            ORDER BY total_purchases DESC
+            LIMIT 30
+        """
+        
+        df = pd.read_sql_query(supplier_query, conn, params=(
+            start_str, end_str, start_str, end_str, start_str, end_str
+        ))
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Errore analisi qualità fornitori: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+def get_produce_price_trends(product_name=None, period_days=365, category=None):
+    """
+    Analisi trend prezzi ortofrutticoli con confronto acquisto/vendita.
+    NUOVO: Mostra margini e variazioni stagionali prezzi.
+    """
+    end_date = date.today()
+    start_date = end_date - timedelta(days=period_days)
+    start_str, end_str = start_date.isoformat(), end_date.isoformat()
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Build WHERE clause for product filtering
+        where_clause = "WHERE i.doc_date BETWEEN ? AND ?"
+        params = [start_str, end_str]
+        
+        if product_name:
+            where_clause += " AND LOWER(il.description) LIKE LOWER(?)"
+            params.append(f'%{product_name}%')
+        
+        if category:
+            category_filters = {
+                'frutta': "AND (LOWER(il.description) LIKE '%mela%' OR LOWER(il.description) LIKE '%pera%' OR LOWER(il.description) LIKE '%banana%' OR LOWER(il.description) LIKE '%arancia%' OR LOWER(il.description) LIKE '%pesca%')",
+                'verdura': "AND (LOWER(il.description) LIKE '%pomodor%' OR LOWER(il.description) LIKE '%lattuga%' OR LOWER(il.description) LIKE '%carota%' OR LOWER(il.description) LIKE '%zucchin%' OR LOWER(il.description) LIKE '%peperone%')",
+                'agrumi': "AND (LOWER(il.description) LIKE '%arancia%' OR LOWER(il.description) LIKE '%limone%' OR LOWER(il.description) LIKE '%mandarino%' OR LOWER(il.description) LIKE '%pompelmo%')",
+                'insalate': "AND (LOWER(il.description) LIKE '%lattuga%' OR LOWER(il.description) LIKE '%insalata%' OR LOWER(il.description) LIKE '%rucola%' OR LOWER(il.description) LIKE '%radicchio%')"
+            }
+            if category.lower() in category_filters:
+                where_clause += f" {category_filters[category.lower()]}"
+        
+        price_trends_query = f"""
+            WITH price_data AS (
+                SELECT 
+                    strftime('%Y-%W', i.doc_date) as year_week,
+                    strftime('%Y-%m', i.doc_date) as year_month,
+                    il.description,
+                    i.type,
+                    AVG(il.unit_price) as avg_price,
+                    COUNT(*) as transaction_count,
+                    SUM(il.quantity) as total_quantity,
+                    MIN(il.unit_price) as min_price,
+                    MAX(il.unit_price) as max_price,
+                    -- Calcola deviazione standard per volatilità
+                    CASE 
+                        WHEN COUNT(*) > 1 THEN 
+                            SQRT(SUM((il.unit_price - AVG(il.unit_price)) * (il.unit_price - AVG(il.unit_price))) / (COUNT(*) - 1))
+                        ELSE 0 
+                    END as price_volatility
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                {where_clause}
+                  AND il.quantity > 0
+                  AND il.unit_price > 0
+                GROUP BY year_week, year_month, il.description, i.type
+            ),
+            weekly_analysis AS (
+                SELECT 
+                    year_week,
+                    description,
+                    MAX(CASE WHEN type = 'Passiva' THEN avg_price END) as avg_purchase_price,
+                    MAX(CASE WHEN type = 'Attiva' THEN avg_price END) as avg_sale_price,
+                    SUM(CASE WHEN type = 'Passiva' THEN total_quantity ELSE 0 END) as qty_purchased,
+                    SUM(CASE WHEN type = 'Attiva' THEN total_quantity ELSE 0 END) as qty_sold,
+                    MAX(CASE WHEN type = 'Passiva' THEN price_volatility ELSE 0 END) as purchase_volatility,
+                    MAX(CASE WHEN type = 'Attiva' THEN price_volatility ELSE 0 END) as sale_volatility
+                FROM price_data
+                GROUP BY year_week, description
+                HAVING avg_purchase_price IS NOT NULL OR avg_sale_price IS NOT NULL
+            )
+            SELECT 
+                year_week as 'Settimana',
+                description as 'Prodotto',
+                ROUND(avg_purchase_price, 2) as 'Prezzo Acquisto €',
+                ROUND(avg_sale_price, 2) as 'Prezzo Vendita €',
+                ROUND(avg_sale_price - avg_purchase_price, 2) as 'Margine €',
+                ROUND(
+                    CASE 
+                        WHEN avg_purchase_price > 0 THEN 
+                            ((avg_sale_price - avg_purchase_price) / avg_purchase_price) * 100 
+                        ELSE 0 
+                    END, 1
+                ) as 'Margine %',
+                ROUND(qty_purchased, 1) as 'Q.tà Acquistata',
+                ROUND(qty_sold, 1) as 'Q.tà Venduta',
+                ROUND(purchase_volatility, 3) as 'Volatilità Acquisto',
+                ROUND(sale_volatility, 3) as 'Volatilità Vendita'
+            FROM weekly_analysis
+            ORDER BY year_week DESC, description
+            LIMIT 200
+        """
+        
+        df = pd.read_sql_query(price_trends_query, conn, params=params)
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Aggiungi indicatori di trend
+        df['Trend'] = df.groupby('Prodotto')['Prezzo Vendita €'].transform(
+            lambda x: 'Rialzo' if x.iloc[0] > x.iloc[-1] else 'Ribasso' if x.iloc[0] < x.iloc[-1] else 'Stabile'
+        )
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Errore analisi trend prezzi: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+def get_customer_purchase_patterns(start_date=None, end_date=None, min_orders=5):
+    """
+    Analisi pattern acquisto clienti con focus su prodotti stagionali.
+    NUOVO: Identifica clienti fedeli e loro preferenze stagionali.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=365)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        patterns_query = """
+            WITH customer_purchases AS (
+                SELECT 
+                    i.anagraphics_id,
+                    a.denomination as customer_name,
+                    strftime('%m', i.doc_date) as purchase_month,
+                    strftime('%Y-%Q', i.doc_date) as quarter,
+                    il.description as product,
+                    SUM(il.quantity) as total_quantity,
+                    SUM(il.total_price) as total_value,
+                    COUNT(DISTINCT i.id) as order_count,
+                    COUNT(DISTINCT strftime('%Y-%m', i.doc_date)) as active_months
+                FROM Invoices i
+                JOIN Anagraphics a ON i.anagraphics_id = a.id
+                JOIN InvoiceLines il ON i.id = il.invoice_id
+                WHERE i.type = 'Attiva'
+                  AND i.doc_date BETWEEN ? AND ?
+                  AND il.quantity > 0
+                GROUP BY i.anagraphics_id, a.denomination, purchase_month, quarter, il.description
+            ),
+            customer_summary AS (
+                SELECT 
+                    anagraphics_id,
+                    customer_name,
+                    COUNT(DISTINCT product) as product_variety,
+                    SUM(total_value) as total_revenue,
+                    SUM(order_count) as total_orders,
+                    MAX(active_months) as months_active,
+                    -- Top 3 prodotti per valore
+                    (SELECT GROUP_CONCAT(product || ' (' || ROUND(total_value, 0) || '€)', ' | ')
+                     FROM (
+                         SELECT product, SUM(total_value) as total_value
+                         FROM customer_purchases cp2
+                         WHERE cp2.anagraphics_id = cp.anagraphics_id
+                         GROUP BY product
+                         ORDER BY total_value DESC
+                         LIMIT 3
+                     )) as top_products,
+                    -- Mesi preferiti per acquisti
+                    (SELECT GROUP_CONCAT(DISTINCT 
+                        CASE purchase_month
+                            WHEN '01' THEN 'Gen' WHEN '02' THEN 'Feb' WHEN '03' THEN 'Mar'
+                            WHEN '04' THEN 'Apr' WHEN '05' THEN 'Mag' WHEN '06' THEN 'Giu'
+                            WHEN '07' THEN 'Lug' WHEN '08' THEN 'Ago' WHEN '09' THEN 'Set'
+                            WHEN '10' THEN 'Ott' WHEN '11' THEN 'Nov' WHEN '12' THEN 'Dic'
+                        END, ', ')
+                     FROM customer_purchases cp3
+                     WHERE cp3.anagraphics_id = cp.anagraphics_id
+                     AND cp3.total_value > (
+                         SELECT AVG(total_value) * 1.2 
+                         FROM customer_purchases cp4 
+                         WHERE cp4.anagraphics_id = cp.anagraphics_id
+                     )) as peak_months
+                FROM customer_purchases cp
+                GROUP BY anagraphics_id, customer_name
+                HAVING total_orders >= ?
+            )
+            SELECT 
+                customer_name as 'Cliente',
+                total_orders as 'N. Ordini',
+                ROUND(total_revenue, 2) as 'Fatturato Tot. €',
+                ROUND(total_revenue / total_orders, 2) as 'Ordine Medio €',
+                product_variety as 'Varietà Prodotti',
+                months_active as 'Mesi Attivi',
+                ROUND(total_revenue / months_active, 2) as 'Fatturato/Mese €',
+                top_products as 'Top 3 Prodotti',
+                COALESCE(peak_months, 'Costante') as 'Mesi Picco',
+                CASE 
+                    WHEN months_active >= 10 AND total_revenue / months_active > 1000 THEN 'Premium'
+                    WHEN months_active >= 6 AND total_revenue / months_active > 500 THEN 'Regular'
+                    WHEN months_active >= 3 THEN 'Occasionale'
+                    ELSE 'Nuovo'
+                END as 'Segmento'
+            FROM customer_summary
+            ORDER BY total_revenue DESC
+            LIMIT 50
+        """
+        
+        df = pd.read_sql_query(patterns_query, conn, params=(start_str, end_str, min_orders))
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Errore analisi pattern acquisto clienti: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+def get_produce_quality_metrics(start_date=None, end_date=None):
+    """
+    Metriche qualità prodotti basate su resi e rivendibilità.
+    NUOVO: Analizza qualità per categoria e fornitore.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=90)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        quality_query = """
+            WITH product_sales AS (
+                SELECT 
+                    il.description,
+                    i.anagraphics_id as supplier_id,
+                    a.denomination as supplier_name,
+                    SUM(CASE WHEN i.type = 'Passiva' THEN il.quantity ELSE 0 END) as qty_purchased,
+                    SUM(CASE WHEN i.type = 'Passiva' THEN il.total_price ELSE 0 END) as value_purchased,
+                    SUM(CASE WHEN i.type = 'Attiva' THEN il.quantity ELSE 0 END) as qty_sold,
+                    SUM(CASE WHEN i.type = 'Attiva' THEN il.total_price ELSE 0 END) as value_sold,
+                    -- Analisi resi/note credito
+                    SUM(CASE WHEN i.type = 'Nota Credito Passiva' THEN ABS(il.quantity) ELSE 0 END) as qty_returned,
+                    SUM(CASE WHEN i.type = 'Nota Credito Passiva' THEN ABS(il.total_price) ELSE 0 END) as value_returned,
+                    -- Tempo medio di vendita
+                    AVG(
+                        CASE WHEN i.type = 'Attiva' THEN
+                            (SELECT MIN(julianday(i.doc_date) - julianday(i_buy.doc_date))
+                             FROM InvoiceLines il_buy
+                             JOIN Invoices i_buy ON il_buy.invoice_id = i_buy.id
+                             WHERE i_buy.type = 'Passiva' 
+                               AND i_buy.doc_date <= i.doc_date
+                               AND il_buy.description = il.description
+                               AND i_buy.doc_date >= date(i.doc_date, '-30 days'))
+                        END
+                    ) as avg_days_to_sale,
+                    COUNT(DISTINCT CASE WHEN i.type = 'Attiva' THEN i.id END) as sale_transactions,
+                    COUNT(DISTINCT CASE WHEN i.type = 'Nota Credito Passiva' THEN i.id END) as return_transactions
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                LEFT JOIN Invoices i_supplier ON i.type = 'Passiva' AND il.invoice_id = i_supplier.id
+                LEFT JOIN Anagraphics a ON i_supplier.anagraphics_id = a.id
+                WHERE i.doc_date BETWEEN ? AND ?
+                  AND il.quantity > 0
+                GROUP BY il.description, i.anagraphics_id, a.denomination
+            ),
+            quality_analysis AS (
+                SELECT 
+                    description,
+                    supplier_name,
+                    qty_purchased,
+                    qty_sold,
+                    qty_returned,
+                    value_purchased,
+                    value_sold,
+                    value_returned,
+                    -- Calcola metriche di qualità
+                    ROUND(CASE WHEN qty_purchased > 0 THEN (qty_sold / qty_purchased) * 100 ELSE 0 END, 1) as sell_through_rate,
+                    ROUND(CASE WHEN qty_sold > 0 THEN (qty_returned / qty_sold) * 100 ELSE 0 END, 1) as return_rate,
+                    ROUND(CASE WHEN value_purchased > 0 THEN ((value_sold - value_returned) / value_purchased - 1) * 100 ELSE 0 END, 1) as gross_margin,
+                    ROUND(avg_days_to_sale, 1) as avg_days_to_sale,
+                    -- Quality score basato su vari fattori
+                    ROUND(
+                        GREATEST(0, LEAST(100,
+                            50 +  -- Base score
+                            (CASE WHEN qty_purchased > 0 AND (qty_sold / qty_purchased) > 0.8 THEN 20 ELSE 0 END) +  -- Alto sell-through
+                            (CASE WHEN qty_sold > 0 AND (qty_returned / qty_sold) < 0.02 THEN 20 ELSE 0 END) +  -- Bassi resi
+                            (CASE WHEN avg_days_to_sale < 5 THEN 10 ELSE 0 END) -  -- Vendita veloce
+                            (CASE WHEN qty_sold > 0 AND (qty_returned / qty_sold) > 0.05 THEN 20 ELSE 0 END)  -- Penalità alti resi
+                        ))
+                    , 0) as quality_score
+                FROM product_sales
+                WHERE qty_purchased > 0 OR qty_sold > 0
+            )
+            SELECT 
+                description as 'Prodotto',
+                COALESCE(supplier_name, 'Vari') as 'Fornitore Principale',
+                ROUND(qty_purchased, 1) as 'Q.tà Acquistata',
+                ROUND(qty_sold, 1) as 'Q.tà Venduta',
+                ROUND(qty_returned, 1) as 'Q.tà Resa',
+                sell_through_rate as 'Tasso Vendita %',
+                return_rate as 'Tasso Resi %',
+                gross_margin as 'Margine Lordo %',
+                avg_days_to_sale as 'Gg Medi Vendita',
+                quality_score as 'Score Qualità',
+                CASE 
+                    WHEN quality_score >= 80 THEN 'Eccellente'
+                    WHEN quality_score >= 60 THEN 'Buona'
+                    WHEN quality_score >= 40 THEN 'Media'
+                    ELSE 'Scarsa'
+                END as 'Valutazione'
+            FROM quality_analysis
+            ORDER BY quality_score DESC, qty_purchased DESC
+            LIMIT 100
+        """
+        
+        df = pd.read_sql_query(quality_query, conn, params=(start_str, end_str))
+        
+        if not df.empty:
+            # Normalizza nomi prodotti
+            df['Prodotto'] = df['Prodotto'].apply(normalize_product_name)
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Errore analisi metriche qualità: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+def get_weekly_purchase_recommendations(weeks_ahead=2):
+    """
+    Raccomandazioni acquisto basate su pattern storici e previsioni.
+    NUOVO: ML-based per suggerimenti acquisto ottimali.
+    """
+    today = date.today()
+    target_week_start = today + timedelta(days=(7 - today.weekday()) + (weeks_ahead - 1) * 7)
+    
+    # Analizza ultimi 6 mesi per pattern
+    hist_start = today - timedelta(days=180)
+    hist_end = today
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        # Query per pattern storici e previsioni
+        recommendations_query = """
+            WITH historical_patterns AS (
+                SELECT 
+                    il.description,
+                    strftime('%W', i.doc_date) as week_num,
+                    strftime('%m', i.doc_date) as month_num,
+                    AVG(il.quantity) as avg_weekly_qty,
+                    AVG(il.unit_price) as avg_price,
+                    COUNT(DISTINCT i.id) as order_count,
+                    -- Variabilità domanda
+                    CASE 
+                        WHEN COUNT(*) > 1 THEN 
+                            SQRT(SUM((il.quantity - AVG(il.quantity)) * (il.quantity - AVG(il.quantity))) / (COUNT(*) - 1))
+                        ELSE 0 
+                    END as demand_volatility
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                WHERE i.type = 'Attiva'
+                  AND i.doc_date BETWEEN ? AND ?
+                  AND il.quantity > 0
+                GROUP BY il.description, week_num, month_num
+            ),
+            product_stats AS (
+                SELECT 
+                    description,
+                    AVG(avg_weekly_qty) as typical_weekly_demand,
+                    MAX(avg_weekly_qty) as peak_weekly_demand,
+                    AVG(avg_price) as typical_price,
+                    AVG(demand_volatility) as avg_volatility,
+                    COUNT(DISTINCT week_num) as weeks_sold,
+                    -- Fattore stagionale per settimana target
+                    COALESCE(
+                        (SELECT AVG(avg_weekly_qty) 
+                         FROM historical_patterns hp2 
+                         WHERE hp2.description = hp.description 
+                           AND hp2.week_num = strftime('%W', ?)
+                        ), 
+                        AVG(avg_weekly_qty)
+                    ) / NULLIF(AVG(avg_weekly_qty), 0) as seasonal_factor
+                FROM historical_patterns hp
+                GROUP BY description
+                HAVING weeks_sold >= 4  -- Solo prodotti venduti regolarmente
+            ),
+            current_inventory AS (
+                -- Stima inventario corrente basato su acquisti recenti meno vendite
+                SELECT 
+                    il.description,
+                    SUM(CASE 
+                        WHEN i.type = 'Passiva' AND i.doc_date >= date('now', '-14 days') 
+                        THEN il.quantity 
+                        ELSE 0 
+                    END) as recent_purchases,
+                    SUM(CASE 
+                        WHEN i.type = 'Attiva' AND i.doc_date >= date('now', '-7 days') 
+                        THEN il.quantity 
+                        ELSE 0 
+                    END) as recent_sales,
+                    -- Stima giorni di copertura
+                    CASE 
+                        WHEN SUM(CASE WHEN i.type = 'Attiva' AND i.doc_date >= date('now', '-7 days') THEN il.quantity ELSE 0 END) > 0
+                        THEN SUM(CASE WHEN i.type = 'Passiva' AND i.doc_date >= date('now', '-14 days') THEN il.quantity ELSE 0 END) / 
+                             (SUM(CASE WHEN i.type = 'Attiva' AND i.doc_date >= date('now', '-7 days') THEN il.quantity ELSE 0 END) / 7.0)
+                        ELSE 999
+                    END as estimated_coverage_days
+                FROM InvoiceLines il
+                JOIN Invoices i ON il.invoice_id = i.id
+                WHERE i.doc_date >= date('now', '-14 days')
+                GROUP BY il.description
+            )
+            SELECT 
+                ps.description as 'Prodotto',
+                ROUND(ps.typical_weekly_demand * ps.seasonal_factor * ?, 1) as 'Q.tà Consigliata',
+                ROUND(ps.typical_weekly_demand, 1) as 'Media Settimanale',
+                ROUND(ps.seasonal_factor, 2) as 'Fattore Stagionale',
+                ROUND(COALESCE(ci.estimated_coverage_days, 0), 1) as 'Copertura Giorni',
+                ROUND(ps.typical_price, 2) as 'Prezzo Tipico €',
+                ROUND(ps.avg_volatility / NULLIF(ps.typical_weekly_demand, 0), 2) as 'Volatilità',
+                CASE 
+                    WHEN COALESCE(ci.estimated_coverage_days, 0) < 3 THEN 'URGENTE'
+                    WHEN COALESCE(ci.estimated_coverage_days, 0) < 7 THEN 'Alta'
+                    WHEN COALESCE(ci.estimated_coverage_days, 0) < 14 THEN 'Media'
+                    ELSE 'Bassa'
+                END as 'Priorità',
+                CASE
+                    WHEN ps.avg_volatility / NULLIF(ps.typical_weekly_demand, 0) > 0.5 THEN 'Alta variabilità - ordinare con cautela'
+                    WHEN ps.seasonal_factor > 1.3 THEN 'Periodo di picco - aumentare ordine'
+                    WHEN ps.seasonal_factor < 0.7 THEN 'Periodo basso - ridurre ordine'
+                    ELSE 'Domanda stabile'
+                END as 'Note'
+            FROM product_stats ps
+            LEFT JOIN current_inventory ci ON ps.description = ci.description
+            WHERE ps.typical_weekly_demand > 0
+            ORDER BY 
+                CASE 
+                    WHEN COALESCE(ci.estimated_coverage_days, 0) < 3 THEN 0
+                    WHEN COALESCE(ci.estimated_coverage_days, 0) < 7 THEN 1
+                    WHEN COALESCE(ci.estimated_coverage_days, 0) < 14 THEN 2
+                    ELSE 3
+                END,
+                ps.typical_weekly_demand * ps.typical_price DESC
+            LIMIT 50
+        """
+        
+        # Fattore per numero di settimane da coprire
+        coverage_factor = weeks_ahead
+        
+        df = pd.read_sql_query(recommendations_query, conn, params=(
+            hist_start.isoformat(), hist_end.isoformat(), 
+            target_week_start.isoformat(), coverage_factor
+        ))
+        
+        if not df.empty:
+            # Normalizza nomi prodotti
+            df['Prodotto'] = df['Prodotto'].apply(normalize_product_name)
+            
+            # Aggiungi stima valore ordine
+            df['Valore Stimato €'] = (df['Q.tà Consigliata'] * df['Prezzo Tipico €']).round(2)
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Errore generazione raccomandazioni acquisto: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+def get_transport_cost_analysis(start_date=None, end_date=None):
+    """
+    Analisi costi trasporto e logistica per ottimizzazione.
+    NUOVO: Identifica inefficienze nella supply chain.
+    """
+    start_date_obj, end_date_obj = _resolve_date_range(start_date, end_date, default_days=90)
+    start_str, end_str = start_date_obj.isoformat(), end_date_obj.isoformat()
+
+    conn = None
+    try:
+        conn = get_connection()
+        
+        transport_query = """
+            WITH transport_costs AS (
+                SELECT 
+                    strftime('%Y-%m', transaction_date) as month,
+                    strftime('%Y-%W', transaction_date) as week,
+                    SUM(CASE 
+                        WHEN UPPER(description) LIKE '%TRASPORT%' OR UPPER(description) LIKE '%SPEDIZION%' 
+                        THEN ABS(amount) ELSE 0 
+                    END) as direct_transport_costs,
+                    SUM(CASE 
+                        WHEN UPPER(description) LIKE '%CARBURANT%' OR UPPER(description) LIKE '%GASOLIO%' 
+                             OR UPPER(description) LIKE '%BENZINA%' OR UPPER(description) LIKE '%DIESEL%'
+                        THEN ABS(amount) ELSE 0 
+                    END) as fuel_costs,
+                    SUM(CASE 
+                        WHEN UPPER(description) LIKE '%AUTOSTRAD%' OR UPPER(description) LIKE '%PEDAGGI%' 
+                        THEN ABS(amount) ELSE 0 
+                    END) as toll_costs,
+                    COUNT(DISTINCT CASE 
+                        WHEN UPPER(description) LIKE '%TRASPORT%' OR UPPER(description) LIKE '%CARBURANT%' 
+                        THEN transaction_date 
+                    END) as transport_days
+                FROM BankTransactions
+                WHERE transaction_date BETWEEN ? AND ?
+                  AND amount < 0
+                  AND reconciliation_status != 'Ignorato'
+                GROUP BY month, week
+            ),
+            sales_volume AS (
+                SELECT 
+                    strftime('%Y-%m', i.doc_date) as month,
+                    strftime('%Y-%W', i.doc_date) as week,
+                    SUM(i.total_amount) as total_sales,
+                    SUM(il.quantity) as total_quantity,
+                    COUNT(DISTINCT i.id) as order_count,
+                    COUNT(DISTINCT i.anagraphics_id) as customer_count
+                FROM Invoices i
+                JOIN InvoiceLines il ON i.id = il.invoice_id
+                WHERE i.type = 'Attiva'
+                  AND i.doc_date BETWEEN ? AND ?
+                GROUP BY month, week
+            ),
+            combined_analysis AS (
+                SELECT 
+                    sv.month,
+                    sv.week,
+                    COALESCE(tc.direct_transport_costs, 0) + COALESCE(tc.fuel_costs, 0) + COALESCE(tc.toll_costs, 0) as total_transport_cost,
+                    tc.direct_transport_costs,
+                    tc.fuel_costs,
+                    tc.toll_costs,
+                    sv.total_sales,
+                    sv.total_quantity,
+                    sv.order_count,
+                    sv.customer_count,
+                    tc.transport_days
+                FROM sales_volume sv
+                LEFT JOIN transport_costs tc ON sv.week = tc.week
+            )
+            SELECT 
+                week as 'Settimana',
+                ROUND(total_transport_cost, 2) as 'Costo Trasporto Tot. €',
+                ROUND(direct_transport_costs, 2) as 'Trasporti €',
+                ROUND(fuel_costs, 2) as 'Carburante €',
+                ROUND(toll_costs, 2) as 'Pedaggi €',
+                ROUND(total_sales, 2) as 'Vendite Tot. €',
+                ROUND(total_quantity, 0) as 'Q.tà Consegnata',
+                order_count as 'N. Ordini',
+                customer_count as 'N. Clienti',
+                ROUND(CASE WHEN total_sales > 0 THEN (total_transport_cost / total_sales) * 100 ELSE 0 END, 2) as 'Incidenza % su Vendite',
+                ROUND(CASE WHEN total_quantity > 0 THEN total_transport_cost / total_quantity ELSE 0 END, 2) as 'Costo per Unità €',
+                ROUND(CASE WHEN order_count > 0 THEN total_transport_cost / order_count ELSE 0 END, 2) as 'Costo per Ordine €',
+                ROUND(CASE WHEN customer_count > 0 THEN total_transport_cost / customer_count ELSE 0 END, 2) as 'Costo per Cliente €',
+                transport_days as 'Giorni Trasporto'
+            FROM combined_analysis
+            WHERE total_sales > 0 OR total_transport_cost > 0
+            ORDER BY week DESC
+            LIMIT 52
+        """
+        
+        df = pd.read_sql_query(transport_query, conn, params=(start_str, end_str, start_str, end_str))
+        
+        if not df.empty:
+            # Aggiungi indicatori di efficienza
+            avg_incidence = df['Incidenza % su Vendite'].mean()
+            df['Efficienza'] = df.apply(
+                lambda row: 'Ottima' if row['Incidenza % su Vendite'] < avg_incidence * 0.8 else
+                           'Buona' if row['Incidenza % su Vendite'] < avg_incidence else
+                           'Da Migliorare' if row['Incidenza % su Vendite'] < avg_incidence * 1.2 else
+                           'Critica',
+                axis=1
+            )
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Errore analisi costi trasporto: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+# ===== INTEGRAZIONE CON DASHBOARD KPIs =====
+
+def get_produce_specific_kpis():
+    """
+    KPIs specifici per il settore ortofrutticolo.
+    NUOVO: Metriche chiave per dashboard specializzato.
+    """
+    today = date.today()
+    
+    kpis = {
+        'freshness_rate': 0.0,
+        'waste_estimate_percent': 0.0,
+        'avg_shelf_rotation_days': 0.0,
+        'top_seasonal_products': [],
+        'supplier_quality_avg': 0.0,
+        'transport_efficiency': 0.0,
+        'weekly_recommendations_count': 0,
+        'price_volatility_index': 0.0
+    }
+
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Freshness rate (ultimi 30 giorni)
+        cursor.execute("""
+            SELECT 
+                AVG(CASE 
+                    WHEN days_to_sale <= shelf_life THEN 100.0 
+                    ELSE GREATEST(0, 100.0 - (days_to_sale - shelf_life) * 10)
+                END) as avg_freshness_rate
+            FROM (
+                SELECT 
+                    julianday(i_sell.doc_date) - julianday(i_buy.doc_date) as days_to_sale,
+                    CASE 
+                        WHEN LOWER(il.description) LIKE '%insalat%' THEN 3
+                        WHEN LOWER(il.description) LIKE '%fragol%' THEN 5
+                        WHEN LOWER(il.description) LIKE '%pomodor%' THEN 7
+                        WHEN LOWER(il.description) LIKE '%mela%' THEN 10
+                        WHEN LOWER(il.description) LIKE '%aranc%' THEN 15
+                        ELSE 7
+                    END as shelf_life
+                FROM InvoiceLines il
+                JOIN Invoices i_sell ON il.invoice_id = i_sell.id
+                JOIN (
+                    SELECT il2.description, MAX(i2.doc_date) as last_buy_date
+                    FROM InvoiceLines il2
+                    JOIN Invoices i2 ON il2.invoice_id = i2.id
+                    WHERE i2.type = 'Passiva'
+                    GROUP BY il2.description
+                ) last_purchase ON il.description = last_purchase.description
+                JOIN Invoices i_buy ON i_buy.doc_date = last_purchase.last_buy_date
+                WHERE i_sell.type = 'Attiva'
+                  AND i_sell.doc_date >= date('now', '-30 days')
+            )
+        """)
+        
+        result = cursor.fetchone()
+        if result and result[0]:
+            kpis['freshness_rate'] = round(result[0], 1)
+        
+        # Top prodotti stagionali correnti
+        current_month = today.month
+        cursor.execute("""
+            SELECT 
+                il.description,
+                SUM(il.total_price) as revenue
+            FROM InvoiceLines il
+            JOIN Invoices i ON il.invoice_id = i.id
+            WHERE i.type = 'Attiva'
+              AND strftime('%m', i.doc_date) = ?
+              AND i.doc_date >= date('now', '-365 days')
+            GROUP BY il.description
+            ORDER BY revenue DESC
+            LIMIT 5
+        """, (f"{current_month:02d}",))
+        
+        kpis['top_seasonal_products'] = [
+            {'product': row[0], 'revenue': f"{row[1]:,.0f}€"}
+            for row in cursor.fetchall()
+        ]
+        
+        # Transport efficiency (ultimi 30 giorni)
+        cursor.execute("""
+            WITH transport_efficiency AS (
+                SELECT 
+                    (SELECT SUM(ABS(amount)) 
+                     FROM BankTransactions 
+                     WHERE (UPPER(description) LIKE '%TRASPORT%' OR UPPER(description) LIKE '%CARBURANT%')
+                       AND transaction_date >= date('now', '-30 days')
+                       AND amount < 0) as transport_costs,
+                    (SELECT SUM(total_amount) 
+                     FROM Invoices 
+                     WHERE type = 'Attiva' 
+                       AND doc_date >= date('now', '-30 days')) as sales
+            )
+            SELECT 
+                CASE 
+                    WHEN sales > 0 THEN 100 - ((transport_costs / sales) * 100)
+                    ELSE 0 
+                END as efficiency
+            FROM transport_efficiency
+        """)
+        
+        result = cursor.fetchone()
+        if result and result[0]:
+            kpis['transport_efficiency'] = round(max(0, min(100, result[0])), 1)
+        
+        return kpis
+        
+    except Exception as e:
+        logger.error(f"Errore calcolo KPIs ortofrutticolo: {e}", exc_info=True)
+        return kpis
+    finally:
+        if conn:
+            conn.close()
+
+# ===== EXPORT ENHANCEMENT =====
+
+def export_produce_analysis_pack(start_date=None, end_date=None):
+    """
+    Esporta pacchetto completo analisi ortofrutticolo.
+    NUOVO: Report multi-sheet con tutte le analisi del settore.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"analisi_ortofrutticolo_{timestamp}.xlsx"
+
+    try:
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            # Freshness Analysis
+            df_freshness = get_product_freshness_analysis(start_date, end_date)
+            if not df_freshness.empty:
+                df_freshness.to_excel(writer, sheet_name='Analisi Freschezza', index=False)
+            
+            # Supplier Quality
+            df_suppliers = get_supplier_quality_analysis(start_date, end_date)
+            if not df_suppliers.empty:
+                df_suppliers.to_excel(writer, sheet_name='Qualità Fornitori', index=False)
+            
+            # Price Trends
+            df_prices = get_produce_price_trends(period_days=90)
+            if not df_prices.empty:
+                df_prices.to_excel(writer, sheet_name='Trend Prezzi', index=False)
+            
+            # Customer Patterns
+            df_customers = get_customer_purchase_patterns(start_date, end_date)
+            if not df_customers.empty:
+                df_customers.to_excel(writer, sheet_name='Pattern Clienti', index=False)
+            
+            # Quality Metrics
+            df_quality = get_produce_quality_metrics(start_date, end_date)
+            if not df_quality.empty:
+                df_quality.to_excel(writer, sheet_name='Metriche Qualità', index=False)
+            
+            # Purchase Recommendations
+            df_recommendations = get_weekly_purchase_recommendations()
+            if not df_recommendations.empty:
+                df_recommendations.to_excel(writer, sheet_name='Raccomandazioni', index=False)
+            
+            # Transport Analysis
+            df_transport = get_transport_cost_analysis(start_date, end_date)
+            if not df_transport.empty:
+                df_transport.to_excel(writer, sheet_name='Analisi Trasporti', index=False)
+        
+        logger.info(f"Pacchetto analisi ortofrutticolo esportato in: {filename}")
+        return filename
+        
+    except Exception as e:
+        logger.error(f"Errore esportazione pacchetto analisi: {e}", exc_info=True)
+        return None
 
 # ===== BACKWARD COMPATIBILITY LAYER =====
 
@@ -501,8 +1552,6 @@ def get_monthly_revenue_costs(start_date=None, end_date=None):
 def get_products_analysis(invoice_type='Attiva', start_date=None, end_date=None):
     """Backward compatibility: usa versione ottimizzata"""
     return get_products_analysis_optimized(invoice_type, start_date, end_date)
-
-# ===== ENHANCED FUNCTIONS =====
 
 def calculate_and_update_client_scores():
     """Calcolo score clienti con logica migliorata e query ottimizzate"""
@@ -1537,6 +2586,58 @@ def export_analysis_to_excel(analysis_type, data, filename=None):
         
     except Exception as e:
         logger.error(f"Errore esportazione Excel: {e}", exc_info=True)
+        return None
+
+def export_produce_analysis_pack(start_date=None, end_date=None):
+    """
+    Esporta pacchetto completo analisi ortofrutticolo.
+    NUOVO: Report multi-sheet con tutte le analisi del settore.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"analisi_ortofrutticolo_{timestamp}.xlsx"
+
+    try:
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            # Freshness Analysis
+            df_freshness = get_product_freshness_analysis(start_date, end_date)
+            if not df_freshness.empty:
+                df_freshness.to_excel(writer, sheet_name='Analisi Freschezza', index=False)
+            
+            # Supplier Quality
+            df_suppliers = get_supplier_quality_analysis(start_date, end_date)
+            if not df_suppliers.empty:
+                df_suppliers.to_excel(writer, sheet_name='Qualità Fornitori', index=False)
+            
+            # Price Trends
+            df_prices = get_produce_price_trends(period_days=90)
+            if not df_prices.empty:
+                df_prices.to_excel(writer, sheet_name='Trend Prezzi', index=False)
+            
+            # Customer Patterns
+            df_customers = get_customer_purchase_patterns(start_date, end_date)
+            if not df_customers.empty:
+                df_customers.to_excel(writer, sheet_name='Pattern Clienti', index=False)
+            
+            # Quality Metrics
+            df_quality = get_produce_quality_metrics(start_date, end_date)
+            if not df_quality.empty:
+                df_quality.to_excel(writer, sheet_name='Metriche Qualità', index=False)
+            
+            # Purchase Recommendations
+            df_recommendations = get_weekly_purchase_recommendations()
+            if not df_recommendations.empty:
+                df_recommendations.to_excel(writer, sheet_name='Raccomandazioni', index=False)
+            
+            # Transport Analysis
+            df_transport = get_transport_cost_analysis(start_date, end_date)
+            if not df_transport.empty:
+                df_transport.to_excel(writer, sheet_name='Analisi Trasporti', index=False)
+        
+        logger.info(f"Pacchetto analisi ortofrutticolo esportato in: {filename}")
+        return filename
+        
+    except Exception as e:
+        logger.error(f"Errore esportazione pacchetto analisi: {e}", exc_info=True)
         return None
 
 # ===== COMPATIBILITY ALIASES =====
