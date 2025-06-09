@@ -11,7 +11,6 @@ import pandas as pd
 from io import StringIO
 
 # Usa adapter invece di accesso diretto al database
-from app.adapters.database_adapter import db_adapter
 from app.models import (
     Anagraphics, AnagraphicsCreate, AnagraphicsUpdate, AnagraphicsFilter,
     PaginationParams, AnagraphicsListResponse, APIResponse, ErrorResponse
@@ -22,6 +21,7 @@ router = APIRouter()
 
 @router.get("/", response_model=AnagraphicsListResponse)
 async def get_anagraphics_list(
+    from app.adapters.database_adapter import db_adapter
     type_filter: Optional[str] = Query(None, description="Filter by type: Cliente or Fornitore"),
     search: Optional[str] = Query(None, description="Search in denomination, piva, cf"),
     city: Optional[str] = Query(None, description="Filter by city"),
@@ -59,6 +59,7 @@ async def get_anagraphics_list(
         
         # Applica filtri aggiuntivi
         if search and not df_anagraphics.empty:
+            from app.adapters.database_adapter import db_adapter
             search_mask = (
                 df_anagraphics['denomination'].str.contains(search, case=False, na=False) |
                 df_anagraphics['piva'].str.contains(search, case=False, na=False) |
@@ -73,7 +74,8 @@ async def get_anagraphics_list(
         
         if province and not df_anagraphics.empty:
             df_anagraphics = df_anagraphics[df_anagraphics['province'] == province]
-        
+        from app.adapters.database_adapter import db_adapter
+    
         total = len(df_anagraphics)
         
         # Paginazione
@@ -105,6 +107,7 @@ async def get_anagraphics_by_id(
     """Get anagraphics by ID"""
     try:
         # Usa query customizzata tramite adapter
+        from app.adapters.database_adapter import db_adapter
         result = await db_adapter.execute_query_async(
             """
             SELECT id, type, denomination, piva, cf, address, cap, city, province, country,
@@ -129,6 +132,7 @@ async def get_anagraphics_by_id(
 @router.post("/", response_model=Anagraphics)
 async def create_anagraphics(anagraphics_data: AnagraphicsCreate):
     """Create new anagraphics"""
+    from app.adapters.database_adapter import db_adapter
     try:
         # Validazione
         if not anagraphics_data.piva and not anagraphics_data.cf:
@@ -154,7 +158,7 @@ async def create_anagraphics(anagraphics_data: AnagraphicsCreate):
         
         if not new_id:
             raise HTTPException(status_code=500, detail="Failed to create anagraphics")
-        
+        from app.adapters.database_adapter import db_adapter
         # Restituisci l'anagrafica creata
         return await get_anagraphics_by_id(new_id)
         
@@ -182,7 +186,7 @@ async def update_anagraphics(
         # Build update query dinamica
         update_fields = []
         params = []
-        
+        from app.adapters.database_adapter import db_adapter
         for field, value in anagraphics_data.model_dump(exclude_unset=True).items():
             if value is not None:
                 update_fields.append(f"{field} = ?")
