@@ -1,9 +1,3 @@
-e questo?
-"""
-Transactions API endpoints - Versione V4.0 Parte 1/4
-IMPORTS, SETUP, CACHE E MODELLI BASE
-"""
-
 import logging
 import asyncio
 import time
