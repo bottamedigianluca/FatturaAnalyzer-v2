@@ -1,7 +1,12 @@
 /**
- * COMPLETE API Client for FatturaAnalyzer Backend v2
- * ALL ENDPOINTS INTEGRATED - Analytics, Reconciliation, Import/Export, Setup, Sync
- * Configurato per comunicare con FastAPI backend completo
+ * ULTRA API Client V4.0 for FatturaAnalyzer Backend
+ * Completamente aggiornato per supportare:
+ * - Analytics API Ultra-Ottimizzata V3.0 con AI/ML
+ * - Reconciliation API V4.0 con Smart Features
+ * - Transactions API V4.0 con Enhanced Capabilities
+ * - First Run & Setup Wizard completo
+ * - Import/Export completo con validazione
+ * - Cloud Sync con Google Drive
  */
 
 import { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
@@ -43,6 +48,10 @@ export interface TransactionFilters extends PaginationParams {
   hide_worldline?: boolean;
   hide_cash?: boolean;
   hide_commissions?: boolean;
+  enhanced?: boolean;
+  include_summary?: boolean;
+  enable_ai_insights?: boolean;
+  cache_enabled?: boolean;
 }
 
 export interface AnagraphicsFilters extends PaginationParams {
@@ -50,6 +59,66 @@ export interface AnagraphicsFilters extends PaginationParams {
   search?: string;
   city?: string;
   province?: string;
+}
+
+// ===== ANALYTICS V4.0 INTERFACES =====
+export interface AnalyticsRequest {
+  analysis_type: string;
+  parameters?: Record<string, any>;
+  cache_enabled?: boolean;
+  include_predictions?: boolean;
+  output_format?: 'json' | 'excel' | 'csv' | 'pdf';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+}
+
+export interface BatchAnalyticsRequest {
+  requests: AnalyticsRequest[];
+  parallel_execution?: boolean;
+  timeout_seconds?: number;
+}
+
+// ===== RECONCILIATION V4.0 INTERFACES =====
+export interface UltraReconciliationRequest {
+  operation_type: '1_to_1' | 'n_to_m' | 'smart_client' | 'auto' | 'ultra_smart';
+  invoice_id?: number;
+  transaction_id?: number;
+  anagraphics_id_filter?: number;
+  enable_ai_enhancement?: boolean;
+  enable_smart_patterns?: boolean;
+  enable_predictive_scoring?: boolean;
+  enable_parallel_processing?: boolean;
+  enable_caching?: boolean;
+  confidence_threshold?: number;
+  max_suggestions?: number;
+  max_combination_size?: number;
+  max_search_time_ms?: number;
+  exclude_invoice_ids?: number[];
+  start_date?: string;
+  end_date?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  real_time?: boolean;
+}
+
+export interface ManualMatchRequest {
+  invoice_id: number;
+  transaction_id: number;
+  amount_to_match: number;
+  enable_ai_validation?: boolean;
+  enable_learning?: boolean;
+  force_match?: boolean;
+  user_confidence?: number;
+  notes?: string;
+}
+
+export interface BatchReconciliationRequest {
+  reconciliation_pairs: Array<{
+    invoice_id: number;
+    transaction_id: number;
+    amount: number;
+  }>;
+  enable_ai_validation?: boolean;
+  enable_parallel_processing?: boolean;
+  force_background?: boolean;
 }
 
 class ApiClient {
@@ -69,9 +138,8 @@ class ApiClient {
       'Content-Type': 'application/json',
     };
 
-    // Log richieste in development
     if (import.meta.env.DEV) {
-      console.log('🚀 API Request:', options.method || 'GET', endpoint);
+      console.log('🚀 API Request V4.0:', options.method || 'GET', endpoint);
     }
 
     try {
@@ -84,22 +152,21 @@ class ApiClient {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
         
-        console.error('❌ API Error:', response.status, endpoint, errorMessage);
+        console.error('❌ API Error V4.0:', response.status, endpoint, errorMessage);
         throw new Error(errorMessage);
       }
 
       const data = await response.json();
       
-      // Log risposte in development
       if (import.meta.env.DEV) {
-        console.log('✅ API Response:', response.status, endpoint);
+        console.log('✅ API Response V4.0:', response.status, endpoint);
       }
 
       return data;
     } catch (error) {
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        console.error('🔌 Backend connection failed. Make sure backend is running at:', this.baseURL);
-        throw new Error('Backend non raggiungibile. Verifica che sia in esecuzione.');
+        console.error('🔌 Backend V4.0 connection failed. Backend running at:', this.baseURL);
+        throw new Error('Backend V4.0 non raggiungibile. Verifica che sia in esecuzione.');
       }
       throw error;
     }
@@ -110,7 +177,11 @@ class ApiClient {
     
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
-        searchParams.append(key, String(value));
+        if (Array.isArray(value)) {
+          searchParams.append(key, value.join(','));
+        } else {
+          searchParams.append(key, String(value));
+        }
       }
     });
 
@@ -122,7 +193,7 @@ class ApiClient {
     return this.request('/health');
   }
 
-  // ===== FIRST RUN & SETUP API =====
+  // ===== FIRST RUN & SETUP API COMPLETO =====
   
   async checkFirstRun(): Promise<APIResponse> {
     return this.request('/api/first-run/check');
@@ -168,6 +239,10 @@ class ApiClient {
     return this.request('/api/first-run/health');
   }
 
+  async forceResetFirstRun(): Promise<APIResponse> {
+    return this.request('/api/first-run/force-reset', { method: 'POST' });
+  }
+
   // Setup API
   async getSetupStatus(): Promise<APIResponse> {
     return this.request('/api/setup/status');
@@ -181,7 +256,7 @@ class ApiClient {
     return this.request('/api/setup/extract-from-invoice', {
       method: 'POST',
       body: formData,
-      headers: {}, // Let browser set Content-Type for FormData
+      headers: {},
     });
   }
 
@@ -203,7 +278,19 @@ class ApiClient {
     return this.request('/api/setup/import-suggestions');
   }
 
-  // ===== ANAGRAPHICS API =====
+  async testXMLExtraction(xmlContent: string, invoiceType: string): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('xml_content', xmlContent);
+    formData.append('invoice_type', invoiceType);
+    
+    return this.request('/api/setup/test-xml-extraction', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    });
+  }
+
+  // ===== ANAGRAPHICS API ENHANCED =====
   
   async getAnagraphics(filters: AnagraphicsFilters = {}) {
     const query = this.buildQuery(filters);
@@ -234,12 +321,74 @@ class ApiClient {
     });
   }
 
-  async searchAnagraphics(query: string, type_filter?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ type_filter });
+  async searchAnagraphics(query: string, type_filter?: string, limit: number = 10): Promise<APIResponse> {
+    const params = this.buildQuery({ type_filter, limit });
     return this.request(`/api/anagraphics/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
   }
 
-  // ===== INVOICES API =====
+  async getAnagraphicsStats(): Promise<APIResponse> {
+    return this.request('/api/anagraphics/stats/summary');
+  }
+
+  async validatePIVA(piva: string): Promise<APIResponse> {
+    return this.request(`/api/anagraphics/validate/piva/${encodeURIComponent(piva)}`);
+  }
+
+  async validateCodiceFiscale(cf: string): Promise<APIResponse> {
+    return this.request(`/api/anagraphics/validate/cf/${encodeURIComponent(cf)}`);
+  }
+
+  async exportAnagraphicsQuick(format: 'csv' | 'json' = 'json', type_filter?: string): Promise<APIResponse> {
+    const params = this.buildQuery({ format, type_filter });
+    return this.request(`/api/anagraphics/export/${format}${params ? '?' + params : ''}`);
+  }
+
+  async bulkUpdateClientScores(): Promise<APIResponse> {
+    return this.request('/api/anagraphics/bulk/update-scores', { method: 'POST' });
+  }
+
+  async checkPotentialDuplicates(): Promise<APIResponse> {
+    return this.request('/api/anagraphics/duplicates/check');
+  }
+
+  async importAnagraphicsFromCSV(file: File): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request('/api/anagraphics/import/csv', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    });
+  }
+
+  async batchCreateAnagraphics(anagraphicsList: Partial<Anagraphics>[]): Promise<APIResponse> {
+    return this.request('/api/anagraphics/batch/create', {
+      method: 'POST',
+      body: JSON.stringify(anagraphicsList),
+    });
+  }
+
+  async mergeAnagraphics(sourceId: number, targetId: number): Promise<APIResponse> {
+    return this.request(`/api/anagraphics/merge/${sourceId}/${targetId}`, {
+      method: 'POST',
+    });
+  }
+
+  async getProvincesList(): Promise<APIResponse> {
+    return this.request('/api/anagraphics/provinces/list');
+  }
+
+  async getTopClientsAnalytics(limit: number = 20, periodMonths: number = 12): Promise<APIResponse> {
+    const params = this.buildQuery({ limit, period_months: periodMonths });
+    return this.request(`/api/anagraphics/analytics/top-clients?${params}`);
+  }
+
+  async getAnagraphicsHealthCheck(): Promise<APIResponse> {
+    return this.request('/api/anagraphics/health-check');
+  }
+
+  // ===== INVOICES API ENHANCED =====
   
   async getInvoices(filters: InvoiceFilters = {}) {
     const query = this.buildQuery(filters);
@@ -282,8 +431,8 @@ class ApiClient {
     return this.request(`/api/invoices/aging/summary?invoice_type=${invoice_type}`);
   }
 
-  async searchInvoices(query: string, type_filter?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ type_filter });
+  async searchInvoices(query: string, type_filter?: string, limit: number = 10): Promise<APIResponse> {
+    const params = this.buildQuery({ type_filter, limit });
     return this.request(`/api/invoices/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
   }
 
@@ -302,15 +451,21 @@ class ApiClient {
     return this.request('/api/invoices/stats/summary');
   }
 
-  // ===== TRANSACTIONS API =====
+  // ===== TRANSACTIONS API V4.0 ULTRA-ENHANCED =====
   
   async getTransactions(filters: TransactionFilters = {}) {
     const query = this.buildQuery(filters);
     return this.request(`/api/transactions/${query ? '?' + query : ''}`);
   }
 
-  async getTransactionById(id: number): Promise<BankTransaction> {
-    return this.request(`/api/transactions/${id}`);
+  async getTransactionById(
+    id: number, 
+    enhanced: boolean = false, 
+    include_suggestions: boolean = false,
+    include_similar: boolean = false
+  ): Promise<BankTransaction> {
+    const params = this.buildQuery({ enhanced, include_suggestions, include_similar });
+    return this.request(`/api/transactions/${id}${params ? '?' + params : ''}`);
   }
 
   async createTransaction(data: Partial<BankTransaction>): Promise<BankTransaction> {
@@ -327,134 +482,264 @@ class ApiClient {
     });
   }
 
-  async deleteTransaction(id: number): Promise<APIResponse> {
-    return this.request(`/api/transactions/${id}`, {
+  async deleteTransaction(id: number, confirm: boolean = true): Promise<APIResponse> {
+    return this.request(`/api/transactions/${id}?confirm=${confirm}`, {
       method: 'DELETE',
     });
   }
 
-  async getTransactionReconciliationLinks(transactionId: number): Promise<APIResponse> {
-    return this.request(`/api/transactions/${transactionId}/reconciliation-links`);
-  }
-
-  async getTransactionPotentialMatches(id: number, limit: number = 10): Promise<APIResponse> {
-    return this.request(`/api/transactions/${id}/potential-matches?limit=${limit}`);
-  }
-
-  async updateTransactionStatus(
-    id: number, 
-    reconciliation_status: string, 
-    reconciled_amount?: number
+  // 🔥 NEW V4.0 SMART SUGGESTIONS
+  async getSmartReconciliationSuggestions(
+    transactionId: number,
+    anagraphicsHint?: number,
+    enableAI: boolean = true,
+    enableSmartPatterns: boolean = true,
+    enablePredictive: boolean = true,
+    maxSuggestions: number = 10,
+    confidenceThreshold: number = 0.6
   ): Promise<APIResponse> {
-    const body = { reconciliation_status, reconciled_amount };
-    return this.request(`/api/transactions/${id}/update-status`, {
+    const params = this.buildQuery({
+      anagraphics_hint: anagraphicsHint,
+      enable_ai: enableAI,
+      enable_smart_patterns: enableSmartPatterns,
+      enable_predictive: enablePredictive,
+      max_suggestions: maxSuggestions,
+      confidence_threshold: confidenceThreshold
+    });
+    return this.request(`/api/transactions/${transactionId}/smart-suggestions?${params}`);
+  }
+
+  // 🔥 NEW V4.0 MANUAL RECONCILIATION WITH AI
+  async reconcileTransactionWithInvoice(
+    transactionId: number,
+    invoiceId: number,
+    amountToMatch: number,
+    enableAIValidation: boolean = true,
+    enableLearning: boolean = true,
+    userConfidence?: number,
+    userNotes?: string,
+    forceMatch: boolean = false
+  ): Promise<APIResponse> {
+    return this.request(`/api/transactions/${transactionId}/reconcile-with/${invoiceId}`, {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        amount_to_match: amountToMatch,
+        enable_ai_validation: enableAIValidation,
+        enable_learning: enableLearning,
+        user_confidence: userConfidence,
+        user_notes: userNotes,
+        force_match: forceMatch
+      }),
+    });
+  }
+
+  // 🔥 NEW V4.0 BATCH OPERATIONS
+  async batchReconcileTransactions(batchRequest: BatchReconciliationRequest): Promise<APIResponse> {
+    return this.request('/api/transactions/batch/reconcile', {
+      method: 'POST',
+      body: JSON.stringify(batchRequest),
     });
   }
 
   async batchUpdateTransactionStatus(
-    transaction_ids: number[], 
-    reconciliation_status: string
+    transactionIds: number[], 
+    reconciliationStatus: string,
+    enhanced: boolean = false,
+    forceBackground: boolean = false,
+    enableSmartValidation: boolean = true
   ): Promise<APIResponse> {
     return this.request('/api/transactions/batch/update-status', {
       method: 'POST',
-      body: JSON.stringify({ transaction_ids, reconciliation_status }),
+      body: JSON.stringify({
+        transaction_ids: transactionIds,
+        reconciliation_status: reconciliationStatus
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Enhanced': enhanced.toString(),
+        'X-Force-Background': forceBackground.toString(),
+        'X-Smart-Validation': enableSmartValidation.toString()
+      }
     });
   }
 
-  async searchTransactions(query: string, include_reconciled: boolean = false): Promise<APIResponse> {
-    return this.request(`/api/transactions/search/${encodeURIComponent(query)}?include_reconciled=${include_reconciled}`);
+  // 🔥 NEW V4.0 TRANSACTION INSIGHTS
+  async getTransactionInsights(
+    transactionId: number,
+    includeAIAnalysis: boolean = true,
+    includePatternMatching: boolean = true,
+    includeClientAnalysis: boolean = true,
+    includeSmartSuggestions: boolean = false
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      include_ai_analysis: includeAIAnalysis,
+      include_pattern_matching: includePatternMatching,
+      include_client_analysis: includeClientAnalysis,
+      include_smart_suggestions: includeSmartSuggestions
+    });
+    return this.request(`/api/transactions/${transactionId}/insights?${params}`);
   }
 
+  // 🔥 NEW V4.0 BATCH TASK STATUS
+  async getBatchTaskStatus(taskId: string): Promise<APIResponse> {
+    return this.request(`/api/transactions/batch/status/${taskId}`);
+  }
+
+  // 🔥 NEW V4.0 SEARCH ENHANCED
+  async searchTransactions(
+    query: string, 
+    limit: number = 10,
+    includeReconciled: boolean = false,
+    searchMode: 'smart' | 'exact' | 'fuzzy' | 'ai_enhanced' = 'smart',
+    enhancedResults: boolean = false,
+    enableClientMatching: boolean = false
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      limit,
+      include_reconciled: includeReconciled,
+      search_mode: searchMode,
+      enhanced_results: enhancedResults,
+      enable_client_matching: enableClientMatching
+    });
+    return this.request(`/api/transactions/search/${encodeURIComponent(query)}?${params}`);
+  }
+
+  // 🔥 NEW V4.0 STATISTICS ULTRA
+  async getTransactionStatsV4(
+    useCache: boolean = true,
+    includeTrends: boolean = false,
+    includeAIInsights: boolean = false,
+    periodMonths: number = 12
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      use_cache: useCache,
+      include_trends: includeTrends,
+      include_ai_insights: includeAIInsights,
+      period_months: periodMonths
+    });
+    return this.request(`/api/transactions/stats/summary?${params}`);
+  }
+
+  // Original methods mantained for compatibility
   async getTransactionStats(): Promise<APIResponse> {
-    return this.request('/api/transactions/stats/summary');
+    return this.getTransactionStatsV4();
   }
 
   async getCashFlowAnalysis(months: number = 12): Promise<APIResponse> {
     return this.request(`/api/transactions/analysis/cash-flow?months=${months}`);
   }
 
-  async exportTransactionsReconReady(format: string = 'json', limit: number = 1000): Promise<APIResponse> {
-    return this.request(`/api/transactions/export/reconciliation-ready?format=${format}&limit=${limit}`);
+  // 🔥 NEW V4.0 HEALTH & METRICS
+  async getTransactionHealthV4(): Promise<APIResponse> {
+    return this.request('/api/transactions/health');
   }
 
-  // ===== RECONCILIATION API - COMPLETE SMART IMPLEMENTATION =====
+  async getTransactionMetricsV4(): Promise<APIResponse> {
+    return this.request('/api/transactions/metrics');
+  }
 
-  // Basic Reconciliation
+  // ===== RECONCILIATION API V4.0 ULTRA =====
+
+  // 🔥 ULTRA SMART SUGGESTIONS V4.0
+  async getUltraSmartSuggestions(request: UltraReconciliationRequest): Promise<APIResponse> {
+    return this.request('/api/reconciliation/ultra/smart-suggestions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  // 🔥 MANUAL MATCH V4.0 WITH AI
+  async applyManualMatchV4(request: ManualMatchRequest): Promise<APIResponse> {
+    return this.request('/api/reconciliation/manual-match', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  // 🔥 BATCH PROCESSING V4.0
+  async processBatchReconciliationV4(request: BatchReconciliationRequest): Promise<APIResponse> {
+    return this.request('/api/reconciliation/batch/ultra-processing', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  // 🔥 SYSTEM STATUS V4.0
+  async getReconciliationSystemStatus(): Promise<APIResponse> {
+    return this.request('/api/reconciliation/system/status');
+  }
+
+  async getReconciliationVersionInfo(): Promise<APIResponse> {
+    return this.request('/api/reconciliation/system/version');
+  }
+
+  async getReconciliationPerformanceMetrics(): Promise<APIResponse> {
+    return this.request('/api/reconciliation/system/performance');
+  }
+
+  // 🔥 CLIENT RELIABILITY V4.0
+  async getClientPaymentReliabilityV4(
+    anagraphicsId: number,
+    includePredictions: boolean = true,
+    includePatternAnalysis: boolean = true,
+    enhancedInsights: boolean = true
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      include_predictions: includePredictions,
+      include_pattern_analysis: includePatternAnalysis,
+      enhanced_insights: enhancedInsights
+    });
+    return this.request(`/api/reconciliation/client/reliability/${anagraphicsId}?${params}`);
+  }
+
+  // 🔥 AUTOMATIC MATCHING V4.0
+  async getAutomaticMatchingOpportunitiesV4(
+    confidenceLevel: 'Exact' | 'High' | 'Medium' | 'Low' = 'High',
+    maxOpportunities: number = 50,
+    enableAIFiltering: boolean = true,
+    enableRiskAssessment: boolean = true,
+    prioritizeHighValue: boolean = true
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      confidence_level: confidenceLevel,
+      max_opportunities: maxOpportunities,
+      enable_ai_filtering: enableAIFiltering,
+      enable_risk_assessment: enableRiskAssessment,
+      prioritize_high_value: prioritizeHighValue
+    });
+    return this.request(`/api/reconciliation/automatic/opportunities?${params}`);
+  }
+
+  // Original reconciliation methods maintained for compatibility
   async getReconciliationSuggestions(
     max_suggestions: number = 50, 
     confidence_threshold: number = 0.5
   ): Promise<APIResponse> {
-    const params = this.buildQuery({ max_suggestions, confidence_threshold });
-    return this.request(`/api/reconciliation/suggestions?${params}`);
+    return this.getUltraSmartSuggestions({
+      operation_type: 'auto',
+      max_suggestions,
+      confidence_threshold
+    });
   }
 
   async getReconciliationOpportunities(
     limit: number = 20, 
     amount_tolerance: number = 0.01
   ): Promise<APIResponse> {
-    const params = this.buildQuery({ limit, amount_tolerance });
-    return this.request(`/api/reconciliation/opportunities?${params}`);
+    return this.getAutomaticMatchingOpportunitiesV4('High', limit);
   }
 
-  // 🔥 SMART CLIENT-BASED RECONCILIATION
-  async getClientReconciliationSuggestions(
-    anagraphics_id: number,
-    max_suggestions: number = 10
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ max_suggestions });
-    return this.request(`/api/reconciliation/client/${anagraphics_id}/suggestions?${params}`);
-  }
-
-  async getClientPaymentPatterns(anagraphics_id: number): Promise<APIResponse> {
-    return this.request(`/api/reconciliation/client/${anagraphics_id}/patterns`);
-  }
-
-  async getClientReliabilityAnalysis(anagraphics_id: number): Promise<APIResponse> {
-    return this.request(`/api/reconciliation/client/${anagraphics_id}/reliability`);
-  }
-
-  // 🔥 ADVANCED SUGGESTION ALGORITHMS
-  async get1to1Suggestions(
-    invoice_id?: number,
-    transaction_id?: number,
-    anagraphics_id_filter?: number
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ invoice_id, transaction_id, anagraphics_id_filter });
-    return this.request(`/api/reconciliation/suggestions/1-to-1?${params}`);
-  }
-
-  async getNtoMSuggestions(
-    transaction_id: number,
-    anagraphics_id_filter?: number,
-    max_combination_size: number = 5,
-    max_search_time_ms: number = 30000,
-    exclude_invoice_ids?: string,
-    start_date?: string,
-    end_date?: string
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      transaction_id,
-      anagraphics_id_filter,
-      max_combination_size,
-      max_search_time_ms,
-      exclude_invoice_ids,
-      start_date,
-      end_date
-    });
-    return this.request(`/api/reconciliation/suggestions/n-to-m?${params}`);
-  }
-
-  // Reconciliation Execution
   async performReconciliation(
     invoice_id: number, 
     transaction_id: number, 
     amount: number
   ): Promise<APIResponse> {
-    return this.request('/api/reconciliation/reconcile', {
-      method: 'POST',
-      body: JSON.stringify({ invoice_id, transaction_id, amount }),
+    return this.applyManualMatchV4({
+      invoice_id,
+      transaction_id,
+      amount_to_match: amount,
+      enable_ai_validation: true,
+      enable_learning: true
     });
   }
 
@@ -463,452 +748,230 @@ class ApiClient {
     transaction_id: number;
     amount: number;
   }>): Promise<APIResponse> {
-    return this.request('/api/reconciliation/reconcile/batch', {
-      method: 'POST',
-      body: JSON.stringify(reconciliations),
+    return this.processBatchReconciliationV4({
+      reconciliation_pairs: reconciliations,
+      enable_ai_validation: true,
+      enable_parallel_processing: true
     });
   }
 
-  // 🔥 AI AUTO-RECONCILIATION
-  async autoReconcile(
-    confidence_threshold: number = 0.8, 
-    max_auto_reconcile: number = 10
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ confidence_threshold, max_auto_reconcile });
-    return this.request(`/api/reconciliation/auto-reconcile?${params}`, {
-      method: 'POST',
-    });
-  }
-
-  async getAutomaticMatches(confidence_level: string = 'Exact'): Promise<APIResponse> {
-    const params = this.buildQuery({ confidence_level });
-    return this.request(`/api/reconciliation/automatic-matches?${params}`);
-  }
-
-  // Transaction Management
-  async ignoreTransaction(transaction_id: number): Promise<APIResponse> {
-    return this.request(`/api/reconciliation/transaction/${transaction_id}/ignore`, {
-      method: 'POST',
-    });
-  }
-
-  // Undo Operations
-  async undoInvoiceReconciliation(invoice_id: number): Promise<APIResponse> {
-    return this.request(`/api/reconciliation/undo/invoice/${invoice_id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async undoTransactionReconciliation(transaction_id: number): Promise<APIResponse> {
-    return this.request(`/api/reconciliation/undo/transaction/${transaction_id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Status & Analytics
   async getReconciliationStatus(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/status');
-  }
-
-  async getReconciliationLinks(
-    invoice_id?: number, 
-    transaction_id?: number, 
-    limit: number = 50, 
-    offset: number = 0
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ invoice_id, transaction_id, limit, offset });
-    return this.request(`/api/reconciliation/links?${params}`);
-  }
-
-  async getReconciliationAnalytics(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/analytics/summary');
-  }
-
-  // Validation & Rules
-  async validateReconciliationMatch(
-    invoice_id: number, 
-    transaction_id: number, 
-    amount: number
-  ): Promise<APIResponse> {
-    return this.request('/api/reconciliation/validate-match', {
-      method: 'POST',
-      body: JSON.stringify({ invoice_id, transaction_id, amount }),
-    });
-  }
-
-  async getMatchingRules(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/rules/matching');
-  }
-
-  // Manual Suggestions
-  async createManualSuggestion(
-    invoice_id: number,
-    transaction_id: number,
-    confidence: 'Alta' | 'Media' | 'Bassa',
-    notes?: string
-  ): Promise<APIResponse> {
-    return this.request('/api/reconciliation/suggestions/manual', {
-      method: 'POST',
-      body: JSON.stringify({ invoice_id, transaction_id, confidence, notes }),
-    });
-  }
-
-  // Dashboard
-  async getReconciliationDashboard(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/dashboard');
-  }
-
-  // Smart Reconciliation Features
-  async getSmartReconciliationOverview(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/smart/overview');
-  }
-
-  async getClientsWithPatterns(
-    limit: number = 50,
-    min_reliability_score: number = 0.0
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ limit, min_reliability_score });
-    return this.request(`/api/reconciliation/smart/clients?${params}`);
-  }
-
-  async refreshClientPatterns(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/smart/refresh-patterns', {
-      method: 'POST',
-    });
-  }
-
-  async getSmartSuggestionsForTransaction(
-    transaction_id: number,
-    anagraphics_id?: number
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ anagraphics_id });
-    return this.request(`/api/reconciliation/smart/suggestions/${transaction_id}?${params}`);
-  }
-
-  // Export & Health
-  async exportReconciliationReport(
-    format: 'excel' | 'csv' | 'json' = 'excel',
-    period_months: number = 12,
-    include_unmatched: boolean = true
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ format, period_months, include_unmatched });
-    return this.request(`/api/reconciliation/export/report?${params}`);
+    return this.getReconciliationSystemStatus();
   }
 
   async getReconciliationHealth(): Promise<APIResponse> {
     return this.request('/api/reconciliation/health-check');
   }
 
-  // ===== ANALYTICS API - COMPLETE IMPLEMENTATION =====
+  // ===== ANALYTICS API V3.0 ULTRA =====
 
-  // Core Analytics & KPIs
+  // 🔥 EXECUTIVE DASHBOARD ULTRA
+  async getExecutiveDashboardUltra(
+    includePredictions: boolean = false,
+    includeAIInsights: boolean = true,
+    cacheEnabled: boolean = true,
+    realTime: boolean = false
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      include_predictions: includePredictions,
+      include_ai_insights: includeAIInsights,
+      cache_enabled: cacheEnabled,
+      real_time: realTime
+    });
+    return this.request(`/api/analytics/dashboard/executive?${params}`);
+  }
+
+  // 🔥 OPERATIONS DASHBOARD LIVE
+  async getOperationsDashboardLive(
+    autoRefreshSeconds: number = 30,
+    includeAlerts: boolean = true,
+    alertPriority: 'low' | 'medium' | 'high' | 'critical' = 'medium'
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      auto_refresh_seconds: autoRefreshSeconds,
+      include_alerts: includeAlerts,
+      alert_priority: alertPriority
+    });
+    return this.request(`/api/analytics/dashboard/operations/live?${params}`);
+  }
+
+  // 🔥 AI BUSINESS INSIGHTS
+  async getAIBusinessInsights(
+    analysisDepth: 'quick' | 'standard' | 'deep' = 'standard',
+    focusAreas?: string,
+    includeRecommendations: boolean = true,
+    language: 'it' | 'en' = 'it'
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      analysis_depth: analysisDepth,
+      focus_areas: focusAreas,
+      include_recommendations: includeRecommendations,
+      language
+    });
+    return this.request(`/api/analytics/ai/business-insights?${params}`);
+  }
+
+  // 🔥 CUSTOM AI ANALYSIS
+  async runCustomAIAnalysis(request: AnalyticsRequest): Promise<APIResponse> {
+    return this.request('/api/analytics/ai/custom-analysis', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  // 🔥 SEASONALITY ULTRA ANALYSIS
+  async getUltraSeasonalityAnalysis(
+    yearsBack: number = 3,
+    includeWeatherCorrelation: boolean = false,
+    predictMonthsAhead: number = 6,
+    confidenceLevel: number = 0.95,
+    categoryFocus?: string
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      years_back: yearsBack,
+      include_weather_correlation: includeWeatherCorrelation,
+      predict_months_ahead: predictMonthsAhead,
+      confidence_level: confidenceLevel,
+      category_focus: categoryFocus
+    });
+    return this.request(`/api/analytics/seasonality/ultra-analysis?${params}`);
+  }
+
+  // 🔥 CUSTOMER ULTRA INTELLIGENCE
+  async getUltraCustomerIntelligence(
+    analysisDepth: 'basic' | 'standard' | 'comprehensive' | 'expert' = 'comprehensive',
+    includePredictiveLTV: boolean = true,
+    includeChurnPrediction: boolean = true,
+    includeNextBestAction: boolean = true,
+    segmentGranularity: 'basic' | 'detailed' | 'micro' = 'detailed'
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      analysis_depth: analysisDepth,
+      include_predictive_ltv: includePredictiveLTV,
+      include_churn_prediction: includeChurnPrediction,
+      include_next_best_action: includeNextBestAction,
+      segment_granularity: segmentGranularity
+    });
+    return this.request(`/api/analytics/customers/ultra-intelligence?${params}`);
+  }
+
+  // 🔥 COMPETITIVE MARKET POSITION
+  async getCompetitiveMarketPosition(
+    benchmarkAgainst: 'industry' | 'local' | 'premium' = 'industry',
+    includePriceAnalysis: boolean = true,
+    includeMarginOptimization: boolean = true,
+    marketScope: 'local' | 'regional' | 'national' = 'regional'
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      benchmark_against: benchmarkAgainst,
+      include_price_analysis: includePriceAnalysis,
+      include_margin_optimization: includeMarginOptimization,
+      market_scope: marketScope
+    });
+    return this.request(`/api/analytics/competitive/market-position?${params}`);
+  }
+
+  // 🔥 BATCH ULTRA ANALYTICS
+  async processBatchUltraAnalytics(request: BatchAnalyticsRequest): Promise<APIResponse> {
+    return this.request('/api/analytics/batch/ultra-analytics', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  // 🔥 ULTRA REPORT EXPORT
+  async exportUltraAnalyticsReport(
+    reportType: 'executive' | 'operational' | 'comprehensive' | 'custom' = 'comprehensive',
+    format: 'excel' | 'pdf' | 'json' | 'csv' = 'excel',
+    includeAIInsights: boolean = true,
+    includePredictions: boolean = true,
+    includeRecommendations: boolean = true,
+    customSections?: string,
+    language: 'it' | 'en' = 'it'
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      report_type: reportType,
+      format,
+      include_ai_insights: includeAIInsights,
+      include_predictions: includePredictions,
+      include_recommendations: includeRecommendations,
+      custom_sections: customSections,
+      language
+    });
+    return this.request(`/api/analytics/export/ultra-report?${params}`);
+  }
+
+  // 🔥 REAL-TIME LIVE METRICS
+  async getRealtimeLiveMetrics(
+    metrics: string = 'all',
+    refreshRate: number = 10,
+    includeAlerts: boolean = true
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      metrics,
+      refresh_rate: refreshRate,
+      include_alerts: includeAlerts
+    });
+    return this.request(`/api/analytics/realtime/live-metrics?${params}`);
+  }
+
+  // 🔥 ULTRA PREDICTIONS
+  async getUltraPredictions(
+    predictionHorizon: number = 12,
+    confidenceIntervals: boolean = true,
+    scenarioAnalysis: boolean = true,
+    externalFactors: boolean = false,
+    modelEnsemble: boolean = true
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      prediction_horizon: predictionHorizon,
+      confidence_intervals: confidenceIntervals,
+      scenario_analysis: scenarioAnalysis,
+      external_factors: externalFactors,
+      model_ensemble: modelEnsemble
+    });
+    return this.request(`/api/analytics/forecasting/ultra-predictions?${params}`);
+  }
+
+  // 🔥 SYSTEM HEALTH ULTRA
+  async getUltraSystemHealth(): Promise<APIResponse> {
+    return this.request('/api/analytics/system/ultra-health');
+  }
+
+  async getUltraAnalyticsFeatures(): Promise<APIResponse> {
+    return this.request('/api/analytics/system/ultra-features');
+  }
+
+  // Original Analytics methods maintained for compatibility
   async getKPIs(): Promise<APIResponse> {
-    return this.request('/api/analytics/kpis');
+    return this.getExecutiveDashboardUltra();
   }
 
   async getDashboardData(): Promise<APIResponse> {
-    return this.request('/api/analytics/dashboard');
+    return this.getExecutiveDashboardUltra();
   }
 
   async getDetailedKPIs(): Promise<APIResponse> {
-    return this.request('/api/analytics/kpis/detailed');
+    return this.getExecutiveDashboardUltra(false, true);
   }
 
-  // Dashboard Variants
   async getExecutiveDashboard(): Promise<APIResponse> {
-    return this.request('/api/analytics/dashboard/executive');
+    return this.getExecutiveDashboardUltra();
   }
 
   async getOperationsDashboard(): Promise<APIResponse> {
-    return this.request('/api/analytics/dashboard/operations');
+    return this.getOperationsDashboardLive();
   }
 
-  async getFinancialDashboard(): Promise<APIResponse> {
-    return this.request('/api/analytics/dashboard/financial');
-  }
-
-  // Revenue & Profitability Analytics
-  async getMonthlyRevenue(months: number = 12, invoice_type?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ months, invoice_type });
-    return this.request(`/api/analytics/revenue/monthly?${params}`);
-  }
-
-  async getMonthlyProfitability(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/profitability/monthly?${params}`);
-  }
-
-  async getProfitabilityBreakdown(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/profitability/breakdown?${params}`);
-  }
-
-  async getRevenueTrends(period: 'monthly' | 'quarterly' = 'monthly', periods: number = 12): Promise<APIResponse> {
-    return this.request(`/api/analytics/trends/revenue?period=${period}&periods=${periods}`);
-  }
-
-  async getYearOverYearComparison(metric: string = 'revenue', current_year?: number): Promise<APIResponse> {
-    const params = this.buildQuery({ metric, current_year });
-    return this.request(`/api/analytics/comparison/year-over-year?${params}`);
-  }
-
-  // 🔥 SEASONAL ANALYTICS - CRITICAL FOR FRUIT/VEGETABLE BUSINESS
-  async getSeasonalProductAnalysis(
-    product_category: string = 'all', 
-    years_back: number = 3
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ product_category, years_back });
-    return this.request(`/api/analytics/seasonality/products?${params}`);
-  }
-
-  async getSeasonalForecast(
-    product_category: string = 'all', 
-    months_ahead: number = 6
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ product_category, months_ahead });
-    return this.request(`/api/analytics/seasonality/forecast?${params}`);
-  }
-
-  // 🔥 WASTE & SPOILAGE ANALYTICS - GOLD FOR PERISHABLES
-  async getWasteAnalysis(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/waste/analysis?${params}`);
-  }
-
-  async getInventoryTurnover(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/inventory/turnover?${params}`);
-  }
-
-  async getInventoryAlerts(): Promise<APIResponse> {
-    return this.request('/api/analytics/inventory/alerts');
-  }
-
-  // 🔥 CUSTOMER INTELLIGENCE - ADVANCED SEGMENTATION
-  async getCustomerRFMAnalysis(analysis_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ analysis_date });
-    return this.request(`/api/analytics/customers/rfm?${params}`);
-  }
-
-  async getCustomerChurnRisk(): Promise<APIResponse> {
-    return this.request('/api/analytics/customers/churn-risk');
-  }
-
-  async getClientSegmentation(
-    segmentation_type: string = 'revenue', 
-    period_months: number = 12
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ segmentation_type, period_months });
-    return this.request(`/api/analytics/segmentation/clients?${params}`);
-  }
-
-  async getTopClients(limit: number = 20, period_months: number = 12): Promise<APIResponse> {
-    const params = this.buildQuery({ limit, period_months });
-    return this.request(`/api/analytics/clients/top?${params}`);
-  }
-
-  async getClientPerformance(
-    start_date?: string, 
-    end_date?: string, 
-    limit: number = 20
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date, limit });
-    return this.request(`/api/analytics/clients/performance?${params}`);
-  }
-
-  async getClientDetailedAnalysis(anagraphics_id: number): Promise<APIResponse> {
-    return this.request(`/api/analytics/clients/${anagraphics_id}/detailed`);
-  }
-
-  async getClientsByScore(order: 'ASC' | 'DESC' = 'DESC', limit: number = 20): Promise<APIResponse> {
-    const params = this.buildQuery({ order, limit });
-    return this.request(`/api/analytics/clients/by-score?${params}`);
-  }
-
-  async updateClientScores(): Promise<APIResponse> {
-    return this.request('/api/analytics/clients/scores/update');
-  }
-
-  async getClientFinancialSummary(anagraphics_id: number): Promise<APIResponse> {
-    return this.request(`/api/analytics/clients/${anagraphics_id}/financial-summary`);
-  }
-
-  // 🔥 SUPPLIER ANALYTICS
-  async getSupplierAnalysis(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/suppliers/analysis?${params}`);
-  }
-
-  async getTopSuppliersByCost(
-    start_date?: string, 
-    end_date?: string, 
-    limit: number = 20
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date, limit });
-    return this.request(`/api/analytics/suppliers/top-by-cost?${params}`);
-  }
-
-  async getSupplierReliability(): Promise<APIResponse> {
-    return this.request('/api/analytics/suppliers/reliability');
-  }
-
-  // 🔥 PRODUCT & PRICING ANALYTICS
-  async getProductAnalysis(
-    limit: number = 50, 
-    period_months: number = 12,
-    min_quantity?: number,
-    invoice_type?: string
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ limit, period_months, min_quantity, invoice_type });
-    return this.request(`/api/analytics/products/analysis?${params}`);
-  }
-
-  async getProductMonthlySales(
-    normalized_description: string,
-    start_date?: string,
-    end_date?: string
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/products/${encodeURIComponent(normalized_description)}/monthly-sales?${params}`);
-  }
-
-  async getProductComparison(
-    normalized_description: string,
-    year1: number,
-    year2: number
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ year1, year2 });
-    return this.request(`/api/analytics/products/${encodeURIComponent(normalized_description)}/comparison?${params}`);
-  }
-
-  async getPriceTrends(
-    product_name?: string,
-    start_date?: string,
-    end_date?: string
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ product_name, start_date, end_date });
-    return this.request(`/api/analytics/pricing/trends?${params}`);
-  }
-
-  async getCompetitiveAnalysis(): Promise<APIResponse> {
-    return this.request('/api/analytics/competitive/analysis');
-  }
-
-  async getCompetitiveOpportunities(): Promise<APIResponse> {
-    return this.request('/api/analytics/competitive/opportunities');
-  }
-
-  // 🔥 MARKET BASKET & CROSS-SELLING
-  async getMarketBasketAnalysis(
-    start_date?: string,
-    end_date?: string,
-    min_support: number = 0.01
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date, min_support });
-    return this.request(`/api/analytics/market-basket/analysis?${params}`);
-  }
-
-  async getCrossSelling(): Promise<APIResponse> {
-    return this.request('/api/analytics/market-basket/recommendations');
-  }
-
-  // 🔥 CASH FLOW & FINANCIAL ANALYTICS
-  async getMonthlyCashFlow(months: number = 12): Promise<APIResponse> {
-    return this.request(`/api/analytics/cash-flow/monthly?months=${months}`);
-  }
-
-  async getAdvancedCashFlow(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/cash-flow/advanced?${params}`);
-  }
-
-  async getCashFlowForecast(
-    months_ahead: number = 6,
-    include_scheduled: boolean = true
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ months_ahead, include_scheduled });
-    return this.request(`/api/analytics/forecasting/cash-flow?${params}`);
-  }
-
-  async getSalesForecast(product_name?: string, months_ahead: number = 3): Promise<APIResponse> {
-    const params = this.buildQuery({ product_name, months_ahead });
-    return this.request(`/api/analytics/forecasting/sales?${params}`);
-  }
-
-  // 🔥 PAYMENT ANALYTICS
-  async getPaymentBehavior(): Promise<APIResponse> {
-    return this.request('/api/analytics/payments/behavior');
-  }
-
-  async getPaymentPerformance(): Promise<APIResponse> {
-    return this.request('/api/analytics/performance/payment');
-  }
-
-  async getPaymentOptimization(): Promise<APIResponse> {
-    return this.request('/api/analytics/payments/optimization');
-  }
-
-  // 🔥 AGING & OVERDUE ANALYTICS
-  async getInvoicesAging(invoice_type: string = 'Attiva'): Promise<APIResponse> {
-    return this.request(`/api/analytics/aging/invoices?invoice_type=${invoice_type}`);
-  }
-
-  async getOverdueInvoicesAnalysis(limit: number = 20, priority_sort: boolean = true): Promise<APIResponse> {
-    const params = this.buildQuery({ limit, priority_sort });
-    return this.request(`/api/analytics/overdue/invoices?${params}`);
-  }
-
-  // 🔥 CALENDAR & DUE DATES
-  async getDueDatesCalendar(year: number, month: number): Promise<APIResponse> {
-    return this.request(`/api/analytics/calendar/due-dates/${year}/${month}`);
-  }
-
-  async getInvoicesDueOnDate(due_date: string): Promise<APIResponse> {
-    return this.request(`/api/analytics/invoices/due-on/${due_date}`);
-  }
-
-  // 🔥 COMMISSIONS & COSTS
-  async getCommissionSummary(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/commissions/summary?${params}`);
-  }
-
-  // 🔥 BUSINESS INSIGHTS & RECOMMENDATIONS
-  async getBusinessInsights(start_date?: string, end_date?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ start_date, end_date });
-    return this.request(`/api/analytics/insights/business?${params}`);
-  }
-
-  async getExecutiveSummary(): Promise<APIResponse> {
-    return this.request('/api/analytics/insights/executive-summary');
-  }
-
-  // 🔥 EXPORT & REPORTS
-  async exportAnalysis(
-    analysis_type: string,
-    format: string = 'excel',
-    start_date?: string,
-    end_date?: string
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({ analysis_type, format, start_date, end_date });
-    return this.request(`/api/analytics/export/analysis?${params}`);
-  }
-
-  async exportExecutiveReport(format: string = 'excel', include_charts: boolean = true): Promise<APIResponse> {
-    const params = this.buildQuery({ format, include_charts });
-    return this.request(`/api/analytics/export/executive-report?${params}`);
-  }
-
-  // 🔥 SYSTEM & UTILITIES
   async getAnalyticsHealth(): Promise<APIResponse> {
-    return this.request('/api/analytics/health');
+    return this.getUltraSystemHealth();
   }
 
   async getAnalyticsFeatures(): Promise<APIResponse> {
-    return this.request('/api/analytics/features');
+    return this.getUltraAnalyticsFeatures();
   }
 
-  // ===== IMPORT/EXPORT API - COMPLETE IMPLEMENTATION =====
+  // ===== IMPORT/EXPORT API COMPLETO =====
 
   // XML/P7M Import
   async importInvoicesXML(files: FileList): Promise<APIResponse> {
@@ -920,7 +983,7 @@ class ApiClient {
     return this.request('/api/import-export/invoices/xml', {
       method: 'POST',
       body: formData,
-      headers: {}, // Let browser set Content-Type for FormData
+      headers: {},
     });
   }
 
@@ -960,11 +1023,11 @@ class ApiClient {
     });
   }
 
-  async previewTransactionsCSV(file: File, max_rows: number = 10): Promise<APIResponse> {
+  async previewTransactionsCSV(file: File, maxRows: number = 10): Promise<APIResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.request(`/api/import-export/transactions/csv/preview?max_rows=${max_rows}`, {
+    return this.request(`/api/import-export/transactions/csv/preview?max_rows=${maxRows}`, {
       method: 'POST',
       body: formData,
       headers: {},
@@ -1098,7 +1161,24 @@ class ApiClient {
     return this.request('/api/import-export/statistics');
   }
 
-  // ===== CLOUD SYNC API - COMPLETE IMPLEMENTATION =====
+  async getSupportedFormats(): Promise<APIResponse> {
+    return this.request('/api/import-export/supported-formats');
+  }
+
+  async validateBatchFiles(files: FileList): Promise<APIResponse> {
+    const formData = new FormData();
+    Array.from(files).forEach(file => {
+      formData.append('files', file);
+    });
+
+    return this.request('/api/import-export/validate/batch', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    });
+  }
+
+  // ===== CLOUD SYNC API COMPLETO =====
 
   async getSyncStatus(): Promise<APIResponse> {
     return this.request('/api/sync/status');
@@ -1203,21 +1283,19 @@ class ApiClient {
     });
   }
 
-  // ===== UTILITIES & TESTING =====
+  // ===== UTILITIES & TESTING V4.0 =====
 
-  // Test di connessione completo
   async testConnection(): Promise<boolean> {
     try {
       await this.healthCheck();
       return true;
     } catch (error) {
-      console.error('Backend connection test failed:', error);
+      console.error('Backend V4.0 connection test failed:', error);
       return false;
     }
   }
 
-  // Test API completo
-  async runFullAPITest(): Promise<{
+  async runFullAPITestV4(): Promise<{
     success: boolean;
     results: Record<string, boolean>;
     details: Record<string, any>;
@@ -1228,8 +1306,8 @@ class ApiClient {
       anagraphics: false,
       invoices: false,
       transactions: false,
-      reconciliation: false,
-      analytics: false,
+      reconciliation_v4: false,
+      analytics_v3: false,
       import_export: false,
       sync: false
     };
@@ -1255,7 +1333,7 @@ class ApiClient {
     }
 
     try {
-      // Test Anagraphics
+      // Test Anagraphics Enhanced
       const anagraphics = await this.getAnagraphics({ page: 1, size: 1 });
       tests.anagraphics = true;
       details.anagraphics = { count: anagraphics.total || 0 };
@@ -1264,7 +1342,7 @@ class ApiClient {
     }
 
     try {
-      // Test Invoices
+      // Test Invoices Enhanced
       const invoices = await this.getInvoices({ page: 1, size: 1 });
       tests.invoices = true;
       details.invoices = { count: invoices.total || 0 };
@@ -1273,30 +1351,30 @@ class ApiClient {
     }
 
     try {
-      // Test Transactions
-      const transactions = await this.getTransactions({ page: 1, size: 1 });
+      // Test Transactions V4.0
+      const transactions = await this.getTransactions({ page: 1, size: 1, enhanced: true });
       tests.transactions = true;
-      details.transactions = { count: transactions.total || 0 };
+      details.transactions = { count: transactions.total || 0, v4_enhanced: true };
     } catch (error) {
       details.transactions = { error: error.message };
     }
 
     try {
-      // Test Reconciliation
-      const reconciliation = await this.getReconciliationStatus();
-      tests.reconciliation = true;
-      details.reconciliation = reconciliation;
+      // Test Reconciliation V4.0
+      const reconciliation = await this.getReconciliationSystemStatus();
+      tests.reconciliation_v4 = true;
+      details.reconciliation_v4 = { ...reconciliation, version: '4.0' };
     } catch (error) {
-      details.reconciliation = { error: error.message };
+      details.reconciliation_v4 = { error: error.message };
     }
 
     try {
-      // Test Analytics
-      const analytics = await this.getKPIs();
-      tests.analytics = true;
-      details.analytics = analytics;
+      // Test Analytics V3.0 Ultra
+      const analytics = await this.getUltraSystemHealth();
+      tests.analytics_v3 = true;
+      details.analytics_v3 = { ...analytics, version: '3.0' };
     } catch (error) {
-      details.analytics = { error: error.message };
+      details.analytics_v3 = { error: error.message };
     }
 
     try {
@@ -1328,18 +1406,37 @@ class ApiClient {
         summary: {
           passed: successCount,
           total: totalTests,
-          success_rate: `${((successCount / totalTests) * 100).toFixed(1)}%`
+          success_rate: `${((successCount / totalTests) * 100).toFixed(1)}%`,
+          version: 'API Client V4.0',
+          backend_features: [
+            'Ultra-Optimized Analytics V3.0',
+            'Smart Reconciliation V4.0', 
+            'Enhanced Transactions V4.0',
+            'AI/ML Insights',
+            'Complete First Run Wizard',
+            'Advanced Import/Export',
+            'Cloud Sync with Google Drive'
+          ]
         }
       }
     };
+  }
+
+  // Legacy method maintained for compatibility
+  async runFullAPITest(): Promise<{
+    success: boolean;
+    results: Record<string, boolean>;
+    details: Record<string, any>;
+  }> {
+    return this.runFullAPITestV4();
   }
 }
 
 // Singleton instance
 export const apiClient = new ApiClient();
 
-// Export helper per testare la connessione
-export const testBackendConnection = async (): Promise<{
+// Export helper per testare la connessione V4.0
+export const testBackendConnectionV4 = async (): Promise<{
   connected: boolean;
   message: string;
   details?: any;
@@ -1348,39 +1445,62 @@ export const testBackendConnection = async (): Promise<{
     const health = await apiClient.healthCheck();
     return {
       connected: true,
-      message: 'Backend connesso con successo',
-      details: health
+      message: 'Backend V4.0 connesso con successo - Ultra-Optimized Features Active',
+      details: { 
+        ...health, 
+        api_version: 'V4.0',
+        features: ['AI/ML Analytics', 'Smart Reconciliation', 'Enhanced Transactions']
+      }
     };
   } catch (error) {
     return {
       connected: false,
-      message: error instanceof Error ? error.message : 'Errore di connessione',
+      message: error instanceof Error ? error.message : 'Errore di connessione V4.0',
       details: error
     };
   }
 };
 
-// Export helper per test completo
-export const runCompleteAPITest = async () => {
-  return await apiClient.runFullAPITest();
+// Export helper per test completo V4.0
+export const runCompleteAPITestV4 = async () => {
+  return await apiClient.runFullAPITestV4();
 };
 
-// Export constants
-export const API_ENDPOINTS = {
+// Legacy helpers maintained for compatibility
+export const testBackendConnection = testBackendConnectionV4;
+export const runCompleteAPITest = runCompleteAPITestV4;
+
+// Export constants V4.0
+export const API_ENDPOINTS_V4 = {
   HEALTH: '/health',
   FIRST_RUN: '/api/first-run',
   SETUP: '/api/setup',
   ANAGRAPHICS: '/api/anagraphics',
   INVOICES: '/api/invoices',
-  TRANSACTIONS: '/api/transactions',
-  RECONCILIATION: '/api/reconciliation',
-  ANALYTICS: '/api/analytics',
+  TRANSACTIONS: '/api/transactions', // V4.0 Enhanced
+  RECONCILIATION: '/api/reconciliation', // V4.0 Ultra
+  ANALYTICS: '/api/analytics', // V3.0 Ultra-Optimized
   IMPORT_EXPORT: '/api/import-export',
   SYNC: '/api/sync'
 } as const;
 
+// Export feature flags V4.0
+export const FEATURES_V4 = {
+  AI_INSIGHTS: true,
+  SMART_RECONCILIATION: true,
+  ULTRA_ANALYTICS: true,
+  ENHANCED_TRANSACTIONS: true,
+  PREDICTIVE_SCORING: true,
+  PATTERN_LEARNING: true,
+  REAL_TIME_METRICS: true,
+  ADVANCED_EXPORT: true,
+  CLOUD_SYNC: true,
+  SETUP_WIZARD: true
+} as const;
+
 // Export types for better TypeScript support
-export type APIEndpointCategory = keyof typeof API_ENDPOINTS;
+export type APIEndpointCategoryV4 = keyof typeof API_ENDPOINTS_V4;
+export type FeatureV4 = keyof typeof FEATURES_V4;
 
 // Default export
 export default apiClient;
