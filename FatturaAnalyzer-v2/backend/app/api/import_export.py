@@ -14,7 +14,6 @@ from fastapi.responses import FileResponse, StreamingResponse, Response
 from io import BytesIO
 import pandas as pd
 
-from app.adapters.database_adapter import db_adapter
 from app.adapters.importer_adapter import importer_adapter
 from app.models import ImportResult, FileUploadResponse, APIResponse
 from app.config import settings
@@ -140,6 +139,7 @@ async def import_transactions_csv(
     file: UploadFile = File(..., description="CSV file with bank transactions")
 ):
     """Import bank transactions from CSV file using importer adapter"""
+    from app.adapters.database_adapter import db_adapter
     try:
         if not file.filename.lower().endswith('.csv'):
             raise HTTPException(status_code=400, detail="File must be a CSV")
@@ -269,6 +269,7 @@ async def export_invoices(
     include_vat: bool = Query(False, description="Include VAT summary")
 ):
     """Export invoices to various formats using database adapter"""
+    from app.adapters.database_adapter import db_adapter
     try:
         # Ottieni fatture dal database (corretto per restituire DataFrame)
         invoices_data = await db_adapter.get_invoices_async(
@@ -434,6 +435,7 @@ async def export_transactions(
     include_reconciliation: bool = Query(False, description="Include reconciliation details")
 ):
     """Export bank transactions to various formats using database adapter"""
+    from app.adapters.database_adapter import db_adapter
     try:
         transactions_data = await db_adapter.get_transactions_async(
             start_date=start_date,
@@ -558,6 +560,7 @@ async def export_anagraphics(
     include_stats: bool = Query(False, description="Include financial statistics")
 ):
     """Export anagraphics to various formats using database adapter"""
+    from app.adapters.database_adapter import db_adapter
     try:
         anagraphics_data = await db_adapter.get_anagraphics_async(type_filter=type_filter)
         
