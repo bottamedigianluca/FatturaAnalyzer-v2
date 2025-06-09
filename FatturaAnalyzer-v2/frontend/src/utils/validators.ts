@@ -1,3 +1,19 @@
+import { 
+  REGEX_PATTERNS, 
+  VALIDATION_RULES, 
+  SUPPORTED_FILE_FORMATS,
+  MIME_TYPES,
+  SECURITY_CONFIG,
+  V4_FEATURES
+} from './constants';
+import type { 
+  PaymentStatus, 
+  ReconciliationStatus, 
+  InvoiceType, 
+  AnagraphicsType 
+} from '../types';
+
+
 const cleanVAT = vat.replace(/[\s\-]/g, '').toUpperCase();
   
   if (cleanVAT.length < 4) {
