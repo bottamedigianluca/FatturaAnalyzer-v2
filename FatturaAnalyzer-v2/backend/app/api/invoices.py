@@ -7,8 +7,6 @@ from typing import List, Optional
 from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query, Path
 from fastapi.responses import JSONResponse
-
-from app.adapters.database_adapter import db_adapter
 from app.models import (
     Invoice, InvoiceCreate, InvoiceUpdate, InvoiceFilter,
     PaginationParams, InvoiceListResponse, APIResponse,
@@ -33,6 +31,7 @@ async def get_invoices_list(
     size: int = Query(50, ge=1, le=1000, description="Page size")
 ):
     """Get paginated list of invoices with filters"""
+    from app.adapters.database_adapter import db_adapter
     try:
         pagination = PaginationParams(page=page, size=size)
         
@@ -107,6 +106,7 @@ async def get_invoice_by_id(
     invoice_id: int = Path(..., description="Invoice ID")
 ):
     """Get invoice by ID with full details"""
+    from app.adapters.database_adapter import db_adapter
     try:
         invoice_query = """
             SELECT i.id, i.type, i.doc_type, i.doc_number, i.doc_date, i.total_amount, 
@@ -161,6 +161,7 @@ async def get_invoice_by_id(
 @router.post("/", response_model=Invoice)
 async def create_invoice(invoice_data: InvoiceCreate):
     """Create new invoice with lines and VAT summary"""
+    from app.adapters.database_adapter import db_adapter
     try:
         anag_check = await db_adapter.execute_query_async(
             "SELECT id FROM Anagraphics WHERE id = ?", 
@@ -259,6 +260,7 @@ async def update_invoice(
     invoice_data: InvoiceUpdate = ...
 ):
     """Update invoice"""
+    from app.adapters.database_adapter import db_adapter
     try:
         existing = await db_adapter.execute_query_async("SELECT id FROM Invoices WHERE id = ?", (invoice_id,))
         if not existing:
@@ -303,6 +305,7 @@ async def delete_invoice(
     invoice_id: int = Path(..., description="Invoice ID")
 ):
     """Delete invoice and related data"""
+    from app.adapters.database_adapter import db_adapter
     try:
         links_query = "SELECT COUNT(*) as count FROM ReconciliationLinks WHERE invoice_id = ?"
         links_result = await db_adapter.execute_query_async(links_query, (invoice_id,))
@@ -336,6 +339,7 @@ async def get_invoice_reconciliation_links(
     invoice_id: int = Path(..., description="Invoice ID")
 ):
     """Get reconciliation links for invoice"""
+    from app.adapters.database_adapter import db_adapter
     try:
         links = await db_adapter.get_reconciliation_links_async("invoice", invoice_id)
         
@@ -355,6 +359,7 @@ async def get_overdue_invoices(
     limit: int = Query(20, ge=1, le=100, description="Limit number of results")
 ):
     """Get overdue invoices ordered by priority"""
+    from app.adapters.database_adapter import db_adapter
     try:
         query = f"""
             SELECT 
@@ -459,6 +464,7 @@ async def get_aging_summary(
 @router.get("/stats/summary")
 async def get_invoices_stats():
     """Get invoice statistics summary"""
+    from app.adapters.database_adapter import db_adapter
     try:
         stats_query = """
             SELECT 
