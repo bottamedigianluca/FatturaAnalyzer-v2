@@ -2050,53 +2050,53 @@ class ReconciliationAdapterV4:
 
 logger.info("ReconciliationAdapter V4.0 - Parte 3: Batch Processing e Core Adapter caricato")
 # ===== ENHANCED AUTOMATIC MATCHING =====
+
+@performance_tracked_recon_v4('automatic_matching_v4')
+async def find_automatic_matches_async(self, 
+                                      confidence_level: str = 'Exact',
+                                      max_suggestions: int = 50,
+                                      enable_batch_processing: bool = True,
+                                      enable_ai_filtering: bool = True) -> List[Dict]:
+    """Enhanced automatic matching con AI filtering"""
     
-    @performance_tracked_recon_v4('automatic_matching_v4')
-    async def find_automatic_matches_async(self, 
-                                          confidence_level: str = 'Exact',
-                                          max_suggestions: int = 50,
-                                          enable_batch_processing: bool = True,
-                                          enable_ai_filtering: bool = True) -> List[Dict]:
-        """Enhanced automatic matching con AI filtering"""
+    # Check cache
+    cache_result = self.cache_manager.get('automatic_v4', confidence_level=confidence_level)
+    if cache_result is not None:
+        return cache_result[:max_suggestions]
+    
+    loop = asyncio.get_event_loop()
+    
+    if (enable_batch_processing and ReconciliationAdapterConfig.ENABLE_ASYNC_PROCESSING 
+        and ReconciliationAdapterConfig.MAX_WORKERS > 1):
+        # Use enhanced batch processor
+        matches = await self.batch_processor.find_automatic_matches_parallel(
+            confidence_level, max_suggestions
+        )
+    else:
+        # Standard processing with V2 optimizations
+        matches = await loop.run_in_executor(
+            self.ai_engine.executor,
+            find_automatic_matches_optimized,
+            confidence_level
+        )
+    
+    # AI-powered filtering and enhancement
+    if enable_ai_filtering and self.feature_flags['ai_matching'] and matches:
+        context = {
+            'operation_type': 'automatic_v4', 
+            'confidence_level': confidence_level,
+            'batch_processed': enable_batch_processing
+        }
+        matches = await self.ai_engine.enhance_suggestions_with_ai(matches, context)
         
-        # Check cache
-        cache_result = self.cache_manager.get('automatic_v4', confidence_level=confidence_level)
-        if cache_result is not None:
-            return cache_result[:max_suggestions]
-        
-        loop = asyncio.get_event_loop()
-        
-        if (enable_batch_processing and ReconciliationAdapterConfig.ENABLE_ASYNC_PROCESSING 
-            and ReconciliationAdapterConfig.MAX_WORKERS > 1):
-            # Use enhanced batch processor
-            matches = await self.batch_processor.find_automatic_matches_parallel(
-                confidence_level, max_suggestions
-            )
-        else:
-            # Standard processing with V2 optimizations
-            matches = await loop.run_in_executor(
-                self.ai_engine.executor,
-                find_automatic_matches_optimized,
-                confidence_level
-            )
-        
-        # AI-powered filtering and enhancement
-        if enable_ai_filtering and self.feature_flags['ai_matching'] and matches:
-            context = {
-                'operation_type': 'automatic_v4', 
-                'confidence_level': confidence_level,
-                'batch_processed': enable_batch_processing
-            }
-            matches = await self.ai_engine.enhance_suggestions_with_ai(matches, context)
-            
-            # Additional AI filtering for automatic matches
-            matches = self._apply_ai_automatic_filtering(matches)
-        
-        # Cache result
-        self.cache_manager.set('automatic_v4', matches, confidence_level=confidence_level)
-        
-        self._increment_operation_count()
-        return matches[:max_suggestions]
+        # Additional AI filtering for automatic matches
+        matches = self._apply_ai_automatic_filtering(matches)
+    
+    # Cache result
+    self.cache_manager.set('automatic_v4', matches, confidence_level=confidence_level)
+    
+    self._increment_operation_count()
+    return matches[:max_suggestions]
     
     def _apply_ai_automatic_filtering(self, matches: List[Dict]) -> List[Dict]:
         """Apply AI-based filtering for automatic matches"""
@@ -2696,57 +2696,57 @@ logger.info("ReconciliationAdapter V4.0 - Parte 3: Batch Processing e Core Adapt
 
 logger.info("ReconciliationAdapter V4.0 - Parte 4: Metodi Avanzati e Operations caricato")
 # ===== TRANSACTION MANAGEMENT =====
-    
-    @performance_tracked_recon_v4('ignore_transaction_v4')
-    async def ignore_transaction_async(self, transaction_id: int) -> Dict[str, Any]:
-        """Enhanced transaction ignore con cleanup intelligente"""
-        
-        loop = asyncio.get_event_loop()
-        
-        # Execute ignore operation
-        success, message, affected_invoices = await loop.run_in_executor(
-            self.ai_engine.executor,
-            ignore_transaction,
-            transaction_id
-        )
-        
-        # Enhanced cache cleanup
-        self.cache_manager.invalidate_related_entries(transaction_id=transaction_id)
-        
-        # Learn from ignore patterns if enabled
-        if success and self.feature_flags['pattern_learning']:
-            await self._learn_from_ignore_pattern(transaction_id, affected_invoices)
-        
-        self._increment_operation_count()
-        
-        return {
-            'success': success,
-            'message': message,
+
+@performance_tracked_recon_v4('ignore_transaction_v4')
+async def ignore_transaction_async(self, transaction_id: int) -> Dict[str, Any]:
+    """Enhanced transaction ignore con cleanup intelligente"""
+
+    loop = asyncio.get_event_loop()
+
+    # Execute ignore operation
+    success, message, affected_invoices = await loop.run_in_executor(
+        self.ai_engine.executor,
+        ignore_transaction,
+        transaction_id
+    )
+
+    # Enhanced cache cleanup
+    self.cache_manager.invalidate_related_entries(transaction_id=transaction_id)
+
+    # Learn from ignore patterns if enabled
+    if success and self.feature_flags['pattern_learning']:
+        await self._learn_from_ignore_pattern(transaction_id, affected_invoices)
+
+    self._increment_operation_count()
+
+    return {
+        'success': success,
+        'message': message,
+        'affected_invoices': affected_invoices,
+        'timestamp': datetime.now().isoformat(),
+        'cache_cleaned': True,
+        'learning_applied': self.feature_flags['pattern_learning']
+    }
+
+async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoices: List[int]):
+    """Learn from transaction ignore patterns"""
+    try:
+        # Record ignore pattern for future AI enhancement
+        ignore_pattern = {
+            'transaction_id': transaction_id,
             'affected_invoices': affected_invoices,
-            'timestamp': datetime.now().isoformat(),
-            'cache_cleaned': True,
-            'learning_applied': self.feature_flags['pattern_learning']
+            'timestamp': time.time(),
+            'operation': 'ignore_transaction'
         }
-    
-    async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoices: List[int]):
-        """Learn from transaction ignore patterns"""
-        try:
-            # Record ignore pattern for future AI enhancement
-            ignore_pattern = {
-                'transaction_id': transaction_id,
-                'affected_invoices': affected_invoices,
-                'timestamp': time.time(),
-                'operation': 'ignore_transaction'
-            }
-            
-            # Store in pattern cache
-            patterns = self.cache_manager.get_learned_patterns('ignore_patterns')
-            patterns.append(ignore_pattern)
-            
-            logger.debug(f"Learned ignore pattern for transaction {transaction_id}")
-            
-        except Exception as e:
-            logger.debug(f"Learning from ignore pattern failed: {e}")
+
+        # Store in pattern cache
+        patterns = self.cache_manager.get_learned_patterns('ignore_patterns')
+        patterns.append(ignore_pattern)
+
+        logger.debug(f"Learned ignore pattern for transaction {transaction_id}")
+
+    except Exception as e:
+        logger.debug(f"Learning from ignore pattern failed: {e}")
     
     # ===== STATUS UPDATES =====
     
