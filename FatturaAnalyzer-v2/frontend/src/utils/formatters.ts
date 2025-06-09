@@ -1,3 +1,31 @@
+import { format, formatDistanceToNow, differenceInDays, parseISO } from 'date-fns';
+import { it, enUS, de, fr } from 'date-fns/locale';
+
+// 2. Import dalle tue costanti locali
+import { 
+  CURRENCIES,
+  DATE_FORMATS,
+  CHART_COLORS,
+  AI_CONFIDENCE_LEVELS
+} from './constants'; // o '@/utils/constants' a seconda della tua configurazione di path alias
+
+// 3. Import dei tipi TypeScript
+import type { 
+  PaymentStatus, 
+  ReconciliationStatus, 
+  InvoiceType, 
+  AnagraphicsType 
+} from '@/types';
+
+// ===== INIZIO DEL TUO CODICE ESISTENTE =====
+
+// ===== LOCALE & INTERNATIONALIZATION =====
+const localeMap = {
+  'it-IT': it,
+  'en-US': enUS,
+  'de-DE': de,
+  'fr-FR': fr,
+};
 const pivaFormatted = maskValue(piva);
     const cfFormatted = maskValue(cf);
     
