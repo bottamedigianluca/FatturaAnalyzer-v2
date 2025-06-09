@@ -1160,6 +1160,7 @@ atexit.register(cleanup_database_adapter)
 
 __all__ = [
     'DatabaseAdapterOptimized',
+    'db_adapter',
     'db_adapter_optimized',
     'get_database_adapter',
     'DatabaseConfig',
@@ -1178,5 +1179,4 @@ __version__ = '3.0.0'
 __description__ = 'Ultra-optimized database adapter with connection pooling and intelligent caching'
 
 logger.info(f"DatabaseAdapterOptimized V{__version__} loaded successfully!")
-db_adapter = db_adapter_optimized
 
