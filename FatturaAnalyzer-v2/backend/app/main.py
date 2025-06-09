@@ -206,6 +206,7 @@ async def first_run_detection_middleware(request: Request, call_next):
 @app.get("/health")
 async def health_check():
     """Health check endpoint con info setup"""
+    from app.adapters.database_adapter import db_adapter
     try:
         # Test database se non è primo avvio
         database_status = "not_initialized"
