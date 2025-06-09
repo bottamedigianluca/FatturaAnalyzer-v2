@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.adapters.database_adapter import db_adapter
     """Application lifespan events con First Run Detection"""
     # Startup
     logger.info("🚀 Starting FatturaAnalyzer API v2...")
