@@ -23,7 +23,6 @@ backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
 from app.config import settings
-from app.adapters.database_adapter import db_adapter
 from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.middleware.cors import add_cors_middleware
 from app.middleware.auth import add_security_middleware
