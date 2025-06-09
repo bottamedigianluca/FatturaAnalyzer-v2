@@ -1,23 +1,22 @@
-import { format, formatDistanceToNow, differenceInDays, parseISO } from 'date-fns';
+import { format, formatDistanceToNow, formatRelative, differenceInDays, parseISO } from 'date-fns';
 import { it, enUS, de, fr } from 'date-fns/locale';
-
-// 2. Import dalle tue costanti locali
 import { 
+  PAYMENT_STATUSES, 
+  RECONCILIATION_STATUSES, 
+  INVOICE_TYPES, 
+  ANAGRAPHICS_TYPES,
+  AI_CONFIDENCE_LEVELS,
   CURRENCIES,
+  LOCALES,
   DATE_FORMATS,
-  CHART_COLORS,
-  AI_CONFIDENCE_LEVELS
-} from './constants'; // o '@/utils/constants' a seconda della tua configurazione di path alias
-
-// 3. Import dei tipi TypeScript
+  CHART_COLORS
+} from './constants';
 import type { 
   PaymentStatus, 
   ReconciliationStatus, 
   InvoiceType, 
   AnagraphicsType 
-} from '@/types';
-
-// ===== INIZIO DEL TUO CODICE ESISTENTE =====
+} from '../types';
 
 // ===== LOCALE & INTERNATIONALIZATION =====
 const localeMap = {
