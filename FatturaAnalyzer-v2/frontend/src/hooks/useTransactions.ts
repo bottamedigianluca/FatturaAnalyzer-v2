@@ -1,399 +1,513 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+/**
+ * Transactions Hooks V4.0
+ * Hook per gestione transazioni con features enhanced e AI
+ */
+
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { apiClient } from '@/services/api';
-import { useDataStore, useUIStore } from '@/store';
-import type { 
-  BankTransaction, 
-  TransactionFilters, 
-  BankTransactionCreate, 
-  BankTransactionUpdate, 
-  PaginatedResponse,
-  ReconciliationStatus
-} from '@/types';
+import type { BankTransaction, TransactionFilters } from '@/types';
+import { 
+  useDataStore,
+  useUIStore,
+  useAIFeaturesEnabled 
+} from '@/store';
+import { useSmartCache, useSmartErrorHandling } from './useUtils';
 
-export function useTransactions(filters?: TransactionFilters) {
-  const { setTransactions, addRecentTransaction } = useDataStore();
+// ===== QUERY KEYS =====
+export const TRANSACTIONS_QUERY_KEYS = {
+  TRANSACTIONS: ['transactions'] as const,
+  TRANSACTION: ['transaction'] as const,
+  INSIGHTS: ['transactions', 'insights'] as const,
+  SEARCH: ['search', 'transactions'] as const,
+  STATS: ['stats', 'transactions'] as const,
+  CASH_FLOW: ['transactions', 'cash-flow'] as const,
+  BATCH_STATUS: ['transactions', 'batch', 'status'] as const,
+  SMART_SUGGESTIONS: ['transactions', 'smart-suggestions'] as const,
+} as const;
+
+/**
+ * Hook per transazioni con features V4.0 enhanced
+ */
+export const useTransactions = (filters: TransactionFilters = {}) => {
+  const setTransactions = useDataStore(state => state.setTransactions);
+  const transactionsCache = useDataStore(state => state.transactions);
+  const aiEnabled = useAIFeaturesEnabled();
+  const { shouldRefetch } = useSmartCache();
+  const { handleError } = useSmartErrorHandling();
+  
+  // Abilita features V4.0 basate su impostazioni
+  const enhancedFilters = {
+    ...filters,
+    enhanced: true,
+    enable_ai_insights: aiEnabled,
+    cache_enabled: true,
+  };
   
   return useQuery({
-    queryKey: ['transactions', filters],
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.TRANSACTIONS, enhancedFilters],
     queryFn: async () => {
-      const response = await apiClient.getTransactions(filters);
-      if (response.success && response.data) {
-        const data = response.data as PaginatedResponse<BankTransaction>;
-        setTransactions(data.items, data.total);
-        return data;
-      }
-      throw new Error(response.message || 'Errore nel caricamento transazioni');
+      const result = await apiClient.getTransactions(enhancedFilters);
+      setTransactions(result.items || [], result.total || 0, result.enhanced_data);
+      return result;
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 180000, // 3 minutes (più frequente per transazioni)
+    enabled: shouldRefetch(transactionsCache.lastFetch, 'transactions'),
+    onError: (error) => handleError(error, 'transactions'),
   });
-}
+};
 
-export function useTransaction(id: number) {
-  const { addRecentTransaction } = useDataStore();
+/**
+ * Hook per singola transazione con enhanced details
+ */
+export const useTransaction = (
+  id: number, 
+  options: {
+    enhanced?: boolean;
+    includeSuggestions?: boolean;
+    includeSimilar?: boolean;
+  } = {}
+) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    enhanced = true,
+    includeSuggestions = aiEnabled,
+    includeSimilar = false
+  } = options;
   
   return useQuery({
-    queryKey: ['transaction', id],
-    queryFn: async () => {
-      const transaction = await apiClient.getTransactionById(id);
-      addRecentTransaction(transaction);
-      return transaction;
-    },
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.TRANSACTION, id, { enhanced, includeSuggestions, includeSimilar }],
+    queryFn: () => apiClient.getTransactionById(id, enhanced, includeSuggestions, includeSimilar),
     enabled: !!id,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-detail'),
   });
-}
+};
 
-export function useCreateTransaction() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { updateTransaction } = useDataStore();
-
-  return useMutation({
-    mutationFn: (data: BankTransactionCreate) => apiClient.createTransaction(data),
-    onSuccess: (newTransaction) => {
-      // Invalida cache liste
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      // Aggiorna store
-      updateTransaction(newTransaction.id, newTransaction);
-      
-      addNotification({
-        type: 'success',
-        title: 'Transazione creata',
-        message: 'Nuova transazione aggiunta con successo',
-        duration: 3000,
-      });
-    },
-    onError: (error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore creazione transazione',
-        message: error.message,
-        duration: 5000,
-      });
-    },
-  });
-}
-
-export function useUpdateTransaction() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { updateTransaction } = useDataStore();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: BankTransactionUpdate }) => 
-      apiClient.updateTransaction(id, data),
-    onSuccess: (updatedTransaction) => {
-      // Aggiorna cache specifica
-      queryClient.setQueryData(['transaction', updatedTransaction.id], updatedTransaction);
-      
-      // Invalida liste
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      
-      // Aggiorna store
-      updateTransaction(updatedTransaction.id, updatedTransaction);
-      
-      addNotification({
-        type: 'success',
-        title: 'Transazione aggiornata',
-        message: 'Transazione aggiornata con successo',
-        duration: 3000,
-      });
-    },
-  });
-}
-
-export function useDeleteTransaction() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { removeTransaction } = useDataStore();
-
-  return useMutation({
-    mutationFn: (id: number) => apiClient.deleteTransaction(id),
-    onSuccess: (_, transactionId) => {
-      // Rimuovi da cache
-      queryClient.removeQueries({ queryKey: ['transaction', transactionId] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      // Aggiorna store
-      removeTransaction(transactionId);
-      
-      addNotification({
-        type: 'success',
-        title: 'Transazione eliminata',
-        message: 'Transazione eliminata con successo',
-        duration: 3000,
-      });
-    },
-  });
-}
-
-export function useUpdateTransactionStatus() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { updateTransaction } = useDataStore();
-
-  return useMutation({
-    mutationFn: ({ 
-      id, 
-      reconciliation_status, 
-      reconciled_amount 
-    }: { 
-      id: number; 
-      reconciliation_status: ReconciliationStatus; 
-      reconciled_amount?: number;
-    }) => apiClient.updateTransactionStatus(id, reconciliation_status, reconciled_amount),
-    onSuccess: (response, { id, reconciliation_status, reconciled_amount }) => {
-      // Aggiorna cache locale
-      queryClient.invalidateQueries({ queryKey: ['transaction', id] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      // Aggiorna store
-      updateTransaction(id, { 
-        reconciliation_status, 
-        reconciled_amount 
-      });
-      
-      addNotification({
-        type: 'success',
-        title: 'Stato riconciliazione aggiornato',
-        message: `Stato aggiornato a: ${reconciliation_status}`,
-        duration: 3000,
-      });
-    },
-  });
-}
-
-export function useBatchUpdateTransactionStatus() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-
-  return useMutation({
-    mutationFn: ({ 
-      transaction_ids, 
-      reconciliation_status 
-    }: { 
-      transaction_ids: number[]; 
-      reconciliation_status: ReconciliationStatus;
-    }) => apiClient.batchUpdateTransactionStatus(transaction_ids, reconciliation_status),
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      addNotification({
-        type: 'success',
-        title: 'Aggiornamento batch completato',
-        message: `${response.data.successful} transazioni aggiornate con successo`,
-        duration: 5000,
-      });
-    },
-  });
-}
-
-export function useTransactionReconciliationLinks(transactionId: number) {
+/**
+ * Hook per smart suggestions V4.0 con AI
+ */
+export const useSmartReconciliationSuggestions = (
+  transactionId: number,
+  options: {
+    anagraphicsHint?: number;
+    enableAI?: boolean;
+    maxSuggestions?: number;
+  } = {}
+) => {
+  const setSmartSuggestionsCache = useDataStore(state => state.setSmartSuggestionsCache);
+  const smartEnabled = useSmartReconciliationEnabled();
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    anagraphicsHint,
+    enableAI = aiEnabled,
+    maxSuggestions = 10,
+  } = options;
+  
   return useQuery({
-    queryKey: ['transaction-reconciliation-links', transactionId],
-    queryFn: () => apiClient.getTransactionReconciliationLinks(transactionId),
-    enabled: !!transactionId,
-    staleTime: 30 * 1000, // 30 seconds
-  });
-}
-
-export function useTransactionPotentialMatches(transactionId: number, limit: number = 10) {
-  return useQuery({
-    queryKey: ['transaction-potential-matches', transactionId, limit],
-    queryFn: () => apiClient.getTransactionPotentialMatches(transactionId, limit),
-    enabled: !!transactionId,
-    staleTime: 60 * 1000, // 1 minute
-  });
-}
-
-export function useSearchTransactions() {
-  const { addNotification } = useUIStore();
-
-  return useMutation({
-    mutationFn: ({ query, include_reconciled }: { query: string; include_reconciled?: boolean }) =>
-      apiClient.searchTransactions(query, include_reconciled),
-    onError: () => {
-      addNotification({
-        type: 'error',
-        title: 'Errore ricerca',
-        message: 'Errore durante la ricerca transazioni',
-        duration: 3000,
-      });
-    },
-  });
-}
-
-export function useTransactionStats() {
-  return useQuery({
-    queryKey: ['transaction-stats'],
-    queryFn: () => apiClient.getTransactionStats(),
-    staleTime: 10 * 60 * 1000, // 10 minutes
-  });
-}
-
-export function useCashFlowAnalysis(months: number = 12) {
-  return useQuery({
-    queryKey: ['cash-flow-analysis', months],
-    queryFn: () => apiClient.getCashFlowAnalysis(months),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-}
-
-// Hook per import CSV
-export function useImportTransactionsCSV() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-
-  return useMutation({
-    mutationFn: (file: File) => apiClient.importTransactionsCSV(file),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      const { success, duplicates, errors } = result.data;
-      
-      if (success > 0) {
-        addNotification({
-          type: 'success',
-          title: 'Import completato',
-          message: `${success} transazioni importate con successo${duplicates > 0 ? `, ${duplicates} duplicati` : ''}${errors > 0 ? `, ${errors} errori` : ''}`,
-          duration: 5000,
-        });
-      } else {
-        addNotification({
-          type: 'warning',
-          title: 'Import senza nuove transazioni',
-          message: `Nessuna nuova transazione importata. ${duplicates} duplicati, ${errors} errori`,
-          duration: 5000,
-        });
-      }
-    },
-    onError: (error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore import',
-        message: error.message,
-        duration: 5000,
-      });
-    },
-  });
-}
-
-// Hook per export
-export function useExportTransactions() {
-  const { addNotification } = useUIStore();
-
-  return useMutation({
-    mutationFn: ({ 
-      format, 
-      filters 
-    }: { 
-      format: 'excel' | 'csv' | 'json'; 
-      filters?: any;
-    }) => apiClient.exportTransactions(format, filters),
-    onSuccess: (result, { format }) => {
-      if (format !== 'json') {
-        // Per Excel e CSV, result è un Blob
-        const blob = result as Blob;
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `transazioni_export.${format === 'excel' ? 'xlsx' : 'csv'}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        addNotification({
-          type: 'success',
-          title: 'Export completato',
-          message: `File ${format.toUpperCase()} scaricato con successo`,
-          duration: 3000,
-        });
-      }
-    },
-    onError: (error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore export',
-        message: error.message,
-        duration: 5000,
-      });
-    },
-  });
-}
-
-// Hook per download template CSV
-export function useDownloadTransactionTemplate() {
-  const { addNotification } = useUIStore();
-
-  return useMutation({
-    mutationFn: () => apiClient.downloadTransactionTemplate(),
-    onSuccess: (blob) => {
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = 'template_transazioni_bancarie.csv';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      addNotification({
-        type: 'success',
-        title: 'Template scaricato',
-        message: 'Template CSV scaricato con successo',
-        duration: 3000,
-      });
-    },
-    onError: (error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore download',
-        message: error.message,
-        duration: 3000,
-      });
-    },
-  });
-}
-
-// Hook per operazioni bulk
-export function useBulkTransactionOperations() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-
-  const bulkDelete = useMutation({
-    mutationFn: async (transactionIds: number[]) => {
-      const results = await Promise.allSettled(
-        transactionIds.map(id => apiClient.deleteTransaction(id))
+    queryKey: [
+      ...TRANSACTIONS_QUERY_KEYS.SMART_SUGGESTIONS, 
+      transactionId, 
+      { anagraphicsHint, enableAI, maxSuggestions }
+    ],
+    queryFn: async () => {
+      const suggestions = await apiClient.getSmartReconciliationSuggestions(
+        transactionId,
+        anagraphicsHint,
+        enableAI,
+        true, // enableSmartPatterns
+        true, // enablePredictive
+        maxSuggestions,
+        0.6 // confidenceThreshold
       );
       
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      // Cache suggestions localmente
+      setSmartSuggestionsCache(transactionId, suggestions.suggestions || []);
       
-      return { successful, failed, total: transactionIds.length };
+      return suggestions;
     },
-    onSuccess: ({ successful, failed, total }) => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    enabled: !!transactionId && smartEnabled,
+    staleTime: 120000, // 2 minutes
+    onError: (error) => handleError(error, 'smart-suggestions'),
+  });
+};
+
+/**
+ * Hook per transaction insights V4.0 con AI analysis
+ */
+export const useTransactionInsights = (transactionId: number) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.INSIGHTS, transactionId],
+    queryFn: () => apiClient.getTransactionInsights(
+      transactionId,
+      aiEnabled, // includeAIAnalysis
+      true, // includePatternMatching
+      true, // includeClientAnalysis
+      false // includeSmartSuggestions (caricato separatamente)
+    ),
+    enabled: !!transactionId && aiEnabled,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-insights'),
+  });
+};
+
+/**
+ * Hook per operazioni batch su transazioni
+ */
+export const useTransactionBatchOperations = () => {
+  const queryClient = useQueryClient();
+  const addNotification = useUIStore(state => state.addNotification);
+  const { handleError } = useSmartErrorHandling();
+  
+  const batchReconcile = useMutation({
+    mutationFn: (reconciliations: Array<{
+      invoice_id: number;
+      transaction_id: number;
+      amount: number;
+    }>) => apiClient.batchReconcileTransactions({
+      reconciliation_pairs: reconciliations,
+      enable_ai_validation: true,
+      enable_parallel_processing: true,
+    }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEYS.TRANSACTIONS });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
       
       addNotification({
-        type: successful === total ? 'success' : 'warning',
-        title: 'Eliminazione bulk completata',
-        message: `${successful}/${total} transazioni eliminate${failed > 0 ? `, ${failed} errori` : ''}`,
-        duration: 5000,
+        type: 'success',
+        title: 'Riconciliazione Batch Completata',
+        message: `${data.processed_count || 0} riconciliazioni elaborate`,
       });
     },
+    onError: (error) => {
+      handleError(error, 'batch-reconcile');
+      toast.error('Errore nella riconciliazione batch');
+    },
   });
-
-  return {
-    bulkDelete,
+  
+  const batchUpdateStatus = useMutation({
+    mutationFn: ({ ids, status }: { ids: number[]; status: string }) =>
+      apiClient.batchUpdateTransactionStatus(ids, status, true, false, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEYS.TRANSACTIONS });
+      toast.success('Status aggiornato per transazioni selezionate');
+    },
+    onError: (error) => {
+      handleError(error, 'batch-update-status');
+      toast.error('Errore nell\'aggiornamento batch');
+    },
+  });
+  
+  const getBatchTaskStatus = (taskId: string) => {
+    return useQuery({
+      queryKey: [...TRANSACTIONS_QUERY_KEYS.BATCH_STATUS, taskId],
+      queryFn: () => apiClient.getBatchTaskStatus(taskId),
+      enabled: !!taskId,
+      refetchInterval: 2000, // Ogni 2 secondi
+      onError: (error) => handleError(error, 'batch-task-status'),
+    });
   };
-}
+  
+  return {
+    batchReconcile,
+    batchUpdateStatus,
+    getBatchTaskStatus,
+  };
+};
+
+/**
+ * Hook per ricerca transazioni enhanced
+ */
+export const useTransactionsSearch = (
+  query: string,
+  options: {
+    limit?: number;
+    includeReconciled?: boolean;
+    searchMode?: 'smart' | 'exact' | 'fuzzy' | 'ai_enhanced';
+    enhancedResults?: boolean;
+    enableClientMatching?: boolean;
+  } = {}
+) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    limit = 20,
+    includeReconciled = false,
+    searchMode = 'smart',
+    enhancedResults = aiEnabled,
+    enableClientMatching = aiEnabled
+  } = options;
+  
+  return useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.SEARCH, query, options],
+    queryFn: () => apiClient.searchTransactions(
+      query,
+      limit,
+      includeReconciled,
+      searchMode,
+      enhancedResults,
+      enableClientMatching
+    ),
+    enabled: query.length >= 2,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'search-transactions'),
+  });
+};
+
+/**
+ * Hook per statistiche transazioni V4.0
+ */
+export const useTransactionStats = (options: {
+  useCache?: boolean;
+  includeTrends?: boolean;
+  includeAIInsights?: boolean;
+  periodMonths?: number;
+} = {}) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    useCache = true,
+    includeTrends = false,
+    includeAIInsights = aiEnabled,
+    periodMonths = 12
+  } = options;
+  
+  return useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.STATS, options],
+    queryFn: () => apiClient.getTransactionStatsV4(
+      useCache,
+      includeTrends,
+      includeAIInsights,
+      periodMonths
+    ),
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-stats'),
+  });
+};
+
+/**
+ * Hook per cash flow analysis
+ */
+export const useCashFlowAnalysis = (months = 12) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.CASH_FLOW, months],
+    queryFn: () => apiClient.getCashFlowAnalysis(months),
+    staleTime: 600000, // 10 minutes
+    onError: (error) => handleError(error, 'cash-flow-analysis'),
+  });
+};
+
+/**
+ * Hook per transaction health e metrics V4.0
+ */
+export const useTransactionHealth = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  const healthQuery = useQuery({
+    queryKey: ['transactions', 'health'],
+    queryFn: () => apiClient.getTransactionHealthV4(),
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-health'),
+  });
+  
+  const metricsQuery = useQuery({
+    queryKey: ['transactions', 'metrics'],
+    queryFn: () => apiClient.getTransactionMetricsV4(),
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-metrics'),
+  });
+  
+  return {
+    health: healthQuery,
+    metrics: metricsQuery,
+    isLoading: healthQuery.isLoading || metricsQuery.isLoading,
+  };
+};
+
+/**
+ * Hook per infinite query transazioni
+ */
+export const useInfiniteTransactions = (filters: TransactionFilters = {}) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  return useInfiniteQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.TRANSACTIONS, 'infinite', filters, { ai: aiEnabled }],
+    queryFn: ({ pageParam = 1 }) => apiClient.getTransactions({ 
+      ...filters, 
+      page: pageParam, 
+      size: 20,
+      enhanced: true,
+      enable_ai_insights: aiEnabled,
+    }),
+    getNextPageParam: (lastPage, allPages) => {
+      const hasNextPage = (lastPage.total || 0) > allPages.length * 20;
+      return hasNextPage ? allPages.length + 1 : undefined;
+    },
+    initialPageParam: 1,
+    staleTime: 180000,
+    onError: (error) => handleError(error, 'infinite-transactions'),
+  });
+};
+
+/**
+ * Hook per CRUD transazioni
+ */
+export const useTransactionMutation = () => {
+  const queryClient = useQueryClient();
+  const addNotification = useUIStore(state => state.addNotification);
+  const { handleError } = useSmartErrorHandling();
+  
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<BankTransaction>) => apiClient.createTransaction(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEYS.TRANSACTIONS });
+      toast.success('Transazione creata');
+    },
+    onError: (error) => {
+      handleError(error, 'create-transaction');
+      toast.error('Errore nella creazione');
+    },
+  });
+  
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<BankTransaction> }) => 
+      apiClient.updateTransaction(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEYS.TRANSACTIONS });
+      toast.success('Transazione aggiornata');
+    },
+    onError: (error) => {
+      handleError(error, 'update-transaction');
+      toast.error('Errore nell\'aggiornamento');
+    },
+  });
+  
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiClient.deleteTransaction(id, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEYS.TRANSACTIONS });
+      toast.success('Transazione eliminata');
+    },
+    onError: (error) => {
+      handleError(error, 'delete-transaction');
+      toast.error('Errore nell\'eliminazione');
+    },
+  });
+  
+  const reconcileWithInvoiceMutation = useMutation({
+    mutationFn: ({
+      transactionId,
+      invoiceId,
+      amountToMatch,
+      enableAIValidation = true,
+      enableLearning = true,
+      userConfidence,
+      userNotes,
+      forceMatch = false
+    }: {
+      transactionId: number;
+      invoiceId: number;
+      amountToMatch: number;
+      enableAIValidation?: boolean;
+      enableLearning?: boolean;
+      userConfidence?: number;
+      userNotes?: string;
+      forceMatch?: boolean;
+    }) => apiClient.reconcileTransactionWithInvoice(
+      transactionId,
+      invoiceId,
+      amountToMatch,
+      enableAIValidation,
+      enableLearning,
+      userConfidence,
+      userNotes,
+      forceMatch
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEYS.TRANSACTIONS });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
+      
+      addNotification({
+        type: 'success',
+        title: 'Riconciliazione Completata',
+        message: 'Transazione riconciliata con successo',
+      });
+    },
+    onError: (error) => {
+      handleError(error, 'reconcile-transaction');
+      toast.error('Errore nella riconciliazione');
+    },
+  });
+  
+  return {
+    create: createMutation,
+    update: updateMutation,
+    delete: deleteMutation,
+    reconcileWithInvoice: reconcileWithInvoiceMutation,
+  };
+};
+
+/**
+ * Hook per export transazioni avanzato
+ */
+export const useTransactionsExport = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useMutation({
+    mutationFn: async (options: {
+      format: 'excel' | 'csv' | 'json';
+      filters?: TransactionFilters;
+      include_reconciliation?: boolean;
+    }) => {
+      const result = await apiClient.exportTransactions(
+        options.format,
+        options.filters?.status_filter,
+        options.filters?.start_date,
+        options.filters?.end_date,
+        options.include_reconciliation || false
+      );
+      
+      if (options.format === 'json') {
+        const url = 'data:application/json;charset=utf-8,' + 
+          encodeURIComponent(JSON.stringify(result, null, 2));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transazioni_export.${options.format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const url = window.URL.createObjectURL(result as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transazioni_export.${options.format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
+      
+      return result;
+    },
+    onSuccess: () => {
+      toast.success('Export transazioni completato');
+    },
+    onError: (error) => {
+      handleError(error, 'export-transactions');
+      toast.error('Errore nell\'export transazioni');
+    },
+  });
+};
