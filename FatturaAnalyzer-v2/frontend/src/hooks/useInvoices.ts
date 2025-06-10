@@ -1,285 +1,293 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+/**
+ * Invoices Hooks V4.0
+ * Hook per gestione completa fatture
+ */
+
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { apiClient } from '@/services/api';
-import { useDataStore, useUIStore } from '@/store';
-import type { 
-  Invoice, 
-  InvoiceFilters, 
-  InvoiceCreate, 
-  InvoiceUpdate, 
-  PaginatedResponse 
-} from '@/types';
+import type { Invoice, InvoiceFilters } from '@/types';
+import { 
+  useDataStore,
+  useUIStore 
+} from '@/store';
+import { useSmartCache, useSmartErrorHandling } from './useUtils';
 
-export function useInvoices(filters?: InvoiceFilters) {
-  const { setInvoices, addRecentInvoice } = useDataStore();
+// ===== QUERY KEYS =====
+export const INVOICES_QUERY_KEYS = {
+  INVOICES: ['invoices'] as const,
+  INVOICE: ['invoice'] as const,
+  SEARCH: ['search', 'invoices'] as const,
+  STATS: ['stats', 'invoices'] as const,
+  OVERDUE: ['invoices', 'overdue'] as const,
+  AGING: ['invoices', 'aging'] as const,
+} as const;
+
+/**
+ * Hook per lista fatture con filtri avanzati e caching intelligente
+ */
+export const useInvoices = (filters: InvoiceFilters = {}) => {
+  const setInvoices = useDataStore(state => state.setInvoices);
+  const invoicesCache = useDataStore(state => state.invoices);
+  const { shouldRefetch } = useSmartCache();
+  const { handleError } = useSmartErrorHandling();
   
   return useQuery({
-    queryKey: ['invoices', filters],
+    queryKey: [...INVOICES_QUERY_KEYS.INVOICES, filters],
     queryFn: async () => {
-      const response = await apiClient.getInvoices(filters);
-      if (response.success && response.data) {
-        const data = response.data as PaginatedResponse<Invoice>;
-        setInvoices(data.items, data.total);
-        return data;
-      }
-      throw new Error(response.message || 'Errore nel caricamento fatture');
+      const result = await apiClient.getInvoices(filters);
+      setInvoices(result.items || [], result.total || 0, result.enhanced_data);
+      return result;
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 300000, // 5 minutes
+    enabled: shouldRefetch(invoicesCache.lastFetch, 'invoices'),
+    onError: (error) => handleError(error, 'invoices'),
   });
-}
+};
 
-export function useInvoice(id: number) {
-  const { addRecentInvoice } = useDataStore();
+/**
+ * Hook per singola fattura con dettagli completi
+ */
+export const useInvoice = (id: number, enabled = true) => {
+  const addRecentInvoice = useDataStore(state => state.addRecentInvoice);
+  const { handleError } = useSmartErrorHandling();
   
   return useQuery({
-    queryKey: ['invoice', id],
+    queryKey: [...INVOICES_QUERY_KEYS.INVOICE, id],
     queryFn: async () => {
       const invoice = await apiClient.getInvoiceById(id);
       addRecentInvoice(invoice);
       return invoice;
     },
-    enabled: !!id,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: enabled && !!id,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'invoice-detail'),
   });
-}
+};
 
-export function useCreateInvoice() {
+/**
+ * Hook per creazione/aggiornamento fatture con ottimistic updates
+ */
+export const useInvoiceMutation = () => {
   const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { updateInvoice } = useDataStore();
-
-  return useMutation({
-    mutationFn: (data: InvoiceCreate) => apiClient.createInvoice(data),
-    onSuccess: (newInvoice) => {
-      // Invalida cache liste
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      // Aggiorna store
-      updateInvoice(newInvoice.id, newInvoice);
-      
+  const updateInvoice = useDataStore(state => state.updateInvoice);
+  const addNotification = useUIStore(state => state.addNotification);
+  const { handleError } = useSmartErrorHandling();
+  
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<Invoice>) => apiClient.createInvoice(data),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: INVOICES_QUERY_KEYS.INVOICES });
       addNotification({
         type: 'success',
-        title: 'Fattura creata',
-        message: `Fattura ${newInvoice.doc_number} creata con successo`,
-        duration: 3000,
+        title: 'Fattura Creata',
+        message: `Fattura ${data.numero} creata con successo`,
       });
     },
     onError: (error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore creazione fattura',
-        message: error.message,
-        duration: 5000,
-      });
+      handleError(error, 'create-invoice');
+      toast.error('Errore nella creazione della fattura');
     },
   });
-}
-
-export function useUpdateInvoice() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { updateInvoice } = useDataStore();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: InvoiceUpdate }) => 
+  
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<Invoice> }) => 
       apiClient.updateInvoice(id, data),
-    onSuccess: (updatedInvoice) => {
-      // Aggiorna cache specifica
-      queryClient.setQueryData(['invoice', updatedInvoice.id], updatedInvoice);
-      
-      // Invalida liste
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      
-      // Aggiorna store
-      updateInvoice(updatedInvoice.id, updatedInvoice);
-      
-      addNotification({
-        type: 'success',
-        title: 'Fattura aggiornata',
-        message: `Fattura ${updatedInvoice.doc_number} aggiornata`,
-        duration: 3000,
-      });
+    onMutate: async ({ id, data }) => {
+      // Optimistic update
+      await queryClient.cancelQueries({ queryKey: [...INVOICES_QUERY_KEYS.INVOICE, id] });
+      updateInvoice(id, data);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: INVOICES_QUERY_KEYS.INVOICES });
+      toast.success('Fattura aggiornata');
+    },
+    onError: (error, { id }) => {
+      handleError(error, 'update-invoice');
+      queryClient.invalidateQueries({ queryKey: [...INVOICES_QUERY_KEYS.INVOICE, id] });
+      toast.error('Errore nell\'aggiornamento');
     },
   });
-}
-
-export function useDeleteInvoice() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { removeInvoice } = useDataStore();
-
-  return useMutation({
+  
+  const deleteMutation = useMutation({
     mutationFn: (id: number) => apiClient.deleteInvoice(id),
-    onSuccess: (_, invoiceId) => {
-      // Rimuovi da cache
-      queryClient.removeQueries({ queryKey: ['invoice', invoiceId] });
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      // Aggiorna store
-      removeInvoice(invoiceId);
-      
-      addNotification({
-        type: 'success',
-        title: 'Fattura eliminata',
-        message: 'Fattura eliminata con successo',
-        duration: 3000,
-      });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: INVOICES_QUERY_KEYS.INVOICES });
+      toast.success('Fattura eliminata');
+    },
+    onError: (error) => {
+      handleError(error, 'delete-invoice');
+      toast.error('Errore nell\'eliminazione');
     },
   });
-}
-
-export function useUpdateInvoicePaymentStatus() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-  const { updateInvoice } = useDataStore();
-
-  return useMutation({
-    mutationFn: ({ 
-      id, 
-      payment_status, 
-      paid_amount 
-    }: { 
-      id: number; 
-      payment_status: string; 
-      paid_amount?: number;
-    }) => apiClient.updateInvoicePaymentStatus(id, payment_status, paid_amount),
-    onSuccess: (response, { id, payment_status, paid_amount }) => {
-      // Aggiorna cache locale
-      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      // Aggiorna store
-      updateInvoice(id, { 
-        payment_status: payment_status as any, 
-        paid_amount: paid_amount 
-      });
-      
-      addNotification({
-        type: 'success',
-        title: 'Stato pagamento aggiornato',
-        message: `Stato fattura aggiornato a: ${payment_status}`,
-        duration: 3000,
-      });
+  
+  const updatePaymentStatusMutation = useMutation({
+    mutationFn: ({ id, status, amount }: { id: number; status: string; amount?: number }) =>
+      apiClient.updateInvoicePaymentStatus(id, status, amount),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: INVOICES_QUERY_KEYS.INVOICES });
+      toast.success('Stato pagamento aggiornato');
+    },
+    onError: (error) => {
+      handleError(error, 'update-payment-status');
+      toast.error('Errore nell\'aggiornamento stato');
     },
   });
-}
+  
+  return {
+    create: createMutation,
+    update: updateMutation,
+    delete: deleteMutation,
+    updatePaymentStatus: updatePaymentStatusMutation,
+  };
+};
 
-export function useInvoiceReconciliationLinks(invoiceId: number) {
+/**
+ * Hook per ricerca fatture
+ */
+export const useInvoicesSearch = (query: string, typeFilter?: string) => {
+  const { handleError } = useSmartErrorHandling();
+  
   return useQuery({
-    queryKey: ['invoice-reconciliation-links', invoiceId],
+    queryKey: [...INVOICES_QUERY_KEYS.SEARCH, query, typeFilter],
+    queryFn: () => apiClient.searchInvoices(query, typeFilter, 20),
+    enabled: query.length >= 2,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'search-invoices'),
+  });
+};
+
+/**
+ * Hook per fatture scadute
+ */
+export const useOverdueInvoices = (limit = 20) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...INVOICES_QUERY_KEYS.OVERDUE, limit],
+    queryFn: () => apiClient.getOverdueInvoices(limit),
+    staleTime: 300000, // 5 minutes
+    onError: (error) => handleError(error, 'overdue-invoices'),
+  });
+};
+
+/**
+ * Hook per aging summary
+ */
+export const useAgingSummary = (invoiceType: 'Attiva' | 'Passiva' = 'Attiva') => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...INVOICES_QUERY_KEYS.AGING, invoiceType],
+    queryFn: () => apiClient.getAgingSummary(invoiceType),
+    staleTime: 600000, // 10 minutes
+    onError: (error) => handleError(error, 'aging-summary'),
+  });
+};
+
+/**
+ * Hook per statistiche fatture
+ */
+export const useInvoicesStats = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: INVOICES_QUERY_KEYS.STATS,
+    queryFn: () => apiClient.getInvoicesStats(),
+    staleTime: 300000, // 5 minutes
+    onError: (error) => handleError(error, 'invoices-stats'),
+  });
+};
+
+/**
+ * Hook per reconciliation links di una fattura
+ */
+export const useInvoiceReconciliationLinks = (invoiceId: number) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...INVOICES_QUERY_KEYS.INVOICE, invoiceId, 'reconciliation-links'],
     queryFn: () => apiClient.getInvoiceReconciliationLinks(invoiceId),
     enabled: !!invoiceId,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 180000, // 3 minutes
+    onError: (error) => handleError(error, 'invoice-reconciliation-links'),
   });
-}
+};
 
-export function useOverdueInvoices(limit: number = 20) {
-  return useQuery({
-    queryKey: ['overdue-invoices', limit],
-    queryFn: () => apiClient.getOverdueInvoices(limit),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+/**
+ * Hook per infinite query fatture con paginazione intelligente
+ */
+export const useInfiniteInvoices = (filters: InvoiceFilters = {}) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useInfiniteQuery({
+    queryKey: [...INVOICES_QUERY_KEYS.INVOICES, 'infinite', filters],
+    queryFn: ({ pageParam = 1 }) => apiClient.getInvoices({ 
+      ...filters, 
+      page: pageParam, 
+      size: 20 
+    }),
+    getNextPageParam: (lastPage, allPages) => {
+      const hasNextPage = (lastPage.total || 0) > allPages.length * 20;
+      return hasNextPage ? allPages.length + 1 : undefined;
+    },
+    initialPageParam: 1,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'infinite-invoices'),
   });
-}
+};
 
-export function useAgingSummary(invoice_type: 'Attiva' | 'Passiva' = 'Attiva') {
-  return useQuery({
-    queryKey: ['aging-summary', invoice_type],
-    queryFn: () => apiClient.getAgingSummary(invoice_type),
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useSearchInvoices() {
-  const { addNotification } = useUIStore();
-
+/**
+ * Hook per export fatture avanzato
+ */
+export const useInvoicesExport = () => {
+  const { handleError } = useSmartErrorHandling();
+  
   return useMutation({
-    mutationFn: ({ query, type_filter }: { query: string; type_filter?: string }) =>
-      apiClient.searchInvoices(query, type_filter),
-    onError: () => {
-      addNotification({
-        type: 'error',
-        title: 'Errore ricerca',
-        message: 'Errore durante la ricerca fatture',
-        duration: 3000,
-      });
-    },
-  });
-}
-
-// Hook per bulk operations
-export function useBulkInvoiceOperations() {
-  const queryClient = useQueryClient();
-  const { addNotification } = useUIStore();
-
-  const bulkUpdateStatus = useMutation({
-    mutationFn: async ({ 
-      invoiceIds, 
-      payment_status 
-    }: { 
-      invoiceIds: number[]; 
-      payment_status: string;
+    mutationFn: async (options: {
+      format: 'excel' | 'csv' | 'json';
+      filters?: InvoiceFilters;
+      include_lines?: boolean;
+      include_vat?: boolean;
     }) => {
-      const results = await Promise.allSettled(
-        invoiceIds.map(id => 
-          apiClient.updateInvoicePaymentStatus(id, payment_status)
-        )
+      const result = await apiClient.exportInvoices(
+        options.format,
+        options.filters?.type_filter,
+        options.filters?.status_filter,
+        options.filters?.start_date,
+        options.filters?.end_date,
+        options.include_lines || false,
+        options.include_vat || false
       );
       
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      if (options.format === 'json') {
+        const url = 'data:application/json;charset=utf-8,' + 
+          encodeURIComponent(JSON.stringify(result, null, 2));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fatture_export.${options.format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const url = window.URL.createObjectURL(result as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fatture_export.${options.format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
       
-      return { successful, failed, total: invoiceIds.length };
+      return result;
     },
-    onSuccess: ({ successful, failed, total }) => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      addNotification({
-        type: successful === total ? 'success' : 'warning',
-        title: 'Operazione bulk completata',
-        message: `${successful}/${total} fatture aggiornate con successo${failed > 0 ? `, ${failed} errori` : ''}`,
-        duration: 5000,
-      });
+    onSuccess: () => {
+      toast.success('Export fatture completato');
     },
-  });
-
-  const bulkDelete = useMutation({
-    mutationFn: async (invoiceIds: number[]) => {
-      const results = await Promise.allSettled(
-        invoiceIds.map(id => apiClient.deleteInvoice(id))
-      );
-      
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
-      
-      return { successful, failed, total: invoiceIds.length };
-    },
-    onSuccess: ({ successful, failed, total }) => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      
-      addNotification({
-        type: successful === total ? 'success' : 'warning',
-        title: 'Eliminazione bulk completata',
-        message: `${successful}/${total} fatture eliminate${failed > 0 ? `, ${failed} errori` : ''}`,
-        duration: 5000,
-      });
+    onError: (error) => {
+      handleError(error, 'export-invoices');
+      toast.error('Errore nell\'export fatture');
     },
   });
-
-  return {
-    bulkUpdateStatus,
-    bulkDelete,
-  };
-}
-
-// Hook per statistiche fatture
-export function useInvoiceStats() {
-  return useQuery({
-    queryKey: ['invoice-stats'],
-    queryFn: () => apiClient.getInvoicesStats(),
-    staleTime: 10 * 60 * 1000, // 10 minutes
-  });
-}
+};
