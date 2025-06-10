@@ -1,134 +1,139 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/tauri';
-import { Layout } from '@/components/layout/Layout';
-import { Toaster } from '@/components/ui/sonner';
-import { ThemeProvider } from '@/providers/ThemeProvider';
-import { FirstRunCheck } from '@/components/FirstRunCheck';
-import { SimpleSetupWizard } from '@/components/setup/SetupWizard';
-import { Button } from '@/components/ui/button';
-import { useUIStore } from '@/store';
-import {
-  DashboardPage,
-  InvoicesPage,
-  InvoiceDetailPage,
-  TransactionsPage,
-  TransactionDetailPage,
-  ReconciliationPage,
-  AnagraphicsPage,
-  AnagraphicsDetailPage,
-  AnalyticsPage,
-  ImportExportPage,
-  SettingsPage
-} from '@/pages';
-import './globals.css';
+/**
+ * TypeScript Type Definitions V4.0 Ultra-Enhanced for FatturaAnalyzer
+ * Tipi aggiornati per supportare:
+ * - Analytics V3.0 Ultra-Optimized con AI/ML
+ * - Reconciliation V4.0 Smart Features
+ * - Enhanced Transactions V4.0
+ * - AI insights e confidence scoring
+ * - Real-time features e performance monitoring
+ */
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000,
-    },
-  },
-});
+// ===== BASE TYPES V4.0 =====
+export type AnagraphicsType = "Cliente" | "Fornitore" | "Cliente/Fornitore" | "Professionista" | "Ente Pubblico" | "Banca";
+export type InvoiceType = "Attiva" | "Passiva" | "Nota Credito Attiva" | "Nota Credito Passiva" | "Autofattura" | "Reverse Charge";
+export type PaymentStatus = "Aperta" | "Scaduta" | "Pagata Parz." | "Pagata Tot." | "Insoluta" | "Riconciliata" | "In Contestazione" | "Rateizzata" | "Stornata";
+export type ReconciliationStatus = "Da Riconciliare" | "Riconciliato Parz." | "Riconciliato Tot." | "Riconciliato Eccesso" | "Ignorato" | "AI Suggerito" | "Auto Riconciliato" | "In Revisione";
 
-type AppState = 'checking' | 'setup_needed' | 'ready' | 'error';
+// ===== V4.0 NEW TYPES =====
+export type ConfidenceLevel = "very_high" | "high" | "medium" | "low" | "very_low";
+export type AIAnalysisDepth = "quick" | "standard" | "deep" | "comprehensive";
+export type ReconciliationMode = "1_to_1" | "n_to_m" | "smart_client" | "auto" | "ultra_smart";
+export type SystemStatus = "healthy" | "warning" | "error" | "maintenance" | "degraded";
+export type FeatureStatus = "enabled" | "disabled" | "limited" | "unavailable";
 
-function App() {
-  const [appState, setAppState] = useState<AppState>('checking');
-  const { addNotification } = useUIStore();
-
-  useEffect(() => {
-    const initializeTauri = async () => {
-      if (window.__TAURI_IPC__) {
-        try {
-          await invoke('app_ready');
-          console.log('Tauri IPC initialized successfully');
-        } catch (tauriError) {
-          console.warn('Tauri IPC initialization failed, continuing in web mode:', tauriError);
-        }
-      } else {
-        console.log('Running in standard web mode');
-      }
-    };
-    initializeTauri();
-  }, []);
-
-  const handleSetupNeeded = () => setAppState('setup_needed');
-
-  const handleSetupComplete = () => {
-    addNotification({
-      type: 'success',
-      title: 'Setup Completato',
-      message: 'Il sistema è ora configurato e pronto all\'uso.',
-      duration: 5000,
-    });
-    setAppState('ready');
+// ===== API RESPONSE WRAPPERS V4.0 =====
+export interface APIResponse<T = any> {
+  success: boolean;
+  message: string;
+  data?: T;
+  timestamp: string;
+  version?: string;
+  performance?: {
+    execution_time_ms: number;
+    cache_hit: boolean;
+    ai_enhanced: boolean;
   };
-
-  const handleError = () => setAppState('error');
-
-  const renderContent = () => {
-    switch (appState) {
-      case 'checking':
-        return (
-          <FirstRunCheck
-            onSetupNeeded={handleSetupNeeded}
-            onSetupComplete={handleSetupComplete}
-            onConnectionError={handleError}
-          />
-        );
-      case 'setup_needed':
-        return <SimpleSetupWizard onComplete={handleSetupComplete} />;
-      case 'error':
-        return (
-          <div className="min-h-screen flex items-center justify-center bg-background">
-            <div className="text-center p-6 space-y-4 max-w-md mx-auto">
-              <h2 className="text-lg font-semibold text-destructive">Errore di Connessione</h2>
-              <p className="text-muted-foreground">
-                Impossibile comunicare con il backend. Assicurati che sia in esecuzione e riprova.
-              </p>
-              <Button onClick={() => window.location.reload()}>Riprova</Button>
-            </div>
-          </div>
-        );
-      case 'ready':
-        return (
-          <BrowserRouter>
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/invoices" element={<InvoicesPage />} />
-                <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
-                <Route path="/transactions" element={<TransactionsPage />} />
-                <Route path="/transactions/:id" element={<TransactionDetailPage />} />
-                <Route path="/reconciliation" element={<ReconciliationPage />} />
-                <Route path="/anagraphics" element={<AnagraphicsPage />} />
-                <Route path="/anagraphics/:id" element={<AnagraphicsDetailPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/import" element={<ImportExportPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Routes>
-            </Layout>
-          </BrowserRouter>
-        );
-    }
-  };
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="system" storageKey="fattura-analyzer-theme">
-        <div className="min-h-screen bg-background font-sans antialiased">
-          {renderContent()}
-        </div>
-        <Toaster position="top-right" richColors closeButton />
-      </ThemeProvider>
-    </QueryClientProvider>
-  );
 }
 
-export default App;
+export interface ErrorResponse {
+  success: false;
+  error: string;
+  message: string;
+  timestamp: string;
+  error_code?: string;
+  suggestions?: string[];
+  retry_after?: number;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  enhanced_data?: {
+    ai_insights?: any;
+    patterns?: any;
+    suggestions?: any;
+  };
+}
+
+// ===== AI & CONFIDENCE TYPES V4.0 =====
+export interface AIInsight {
+  id: string;
+  type: "pattern" | "anomaly" | "prediction" | "recommendation";
+  confidence: number;
+  description: string;
+  data: any;
+  created_at: string;
+  expires_at?: string;
+}
+
+export interface ConfidenceScore {
+  value: number; // 0-1
+  level: ConfidenceLevel;
+  factors: {
+    name: string;
+    weight: number;
+    contribution: number;
+  }[];
+  reliability: number;
+  last_updated: string;
+}
+
+export interface AIValidationResult {
+  is_valid: boolean;
+  confidence: ConfidenceScore;
+  warnings: string[];
+  suggestions: string[];
+  patterns_detected: string[];
+  risk_score: number; // 0-1
+}
+
+// ===== ENHANCED ANAGRAPHICS V4.0 =====
+export interface AnagraphicsBase {
+  type: AnagraphicsType;
+  piva?: string;
+  cf?: string;
+  denomination: string;
+  address?: string;
+  cap?: string;
+  city?: string;
+  province?: string;
+  country: string;
+  iban?: string;
+  email?: string;
+  phone?: string;
+  pec?: string;
+  codice_destinatario?: string;
+  
+  // V4.0 Enhanced fields
+  website?: string;
+  linkedin?: string;
+  notes?: string;
+  tags?: string[];
+  preferred_language?: string;
+  payment_terms_days?: number;
+  credit_limit?: number;
+  discount_percentage?: number;
+}
+
+export interface Anagraphics extends AnagraphicsBase {
+  id: number;
+  score: number;
+  created_at: string;
+  updated_at: string;
+  
+  // V4.0 AI Enhanced fields
+  ai_insights?: {
+    reliability_score: ConfidenceScore;
+    payment_behavior: {
+      average_days_to_pay: number;
+      punctuality_score: number;
+      risk_level: "low" | "medium" | "high";
+    };
+    business_insights: {
+      category: string;
+      size_estimate: "micro" | "small" |
