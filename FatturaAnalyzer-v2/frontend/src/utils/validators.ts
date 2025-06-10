@@ -1,3 +1,13 @@
+/**
+ * Validation Utilities V4.0 Ultra-Enhanced for FatturaAnalyzer
+ * Validatori aggiornati per supportare:
+ * - Validazioni business avanzate con AI insights
+ * - Controlli fiscali italiani ed europei
+ * - Validazioni file e formati V4.0
+ * - Controlli di sicurezza e conformità
+ * - Validazioni real-time e predittive
+ */
+
 import { 
   REGEX_PATTERNS, 
   VALIDATION_RULES, 
@@ -6,15 +16,470 @@ import {
   SECURITY_CONFIG,
   V4_FEATURES
 } from './constants';
-import type { 
-  PaymentStatus, 
-  ReconciliationStatus, 
-  InvoiceType, 
-  AnagraphicsType 
-} from '../types';
 
+// ===== TYPES & INTERFACES V4.0 =====
 
-const cleanVAT = vat.replace(/[\s\-]/g, '').toUpperCase();
+export interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  warnings?: string[];
+  suggestions?: string[];
+  confidence?: number;
+  severity?: 'info' | 'warning' | 'error' | 'critical';
+}
+
+export interface EnhancedValidationResult extends ValidationResult {
+  value?: any;
+  metadata?: Record<string, any>;
+  aiEnhanced?: boolean;
+  riskScore?: number;
+  complianceStatus?: 'compliant' | 'warning' | 'non_compliant';
+}
+
+export interface BatchValidationResult {
+  isValid: boolean;
+  results: Record<string, ValidationResult>;
+  summary: {
+    total: number;
+    valid: number;
+    invalid: number;
+    warnings: number;
+  };
+  criticalErrors: string[];
+}
+
+// ===== ITALIAN FISCAL CODE VALIDATION V4.0 =====
+
+/**
+ * Valida un codice fiscale italiano con controlli avanzati
+ */
+export function validateCodiceFiscale(cf: string): EnhancedValidationResult {
+  if (!cf) {
+    return { 
+      isValid: false, 
+      error: 'Codice fiscale richiesto',
+      severity: 'error'
+    };
+  }
+
+  const cleanCF = cf.replace(/\s/g, '').toUpperCase();
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+  let confidence = 0.5;
+  let riskScore = 0;
+
+  // Controllo lunghezza
+  if (cleanCF.length !== VALIDATION_RULES.CODICE_FISCALE_LENGTH) {
+    return { 
+      isValid: false, 
+      error: `Il codice fiscale deve essere di ${VALIDATION_RULES.CODICE_FISCALE_LENGTH} caratteri`,
+      severity: 'error',
+      suggestions: ['Verificare che il codice fiscale sia completo']
+    };
+  }
+
+  // Controllo formato base
+  if (!REGEX_PATTERNS.CODICE_FISCALE.test(cleanCF)) {
+    return { 
+      isValid: false, 
+      error: 'Formato codice fiscale non valido',
+      severity: 'error',
+      suggestions: [
+        'Il formato corretto è: 6 lettere + 2 cifre + 1 lettera + 2 cifre + 1 lettera + 3 cifre + 1 lettera',
+        'Esempio: RSSMRA80A01H501U'
+      ]
+    };
+  }
+
+  // Algoritmo di controllo avanzato
+  const { isValid: checksumValid, error: checksumError } = validateCFChecksum(cleanCF);
+  if (!checksumValid) {
+    return {
+      isValid: false,
+      error: checksumError,
+      severity: 'error',
+      confidence: 0.1,
+      riskScore: 0.8
+    };
+  }
+
+  // Controlli di plausibilità avanzati V4.0
+  const plausibilityChecks = validateCFPlausibility(cleanCF);
+  warnings.push(...plausibilityChecks.warnings);
+  suggestions.push(...plausibilityChecks.suggestions);
+  confidence = plausibilityChecks.confidence;
+  riskScore = plausibilityChecks.riskScore;
+
+  // Controllo blacklist (codici fiscali noti per essere problematici)
+  if (isBlacklistedCF(cleanCF)) {
+    warnings.push('Codice fiscale presente in lista di controllo');
+    riskScore += 0.3;
+  }
+
+  return { 
+    isValid: true,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
+    confidence,
+    aiEnhanced: V4_FEATURES.AI_BUSINESS_INSIGHTS,
+    riskScore,
+    complianceStatus: riskScore < 0.3 ? 'compliant' : riskScore < 0.7 ? 'warning' : 'non_compliant',
+    metadata: {
+      formatted: cleanCF,
+      birthYear: extractBirthYear(cleanCF),
+      birthPlace: extractBirthPlace(cleanCF),
+      gender: extractGender(cleanCF)
+    }
+  };
+}
+
+/**
+ * Valida il checksum del codice fiscale
+ */
+function validateCFChecksum(cf: string): ValidationResult {
+  const oddMap = 'BAFHJNPRTVCESULDGIMOQKWZYX';
+  const evenMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const controlMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  let sum = 0;
+  
+  try {
+    for (let i = 0; i < 15; i++) {
+      const char = cf[i];
+      const isOdd = i % 2 === 0;
+      
+      if (isOdd) {
+        // Posizione dispari
+        if (/[0-9]/.test(char)) {
+          const oddValues = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21];
+          sum += oddValues[parseInt(char)];
+        } else {
+          sum += oddMap.indexOf(char);
+        }
+      } else {
+        // Posizione pari
+        if (/[0-9]/.test(char)) {
+          sum += parseInt(char);
+        } else {
+          sum += evenMap.indexOf(char);
+        }
+      }
+    }
+
+    const expectedControl = controlMap[sum % 26];
+    const actualControl = cf[15];
+
+    if (expectedControl !== actualControl) {
+      return { 
+        isValid: false, 
+        error: `Carattere di controllo non valido. Atteso: ${expectedControl}, trovato: ${actualControl}`,
+        severity: 'error'
+      };
+    }
+
+    return { isValid: true };
+  } catch (error) {
+    return { 
+      isValid: false, 
+      error: 'Errore nel calcolo del checksum',
+      severity: 'error'
+    };
+  }
+}
+/**
+ * Controlli di plausibilità per codice fiscale
+ */
+function validateCFPlausibility(cf: string): {
+  confidence: number;
+  riskScore: number;
+  warnings: string[];
+  suggestions: string[];
+} {
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+  let confidence = 0.9;
+  let riskScore = 0.1;
+
+  // Estrai componenti
+  const surname = cf.slice(0, 3);
+  const name = cf.slice(3, 6);
+  const birthYear = parseInt(cf.slice(6, 8));
+  const birthMonth = cf[8];
+  const birthDay = parseInt(cf.slice(9, 11));
+  const birthPlace = cf.slice(11, 15);
+
+  // Controllo mese di nascita
+  const validMonths = 'ABCDEHLMPRST';
+  if (!validMonths.includes(birthMonth)) {
+    warnings.push('Mese di nascita non valido');
+    confidence -= 0.2;
+    riskScore += 0.2;
+  }
+
+  // Controllo giorno di nascita (per donne +40)
+  const actualDay = birthDay > 40 ? birthDay - 40 : birthDay;
+  if (actualDay < 1 || actualDay > 31) {
+    warnings.push('Giorno di nascita non plausibile');
+    confidence -= 0.3;
+    riskScore += 0.3;
+  }
+
+  // Controllo anno di nascita (range ragionevole)
+  const currentYear = new Date().getFullYear() % 100;
+  const fullBirthYear = birthYear <= currentYear ? 2000 + birthYear : 1900 + birthYear;
+  const age = new Date().getFullYear() - fullBirthYear;
+  
+  if (age < 0 || age > 120) {
+    warnings.push('Anno di nascita non plausibile');
+    confidence -= 0.3;
+    riskScore += 0.3;
+  } else if (age > 100) {
+    warnings.push('Età molto avanzata, verificare accuratezza');
+    confidence -= 0.1;
+    riskScore += 0.1;
+  }
+
+  // Controllo codice comune di nascita
+  if (!isValidBirthPlaceCode(birthPlace)) {
+    warnings.push('Codice luogo di nascita non riconosciuto');
+    suggestions.push('Verificare il codice del comune di nascita');
+    confidence -= 0.2;
+    riskScore += 0.2;
+  }
+
+  return { confidence, riskScore, warnings, suggestions };
+}
+
+/**
+ * Utility functions per codice fiscale
+ */
+function isBlacklistedCF(cf: string): boolean {
+  // Lista di codici fiscali noti per essere problematici
+  const blacklist = [
+    'AAAAAA00A00A000A', // Codice test
+    'BBBBBBB00B00B000B', // Codice test
+  ];
+  return blacklist.includes(cf);
+}
+
+function extractBirthYear(cf: string): number {
+  const yearCode = parseInt(cf.slice(6, 8));
+  const currentYear = new Date().getFullYear() % 100;
+  return yearCode <= currentYear ? 2000 + yearCode : 1900 + yearCode;
+}
+
+function extractGender(cf: string): 'M' | 'F' {
+  const dayCode = parseInt(cf.slice(9, 11));
+  return dayCode > 40 ? 'F' : 'M';
+}
+
+function extractBirthPlace(cf: string): string {
+  return cf.slice(11, 15);
+}
+
+function isValidBirthPlaceCode(code: string): boolean {
+  // Qui si potrebbe implementare un controllo contro database dei comuni
+  // Per ora, controllo formato base
+  return /^[A-Z][0-9]{3}$/.test(code) || /^Z[0-9]{3}$/.test(code); // Z per comuni esteri
+}
+
+// ===== ITALIAN VAT NUMBER VALIDATION V4.0 =====
+
+/**
+ * Valida una partita IVA italiana con controlli avanzati
+ */
+export function validatePartitaIva(piva: string): EnhancedValidationResult {
+  if (!piva) {
+    return { 
+      isValid: false, 
+      error: 'Partita IVA richiesta',
+      severity: 'error'
+    };
+  }
+
+  const cleanPIVA = piva.replace(/\D/g, '');
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+  let confidence = 0.9;
+  let riskScore = 0.1;
+
+  // Controllo lunghezza
+  if (cleanPIVA.length !== VALIDATION_RULES.PARTITA_IVA_LENGTH) {
+    return { 
+      isValid: false, 
+      error: `La partita IVA deve essere di ${VALIDATION_RULES.PARTITA_IVA_LENGTH} cifre`,
+      severity: 'error',
+      suggestions: ['Verificare che la partita IVA sia completa e non contenga lettere']
+    };
+  }
+
+  // Controllo cifra di controllo (algoritmo Luhn modificato)
+  const { isValid: checksumValid, error: checksumError } = validatePIVAChecksum(cleanPIVA);
+  if (!checksumValid) {
+    return {
+      isValid: false,
+      error: checksumError,
+      severity: 'error',
+      confidence: 0.1,
+      riskScore: 0.9
+    };
+  }
+
+  // Controlli business avanzati V4.0
+  const businessChecks = validatePIVABusiness(cleanPIVA);
+  warnings.push(...businessChecks.warnings);
+  suggestions.push(...businessChecks.suggestions);
+  confidence = businessChecks.confidence;
+  riskScore = businessChecks.riskScore;
+
+  return { 
+    isValid: true,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
+    confidence,
+    aiEnhanced: V4_FEATURES.AI_BUSINESS_INSIGHTS,
+    riskScore,
+    complianceStatus: riskScore < 0.3 ? 'compliant' : riskScore < 0.7 ? 'warning' : 'non_compliant',
+    metadata: {
+      formatted: cleanPIVA,
+      region: extractPIVARegion(cleanPIVA),
+      type: determinePIVAType(cleanPIVA)
+    }
+  };
+}
+
+/**
+ * Valida il checksum della partita IVA
+ */
+function validatePIVAChecksum(piva: string): ValidationResult {
+  let sum = 0;
+  
+  try {
+    for (let i = 0; i < 10; i++) {
+      let digit = parseInt(piva[i]);
+      
+      if (i % 2 === 1) {
+        digit *= 2;
+        if (digit > 9) {
+          digit = digit - 9;
+        }
+      }
+      
+      sum += digit;
+    }
+
+    const expectedCheck = (10 - (sum % 10)) % 10;
+    const actualCheck = parseInt(piva[10]);
+
+    if (expectedCheck !== actualCheck) {
+      return { 
+        isValid: false, 
+        error: `Cifra di controllo non valida. Attesa: ${expectedCheck}, trovata: ${actualCheck}`,
+        severity: 'error'
+      };
+    }
+
+    return { isValid: true };
+  } catch (error) {
+    return { 
+      isValid: false, 
+      error: 'Errore nel calcolo del checksum',
+      severity: 'error'
+    };
+  }
+}
+
+/**
+ * Controlli business per partita IVA
+ */
+function validatePIVABusiness(piva: string): {
+  confidence: number;
+  riskScore: number;
+  warnings: string[];
+  suggestions: string[];
+} {
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+  let confidence = 0.9;
+  let riskScore = 0.1;
+
+  // Controllo sequenze sospette
+  if (isSuspiciousPIVASequence(piva)) {
+    warnings.push('Sequenza numerica sospetta');
+    confidence -= 0.2;
+    riskScore += 0.2;
+  }
+
+  // Controllo range uffici provinciali
+  const officeCode = piva.slice(7, 10);
+  if (!isValidOfficeCode(officeCode)) {
+    warnings.push('Codice ufficio provinciale non riconosciuto');
+    confidence -= 0.1;
+    riskScore += 0.1;
+  }
+
+  return { confidence, riskScore, warnings, suggestions };
+}
+
+function isSuspiciousPIVASequence(piva: string): boolean {
+  // Controlla sequenze ripetitive o progressive
+  const digits = piva.split('').map(Number);
+  
+  // Tutti i numeri uguali
+  if (digits.every(d => d === digits[0])) return true;
+  
+  // Sequenza crescente/decrescente
+  let isSequential = true;
+  for (let i = 1; i < digits.length - 1; i++) {
+    if (digits[i] !== digits[i-1] + 1 && digits[i] !== digits[i-1] - 1) {
+      isSequential = false;
+      break;
+    }
+  }
+  
+  return isSequential;
+}
+
+function isValidOfficeCode(code: string): boolean {
+  const officeCode = parseInt(code);
+  // Range validi per uffici IVA italiani (semplificato)
+  return officeCode >= 1 && officeCode <= 999;
+}
+
+function extractPIVARegion(piva: string): string {
+  const officeCode = parseInt(piva.slice(7, 10));
+  
+  // Mapping semplificato codici ufficio -> regioni
+  if (officeCode >= 1 && officeCode <= 99) return 'Nord';
+  if (officeCode >= 100 && officeCode <= 199) return 'Centro';
+  if (officeCode >= 200 && officeCode <= 299) return 'Sud';
+  return 'Non determinata';
+}
+
+function determinePIVAType(piva: string): string {
+  // Analisi euristica del tipo di business basata sui pattern
+  const numeric = piva.slice(0, 7);
+  
+  // Pattern per tipi specifici (molto semplificato)
+  if (numeric.startsWith('0')) return 'Ente pubblico';
+  if (numeric.startsWith('8')) return 'Società di capitali';
+  return 'Standard';
+}
+// ===== EUROPEAN VAT NUMBER VALIDATION V4.0 =====
+
+/**
+ * Valida partita IVA europea
+ */
+export function validateEuropeanVAT(vat: string): EnhancedValidationResult {
+  if (!vat) {
+    return { 
+      isValid: false, 
+      error: 'Partita IVA europea richiesta',
+      severity: 'error'
+    };
+  }
+
+  const cleanVAT = vat.replace(/[\s\-]/g, '').toUpperCase();
   
   if (cleanVAT.length < 4) {
     return {
@@ -467,7 +932,6 @@ function isSuspiciousEmailPattern(email: string): boolean {
 
   return suspiciousPatterns.some(pattern => pattern.test(email));
 }
-
 // ===== PHONE NUMBER VALIDATION V4.0 =====
 
 /**
@@ -492,9 +956,6 @@ export function validatePhoneNumber(
   }
 
   const cleanPhone = phone.replace(/[\s\-\(\)\.]/g, '');
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.9;
 
   // Controllo caratteri validi
   if (!/^[\+\d]+$/.test(cleanPhone)) {
@@ -521,7 +982,6 @@ export function validatePhoneNumber(
 
 function validateItalianPhone(phone: string, requireMobile: boolean): EnhancedValidationResult {
   const warnings: string[] = [];
-  const suggestions: string[] = [];
   let confidence = 0.9;
   let phoneType = 'unknown';
 
@@ -571,7 +1031,6 @@ function validateItalianPhone(phone: string, requireMobile: boolean): EnhancedVa
   return {
     isValid: true,
     warnings: warnings.length > 0 ? warnings : undefined,
-    suggestions: suggestions.length > 0 ? suggestions : undefined,
     confidence,
     metadata: {
       formatted: formatItalianPhone(nationalNumber),
@@ -788,8 +1247,7 @@ export function validateDate(
     allowPast = true,
     minDate,
     maxDate,
-    businessDaysOnly = false,
-    requiredFormat
+    businessDaysOnly = false
   } = options;
 
   if (!date) {
@@ -862,6 +1320,9 @@ export function validateDate(
       error: `Data deve essere successiva al ${minDate.toLocaleDateString()}`,
       severity: 'error'
     };
+  }
+
+  if (maxDate && dateObj > maxDate) {
     return {
       isValid: false,
       error: `Data deve essere precedente al ${maxDate.toLocaleDateString()}`,
@@ -879,11 +1340,6 @@ export function validateDate(
     }
   }
 
-  // Controlli aggiuntivi
-  const dateChecks = validateDateBusiness(dateObj);
-  warnings.push(...dateChecks.warnings);
-  suggestions.push(...dateChecks.suggestions);
-
   return { 
     isValid: true,
     warnings: warnings.length > 0 ? warnings : undefined,
@@ -892,254 +1348,9 @@ export function validateDate(
     value: dateObj,
     metadata: {
       isWeekend: dateObj.getDay() === 0 || dateObj.getDay() === 6,
-      isHoliday: isItalianHoliday(dateObj),
-      quarter: Math.ceil((dateObj.getMonth() + 1) / 3),
-      weekOfYear: getWeekOfYear(dateObj)
+      quarter: Math.ceil((dateObj.getMonth() + 1) / 3)
     }
   };
-}
-
-function validateDateBusiness(date: Date): {
-  warnings: string[];
-  suggestions: string[];
-} {
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  const now = new Date();
-
-  // Controllo festività italiane
-  if (isItalianHoliday(date)) {
-    warnings.push('Data festiva in Italia');
-    suggestions.push('Verificare se appropriata per operazioni business');
-  }
-
-  // Controllo date molto vecchie o future
-  const diffDays = Math.abs((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  
-  if (diffDays > 365 * 5) {
-    if (date < now) {
-      warnings.push('Data molto vecchia (>5 anni)');
-    } else {
-      warnings.push('Data molto futura (>5 anni)');
-    }
-  }
-
-  return { warnings, suggestions };
-}
-
-function isItalianHoliday(date: Date): boolean {
-  const month = date.getMonth() + 1; // getMonth() returns 0-11
-  const day = date.getDate();
-  
-  // Festività fisse
-  const fixedHolidays = [
-    [1, 1],   // Capodanno
-    [1, 6],   // Epifania
-    [4, 25],  // Festa della Liberazione
-    [5, 1],   // Festa del Lavoro
-    [6, 2],   // Festa della Repubblica
-    [8, 15],  // Ferragosto
-    [11, 1],  // Ognissanti
-    [12, 8],  // Immacolata
-    [12, 25], // Natale
-    [12, 26], // Santo Stefano
-  ];
-
-  return fixedHolidays.some(([m, d]) => month === m && day === d);
-}
-
-function getWeekOfYear(date: Date): number {
-  const firstDay = new Date(date.getFullYear(), 0, 1);
-  const pastDaysOfYear = (date.getTime() - firstDay.getTime()) / 86400000;
-  return Math.ceil((pastDaysOfYear + firstDay.getDay() + 1) / 7);
-}
-
-// ===== DATE RANGE VALIDATION V4.0 =====
-
-/**
- * Valida un range di date con controlli business
- */
-export function validateDateRange(
-  startDate: string | Date,
-  endDate: string | Date,
-  options: {
-    maxDuration?: number; // in giorni
-    minDuration?: number; // in giorni
-    allowSameDay?: boolean;
-    businessContext?: 'invoice' | 'report' | 'contract' | 'generic';
-  } = {}
-): EnhancedValidationResult {
-  const { 
-    maxDuration = 365 * 5, // 5 anni default
-    minDuration = 0,
-    allowSameDay = true,
-    businessContext = 'generic'
-  } = options;
-
-  // Valida singole date
-  const startValidation = validateDate(startDate);
-  if (!startValidation.isValid) {
-    return { 
-      isValid: false, 
-      error: `Data inizio: ${startValidation.error}`,
-      severity: 'error'
-    };
-  }
-
-  const endValidation = validateDate(endDate);
-  if (!endValidation.isValid) {
-    return { 
-      isValid: false, 
-      error: `Data fine: ${endValidation.error}`,
-      severity: 'error'
-    };
-  }
-
-  const start = startValidation.value!;
-  const end = endValidation.value!;
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-
-  // Controllo ordine
-  if (start > end) {
-    return { 
-      isValid: false, 
-      error: 'Data inizio deve essere precedente alla data fine',
-      severity: 'error'
-    };
-  }
-
-  // Controllo stesso giorno
-  if (!allowSameDay && start.getTime() === end.getTime()) {
-    return {
-      isValid: false,
-      error: 'Data inizio e fine non possono essere uguali',
-      severity: 'error'
-    };
-  }
-
-  // Calcolo durata
-  const durationMs = end.getTime() - start.getTime();
-  const durationDays = Math.ceil(durationMs / (1000 * 60 * 60 * 24));
-
-  // Controllo durata minima
-  if (durationDays < minDuration) {
-    return {
-      isValid: false,
-      error: `Durata minima: ${minDuration} giorni`,
-      severity: 'error'
-    };
-  }
-
-  // Controllo durata massima
-  if (durationDays > maxDuration) {
-    return { 
-      isValid: false, 
-      error: `Durata massima: ${maxDuration} giorni`,
-      severity: 'error'
-    };
-  }
-
-  // Controlli specifici per contesto business
-  const contextChecks = validateDateRangeByContext(start, end, durationDays, businessContext);
-  warnings.push(...contextChecks.warnings);
-  suggestions.push(...contextChecks.suggestions);
-
-  return { 
-    isValid: true,
-    warnings: warnings.length > 0 ? warnings : undefined,
-    suggestions: suggestions.length > 0 ? suggestions : undefined,
-    metadata: {
-      durationDays,
-      durationWeeks: Math.ceil(durationDays / 7),
-      durationMonths: Math.ceil(durationDays / 30),
-      businessDaysCount: calculateBusinessDays(start, end),
-      includesWeekends: durationDays > 5 && hasWeekends(start, end),
-      includesHolidays: hasItalianHolidays(start, end)
-    }
-  };
-}
-
-function validateDateRangeByContext(
-  start: Date, 
-  end: Date, 
-  durationDays: number, 
-  context: string
-): {
-  warnings: string[];
-  suggestions: string[];
-} {
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-
-  switch (context) {
-    case 'invoice':
-      if (durationDays > 365) {
-        warnings.push('Range molto ampio per fatture');
-        suggestions.push('Considerare periodi più brevi per analisi dettagliate');
-      }
-      break;
-      
-    case 'report':
-      if (durationDays < 7) {
-        warnings.push('Periodo molto breve per report');
-      } else if (durationDays > 730) { // 2 anni
-        warnings.push('Periodo molto ampio per report dettagliati');
-      }
-      break;
-      
-    case 'contract':
-      if (durationDays < 30) {
-        warnings.push('Contratto di durata molto breve');
-      } else if (durationDays > 365 * 10) { // 10 anni
-        warnings.push('Contratto di durata molto lunga');
-      }
-      break;
-  }
-
-  return { warnings, suggestions };
-}
-
-function calculateBusinessDays(start: Date, end: Date): number {
-  let count = 0;
-  const current = new Date(start);
-  
-  while (current <= end) {
-    const dayOfWeek = current.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Non domenica e non sabato
-      count++;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  
-  return count;
-}
-
-function hasWeekends(start: Date, end: Date): boolean {
-  const current = new Date(start);
-  
-  while (current <= end) {
-    const dayOfWeek = current.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      return true;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  
-  return false;
-}
-
-function hasItalianHolidays(start: Date, end: Date): boolean {
-  const current = new Date(start);
-  
-  while (current <= end) {
-    if (isItalianHoliday(current)) {
-      return true;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  
-  return false;
 }
 
 // ===== FILE VALIDATION V4.0 =====
@@ -1154,17 +1365,13 @@ export function validateFile(
     allowedTypes?: string[];
     allowedExtensions?: string[];
     category?: 'invoices' | 'transactions' | 'anagraphics' | 'documents';
-    scanForMalware?: boolean;
-    checkSignature?: boolean;
   } = {}
 ): EnhancedValidationResult {
   const {
     maxSize = SECURITY_CONFIG.MAX_FILE_SCAN_SIZE,
     allowedTypes = [],
     allowedExtensions = [],
-    category = 'documents',
-    scanForMalware = SECURITY_CONFIG.SCAN_UPLOADED_FILES,
-    checkSignature = true
+    category = 'documents'
   } = options;
 
   if (!file) {
@@ -1176,8 +1383,6 @@ export function validateFile(
   }
 
   const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.9;
   let riskScore = 0.1;
 
   // Controllo dimensione
@@ -1202,7 +1407,6 @@ export function validateFile(
   const extension = file.name.split('.').pop()?.toLowerCase();
   if (!extension) {
     warnings.push('File senza estensione');
-    confidence -= 0.2;
     riskScore += 0.2;
   } else {
     // Controllo estensioni permesse per categoria
@@ -1236,28 +1440,17 @@ export function validateFile(
     };
   }
 
-  // Controlli di sicurezza
-  const securityChecks = validateFileSecurity(file, extension, checkSignature);
-  warnings.push(...securityChecks.warnings);
-  suggestions.push(...securityChecks.suggestions);
-  confidence = Math.min(confidence, securityChecks.confidence);
-  riskScore = Math.max(riskScore, securityChecks.riskScore);
-
   return { 
     isValid: true,
     warnings: warnings.length > 0 ? warnings : undefined,
-    suggestions: suggestions.length > 0 ? suggestions : undefined,
-    confidence,
     riskScore,
     complianceStatus: riskScore < 0.3 ? 'compliant' : riskScore < 0.7 ? 'warning' : 'non_compliant',
     metadata: {
       size: file.size,
-      sizeFormatted: formatFileSize(file.size),
       type: file.type,
       extension,
       category,
-      lastModified: new Date(file.lastModified),
-      isSecure: riskScore < 0.3
+      lastModified: new Date(file.lastModified)
     }
   };
 }
@@ -1275,273 +1468,6 @@ function getCategoryAllowedExtensions(category: string): string[] {
     default:
       return [];
   }
-}
-
-function validateFileSecurity(
-  file: File, 
-  extension: string | undefined, 
-  checkSignature: boolean
-): {
-  confidence: number;
-  riskScore: number;
-  warnings: string[];
-  suggestions: string[];
-} {
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.9;
-  let riskScore = 0.1;
-
-  // Controllo nome file sospetto
-  if (hasSuspiciousFileName(file.name)) {
-    warnings.push('Nome file sospetto');
-    suggestions.push('Rinominare il file con un nome più descrittivo');
-    confidence -= 0.2;
-    riskScore += 0.2;
-  }
-
-  // Controllo estensioni doppie (possibile malware)
-  if (hasDoubleExtension(file.name)) {
-    warnings.push('File con estensione doppia rilevato');
-    suggestions.push('Verificare l\'autenticità del file');
-    confidence -= 0.3;
-    riskScore += 0.4;
-  }
-
-  // Controllo estensioni eseguibili
-  if (extension && isExecutableExtension(extension)) {
-    warnings.push('File eseguibile rilevato');
-    suggestions.push('I file eseguibili non sono raccomandati');
-    confidence -= 0.5;
-    riskScore += 0.6;
-  }
-
-  return { confidence, riskScore, warnings, suggestions };
-}
-
-function hasSuspiciousFileName(fileName: string): boolean {
-  const suspiciousPatterns = [
-    /temp/i,
-    /test/i,
-    /malware/i,
-    /virus/i,
-    /hack/i,
-    /\.exe\./i,
-    /\.\./,
-    /[<>:"|?*]/
-  ];
-
-  return suspiciousPatterns.some(pattern => pattern.test(fileName));
-}
-
-function hasDoubleExtension(fileName: string): boolean {
-  const parts = fileName.split('.');
-  return parts.length > 2;
-}
-
-function isExecutableExtension(extension: string): boolean {
-  const executableExtensions = [
-    'exe', 'bat', 'cmd', 'com', 'pif', 'scr', 'vbs', 'js', 'jar',
-    'app', 'deb', 'pkg', 'dmg', 'run', 'msi', 'sh'
-  ];
-  
-  return executableExtensions.includes(extension.toLowerCase());
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-// ===== BUSINESS DATA VALIDATION V4.0 =====
-
-/**
- * Valida dati completi di una fattura
- */
-export function validateInvoiceData(data: {
-  doc_number: string;
-  doc_date: string | Date;
-  total_amount: number;
-  anagraphics_id: number;
-  due_date?: string | Date;
-  type?: string;
-  payment_terms?: number;
-}): BatchValidationResult {
-  const results: Record<string, ValidationResult> = {};
-  const criticalErrors: string[] = [];
-
-  // Validazione numero documento
-  results.doc_number = validateDocumentNumber(data.doc_number);
-  
-  // Validazione data documento
-  results.doc_date = validateDate(data.doc_date, {
-    allowFuture: false,
-    maxDate: new Date()
-  });
-
-  // Validazione importo
-  results.total_amount = validateAmount(data.total_amount, {
-    requirePositive: true,
-    maxAmount: 999999999.99
-  });
-
-  // Validazione anagrafica
-  if (!data.anagraphics_id || data.anagraphics_id <= 0) {
-    results.anagraphics_id = {
-      isValid: false,
-      error: 'Anagrafica richiesta',
-      severity: 'error'
-    };
-  } else {
-    results.anagraphics_id = { isValid: true };
-  }
-
-  // Validazione data scadenza (opzionale)
-  if (data.due_date) {
-    const docDate = typeof data.doc_date === 'string' ? new Date(data.doc_date) : data.doc_date;
-    results.due_date = validateDate(data.due_date, {
-      minDate: docDate,
-      allowPast: false
-    });
-
-    // Controllo coerenza con termini di pagamento
-    if (data.payment_terms && results.due_date.isValid && results.doc_date.isValid) {
-      const expectedDue = new Date(docDate);
-      expectedDue.setDate(expectedDue.getDate() + data.payment_terms);
-      
-      const actualDue = typeof data.due_date === 'string' ? new Date(data.due_date) : data.due_date;
-      const diffDays = Math.abs((actualDue.getTime() - expectedDue.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (diffDays > 1) { // Tolleranza di 1 giorno
-        results.due_date.warnings = results.due_date.warnings || [];
-        results.due_date.warnings.push('Data scadenza non coerente con termini di pagamento');
-      }
-    }
-  }
-
-  // Raccolta errori critici
-  Object.entries(results).forEach(([field, result]) => {
-    if (!result.isValid && result.severity === 'error') {
-      criticalErrors.push(`${field}: ${result.error}`);
-    }
-  });
-
-  const validCount = Object.values(results).filter(r => r.isValid).length;
-  const warningCount = Object.values(results).filter(r => r.warnings?.length).length;
-
-  return {
-    isValid: criticalErrors.length === 0,
-    results,
-    summary: {
-      total: Object.keys(results).length,
-      valid: validCount,
-      invalid: Object.keys(results).length - validCount,
-      warnings: warningCount
-    },
-    criticalErrors
-  };
-}
-
-/**
- * Valida dati completi di un'anagrafica
- */
-export function validateAnagraphicsData(data: {
-  denomination: string;
-  piva?: string;
-  cf?: string;
-  email?: string;
-  phone?: string;
-  cap?: string;
-  iban?: string;
-  type?: string;
-  address?: string;
-  city?: string;
-  province?: string;
-}): BatchValidationResult {
-  const results: Record<string, ValidationResult> = {};
-  const criticalErrors: string[] = [];
-
-  // Validazione denominazione
-  if (!data.denomination || data.denomination.trim().length === 0) {
-    results.denomination = {
-      isValid: false,
-      error: 'Denominazione richiesta',
-      severity: 'error'
-    };
-  } else if (data.denomination.length > VALIDATION_RULES.DENOMINATION_MAX_LENGTH) {
-    results.denomination = {
-      isValid: false,
-      error: `Denominazione troppo lunga (max ${VALIDATION_RULES.DENOMINATION_MAX_LENGTH} caratteri)`,
-      severity: 'error'
-    };
-  } else {
-    results.denomination = { isValid: true };
-  }
-
-  // Validazione codici fiscali
-  if (data.piva) {
-    results.piva = validatePartitaIva(data.piva);
-  }
-
-  if (data.cf) {
-    results.cf = validateCodiceFiscale(data.cf);
-  }
-
-  // Almeno uno tra P.IVA e CF deve essere presente
-  if (!data.piva && !data.cf) {
-    results.fiscal_codes = {
-      isValid: false,
-      error: 'Almeno uno tra Partita IVA e Codice Fiscale è richiesto',
-      severity: 'error'
-    };
-  } else {
-    results.fiscal_codes = { isValid: true };
-  }
-
-  // Validazione contatti (opzionali)
-  if (data.email) {
-    results.email = validateEmail(data.email);
-  }
-
-  if (data.phone) {
-    results.phone = validatePhoneNumber(data.phone);
-  }
-
-  // Validazione indirizzo (opzionale)
-  if (data.cap) {
-    results.cap = validateCAP(data.cap);
-  }
-
-  if (data.iban) {
-    results.iban = validateIBAN(data.iban);
-  }
-
-  // Raccolta errori critici
-  Object.entries(results).forEach(([field, result]) => {
-    if (!result.isValid && result.severity === 'error') {
-      criticalErrors.push(`${field}: ${result.error}`);
-    }
-  });
-
-  const validCount = Object.values(results).filter(r => r.isValid).length;
-  const warningCount = Object.values(results).filter(r => r.warnings?.length).length;
-
-  return {
-    isValid: criticalErrors.length === 0,
-    results,
-    summary: {
-      total: Object.keys(results).length,
-      valid: validCount,
-      invalid: Object.keys(results).length - validCount,
-      warnings: warningCount
-    },
-    criticalErrors
-  };
 }
 
 // ===== ITALIAN POSTAL CODE VALIDATION =====
@@ -1633,103 +1559,6 @@ export function validateDocumentNumber(docNumber: string): ValidationResult {
   return { isValid: true };
 }
 
-// ===== UTILITY FUNCTIONS =====
-
-/**
- * Combina risultati di validazione multipli
- */
-export function combineValidations(
-  ...validations: Array<{ isValid: boolean; error?: string; severity?: string }>
-): {
-  isValid: boolean;
-  errors: string[];
-  criticalErrors: string[];
-  warnings: string[];
-} {
-  const errors: string[] = [];
-  const criticalErrors: string[] = [];
-  const warnings: string[] = [];
-
-  validations.forEach(validation => {
-    if (!validation.isValid && validation.error) {
-      if (validation.severity === 'critical' || validation.severity === 'error') {
-        criticalErrors.push(validation.error);
-      } else if (validation.severity === 'warning') {
-        warnings.push(validation.error);
-      } else {
-        errors.push(validation.error);
-      }
-    }
-  });
-
-  return {
-    isValid: criticalErrors.length === 0 && errors.length === 0,
-    errors,
-    criticalErrors,
-    warnings
-  };
-}
-
-/**
- * Valida formato CSV per import
- */
-export function validateCSVFormat(
-  csvData: any[],
-  requiredColumns: string[],
-  options: {
-    allowExtraColumns?: boolean;
-    caseSensitive?: boolean;
-  } = {}
-): EnhancedValidationResult {
-  const { allowExtraColumns = true, caseSensitive = false } = options;
-
-  if (!csvData || csvData.length === 0) {
-    return { 
-      isValid: false, 
-      error: 'File CSV vuoto',
-      severity: 'error'
-    };
-  }
-
-  const firstRow = csvData[0];
-  const actualColumns = Object.keys(firstRow);
-  
-  // Normalizza nomi colonne se non case sensitive
-  const normalizeColumn = (col: string) => caseSensitive ? col : col.toLowerCase().trim();
-  const normalizedActual = actualColumns.map(normalizeColumn);
-  const normalizedRequired = requiredColumns.map(normalizeColumn);
-  
-  const missingColumns = normalizedRequired.filter(col => !normalizedActual.includes(col));
-  
-  if (missingColumns.length > 0) {
-    return { 
-      isValid: false, 
-      error: `Colonne mancanti: ${missingColumns.join(', ')}`,
-      severity: 'error',
-      suggestions: [`Assicurarsi che il CSV contenga le colonne: ${requiredColumns.join(', ')}`],
-      metadata: { missingColumns, availableColumns: actualColumns }
-    };
-  }
-
-  const warnings: string[] = [];
-  if (!allowExtraColumns) {
-    const extraColumns = normalizedActual.filter(col => !normalizedRequired.includes(col));
-    if (extraColumns.length > 0) {
-      warnings.push(`Colonne extra presenti: ${extraColumns.join(', ')}`);
-    }
-  }
-
-  return { 
-    isValid: true,
-    warnings: warnings.length > 0 ? warnings : undefined,
-    metadata: {
-      totalRows: csvData.length,
-      totalColumns: actualColumns.length,
-      columnsMatched: normalizedRequired.length
-    }
-  };
-}
-
 // ===== DEFAULT EXPORT V4.0 =====
 export default {
   // Italian Fiscal Codes
@@ -1749,503 +1578,11 @@ export default {
   
   // Dates
   validateDate,
-  validateDateRange,
   
   // Files
   validateFile,
   
-  // Business Data
-  validateInvoiceData,
-  validateAnagraphicsData,
-  
   // Italian Specific
   validateCAP,
   validateDocumentNumber,
-  
-  // Utilities
-  combineValidations,
-  validateCSVFormat,
-};/**
- * Validation Utilities V4.0 Ultra-Enhanced for FatturaAnalyzer
- * Validatori aggiornati per supportare:
- * - Validazioni business avanzate con AI insights
- * - Controlli fiscali italiani ed europei
- * - Validazioni file e formati V4.0
- * - Controlli di sicurezza e conformità
- * - Validazioni real-time e predittive
- */
-
-import { 
-  REGEX_PATTERNS, 
-  VALIDATION_RULES, 
-  SUPPORTED_FILE_FORMATS,
-  MIME_TYPES,
-  SECURITY_CONFIG,
-  V4_FEATURES
-} from './constants';
-
-// ===== TYPES & INTERFACES V4.0 =====
-
-export interface ValidationResult {
-  isValid: boolean;
-  error?: string;
-  warnings?: string[];
-  suggestions?: string[];
-  confidence?: number;
-  severity?: 'info' | 'warning' | 'error' | 'critical';
-}
-
-export interface EnhancedValidationResult extends ValidationResult {
-  value?: any;
-  metadata?: Record<string, any>;
-  aiEnhanced?: boolean;
-  riskScore?: number;
-  complianceStatus?: 'compliant' | 'warning' | 'non_compliant';
-}
-
-export interface BatchValidationResult {
-  isValid: boolean;
-  results: Record<string, ValidationResult>;
-  summary: {
-    total: number;
-    valid: number;
-    invalid: number;
-    warnings: number;
-  };
-  criticalErrors: string[];
-}
-
-// ===== ITALIAN FISCAL CODE VALIDATION V4.0 =====
-
-/**
- * Valida un codice fiscale italiano con controlli avanzati
- */
-export function validateCodiceFiscale(cf: string): EnhancedValidationResult {
-  if (!cf) {
-    return { 
-      isValid: false, 
-      error: 'Codice fiscale richiesto',
-      severity: 'error'
-    };
-  }
-
-  const cleanCF = cf.replace(/\s/g, '').toUpperCase();
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.5;
-  let riskScore = 0;
-
-  // Controllo lunghezza
-  if (cleanCF.length !== VALIDATION_RULES.CODICE_FISCALE_LENGTH) {
-    return { 
-      isValid: false, 
-      error: `Il codice fiscale deve essere di ${VALIDATION_RULES.CODICE_FISCALE_LENGTH} caratteri`,
-      severity: 'error',
-      suggestions: ['Verificare che il codice fiscale sia completo']
-    };
-  }
-
-  // Controllo formato base
-  if (!REGEX_PATTERNS.CODICE_FISCALE.test(cleanCF)) {
-    return { 
-      isValid: false, 
-      error: 'Formato codice fiscale non valido',
-      severity: 'error',
-      suggestions: [
-        'Il formato corretto è: 6 lettere + 2 cifre + 1 lettera + 2 cifre + 1 lettera + 3 cifre + 1 lettera',
-        'Esempio: RSSMRA80A01H501U'
-      ]
-    };
-  }
-
-  // Algoritmo di controllo avanzato
-  const { isValid: checksumValid, error: checksumError } = validateCFChecksum(cleanCF);
-  if (!checksumValid) {
-    return {
-      isValid: false,
-      error: checksumError,
-      severity: 'error',
-      confidence: 0.1,
-      riskScore: 0.8
-    };
-  }
-
-  // Controlli di plausibilità avanzati V4.0
-  const plausibilityChecks = validateCFPlausibility(cleanCF);
-  warnings.push(...plausibilityChecks.warnings);
-  suggestions.push(...plausibilityChecks.suggestions);
-  confidence = plausibilityChecks.confidence;
-  riskScore = plausibilityChecks.riskScore;
-
-  // Controllo blacklist (codici fiscali noti per essere problematici)
-  if (isBlacklistedCF(cleanCF)) {
-    warnings.push('Codice fiscale presente in lista di controllo');
-    riskScore += 0.3;
-  }
-
-  return { 
-    isValid: true,
-    warnings: warnings.length > 0 ? warnings : undefined,
-    suggestions: suggestions.length > 0 ? suggestions : undefined,
-    confidence,
-    aiEnhanced: V4_FEATURES.AI_BUSINESS_INSIGHTS,
-    riskScore,
-    complianceStatus: riskScore < 0.3 ? 'compliant' : riskScore < 0.7 ? 'warning' : 'non_compliant',
-    metadata: {
-      formatted: cleanCF,
-      birthYear: extractBirthYear(cleanCF),
-      birthPlace: extractBirthPlace(cleanCF),
-      gender: extractGender(cleanCF)
-    }
-  };
-}
-
-/**
- * Valida il checksum del codice fiscale
- */
-function validateCFChecksum(cf: string): ValidationResult {
-  const oddMap = 'BAFHJNPRTVCESULDGIMOQKWZYX';
-  const evenMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const controlMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
-  let sum = 0;
-  
-  try {
-    for (let i = 0; i < 15; i++) {
-      const char = cf[i];
-      const isOdd = i % 2 === 0;
-      
-      if (isOdd) {
-        // Posizione dispari
-        if (/[0-9]/.test(char)) {
-          const oddValues = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21];
-          sum += oddValues[parseInt(char)];
-        } else {
-          sum += oddMap.indexOf(char);
-        }
-      } else {
-        // Posizione pari
-        if (/[0-9]/.test(char)) {
-          sum += parseInt(char);
-        } else {
-          sum += evenMap.indexOf(char);
-        }
-      }
-    }
-
-    const expectedControl = controlMap[sum % 26];
-    const actualControl = cf[15];
-
-    if (expectedControl !== actualControl) {
-      return { 
-        isValid: false, 
-        error: `Carattere di controllo non valido. Atteso: ${expectedControl}, trovato: ${actualControl}`,
-        severity: 'error'
-      };
-    }
-
-    return { isValid: true };
-  } catch (error) {
-    return { 
-      isValid: false, 
-      error: 'Errore nel calcolo del checksum',
-      severity: 'error'
-    };
-  }
-}
-
-/**
- * Controlli di plausibilità per codice fiscale
- */
-function validateCFPlausibility(cf: string): {
-  confidence: number;
-  riskScore: number;
-  warnings: string[];
-  suggestions: string[];
-} {
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.9;
-  let riskScore = 0.1;
-
-  // Estrai componenti
-  const surname = cf.slice(0, 3);
-  const name = cf.slice(3, 6);
-  const birthYear = parseInt(cf.slice(6, 8));
-  const birthMonth = cf[8];
-  const birthDay = parseInt(cf.slice(9, 11));
-  const birthPlace = cf.slice(11, 15);
-
-  // Controllo mese di nascita
-  const validMonths = 'ABCDEHLMPRST';
-  if (!validMonths.includes(birthMonth)) {
-    warnings.push('Mese di nascita non valido');
-    confidence -= 0.2;
-    riskScore += 0.2;
-  }
-
-  // Controllo giorno di nascita (per donne +40)
-  const actualDay = birthDay > 40 ? birthDay - 40 : birthDay;
-  if (actualDay < 1 || actualDay > 31) {
-    warnings.push('Giorno di nascita non plausibile');
-    confidence -= 0.3;
-    riskScore += 0.3;
-  }
-
-  // Controllo anno di nascita (range ragionevole)
-  const currentYear = new Date().getFullYear() % 100;
-  const fullBirthYear = birthYear <= currentYear ? 2000 + birthYear : 1900 + birthYear;
-  const age = new Date().getFullYear() - fullBirthYear;
-  
-  if (age < 0 || age > 120) {
-    warnings.push('Anno di nascita non plausibile');
-    confidence -= 0.3;
-    riskScore += 0.3;
-  } else if (age > 100) {
-    warnings.push('Età molto avanzata, verificare accuratezza');
-    confidence -= 0.1;
-    riskScore += 0.1;
-  }
-
-  // Controllo codice comune di nascita
-  if (!isValidBirthPlaceCode(birthPlace)) {
-    warnings.push('Codice luogo di nascita non riconosciuto');
-    suggestions.push('Verificare il codice del comune di nascita');
-    confidence -= 0.2;
-    riskScore += 0.2;
-  }
-
-  return { confidence, riskScore, warnings, suggestions };
-}
-
-/**
- * Utility functions per codice fiscale
- */
-function isBlacklistedCF(cf: string): boolean {
-  // Lista di codici fiscali noti per essere problematici
-  const blacklist = [
-    'AAAAAA00A00A000A', // Codice test
-    'BBBBBBB00B00B000B', // Codice test
-  ];
-  return blacklist.includes(cf);
-}
-
-function extractBirthYear(cf: string): number {
-  const yearCode = parseInt(cf.slice(6, 8));
-  const currentYear = new Date().getFullYear() % 100;
-  return yearCode <= currentYear ? 2000 + yearCode : 1900 + yearCode;
-}
-
-function extractGender(cf: string): 'M' | 'F' {
-  const dayCode = parseInt(cf.slice(9, 11));
-  return dayCode > 40 ? 'F' : 'M';
-}
-
-function extractBirthPlace(cf: string): string {
-  return cf.slice(11, 15);
-}
-
-function isValidBirthPlaceCode(code: string): boolean {
-  // Qui si potrebbe implementare un controllo contro database dei comuni
-  // Per ora, controllo formato base
-  return /^[A-Z][0-9]{3}$/.test(code) || /^Z[0-9]{3}$/.test(code); // Z per comuni esteri
-}
-
-// ===== ITALIAN VAT NUMBER VALIDATION V4.0 =====
-
-/**
- * Valida una partita IVA italiana con controlli avanzati
- */
-export function validatePartitaIva(piva: string): EnhancedValidationResult {
-  if (!piva) {
-    return { 
-      isValid: false, 
-      error: 'Partita IVA richiesta',
-      severity: 'error'
-    };
-  }
-
-  const cleanPIVA = piva.replace(/\D/g, '');
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.9;
-  let riskScore = 0.1;
-
-  // Controllo lunghezza
-  if (cleanPIVA.length !== VALIDATION_RULES.PARTITA_IVA_LENGTH) {
-    return { 
-      isValid: false, 
-      error: `La partita IVA deve essere di ${VALIDATION_RULES.PARTITA_IVA_LENGTH} cifre`,
-      severity: 'error',
-      suggestions: ['Verificare che la partita IVA sia completa e non contenga lettere']
-    };
-  }
-
-  // Controllo cifra di controllo (algoritmo Luhn modificato)
-  const { isValid: checksumValid, error: checksumError } = validatePIVAChecksum(cleanPIVA);
-  if (!checksumValid) {
-    return {
-      isValid: false,
-      error: checksumError,
-      severity: 'error',
-      confidence: 0.1,
-      riskScore: 0.9
-    };
-  }
-
-  // Controlli business avanzati V4.0
-  const businessChecks = validatePIVABusiness(cleanPIVA);
-  warnings.push(...businessChecks.warnings);
-  suggestions.push(...businessChecks.suggestions);
-  confidence = businessChecks.confidence;
-  riskScore = businessChecks.riskScore;
-
-  return { 
-    isValid: true,
-    warnings: warnings.length > 0 ? warnings : undefined,
-    suggestions: suggestions.length > 0 ? suggestions : undefined,
-    confidence,
-    aiEnhanced: V4_FEATURES.AI_BUSINESS_INSIGHTS,
-    riskScore,
-    complianceStatus: riskScore < 0.3 ? 'compliant' : riskScore < 0.7 ? 'warning' : 'non_compliant',
-    metadata: {
-      formatted: cleanPIVA,
-      region: extractPIVARegion(cleanPIVA),
-      type: determinePIVAType(cleanPIVA)
-    }
-  };
-}
-
-/**
- * Valida il checksum della partita IVA
- */
-function validatePIVAChecksum(piva: string): ValidationResult {
-  let sum = 0;
-  
-  try {
-    for (let i = 0; i < 10; i++) {
-      let digit = parseInt(piva[i]);
-      
-      if (i % 2 === 1) {
-        digit *= 2;
-        if (digit > 9) {
-          digit = digit - 9;
-        }
-      }
-      
-      sum += digit;
-    }
-
-    const expectedCheck = (10 - (sum % 10)) % 10;
-    const actualCheck = parseInt(piva[10]);
-
-    if (expectedCheck !== actualCheck) {
-      return { 
-        isValid: false, 
-        error: `Cifra di controllo non valida. Attesa: ${expectedCheck}, trovata: ${actualCheck}`,
-        severity: 'error'
-      };
-    }
-
-    return { isValid: true };
-  } catch (error) {
-    return { 
-      isValid: false, 
-      error: 'Errore nel calcolo del checksum',
-      severity: 'error'
-    };
-  }
-}
-
-/**
- * Controlli business per partita IVA
- */
-function validatePIVABusiness(piva: string): {
-  confidence: number;
-  riskScore: number;
-  warnings: string[];
-  suggestions: string[];
-} {
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-  let confidence = 0.9;
-  let riskScore = 0.1;
-
-  // Controllo sequenze sospette
-  if (isSuspiciousPIVASequence(piva)) {
-    warnings.push('Sequenza numerica sospetta');
-    confidence -= 0.2;
-    riskScore += 0.2;
-  }
-
-  // Controllo range uffici provinciali
-  const officeCode = piva.slice(7, 10);
-  if (!isValidOfficeCode(officeCode)) {
-    warnings.push('Codice ufficio provinciale non riconosciuto');
-    confidence -= 0.1;
-    riskScore += 0.1;
-  }
-
-  return { confidence, riskScore, warnings, suggestions };
-}
-
-function isSuspiciousPIVASequence(piva: string): boolean {
-  // Controlla sequenze ripetitive o progressive
-  const digits = piva.split('').map(Number);
-  
-  // Tutti i numeri uguali
-  if (digits.every(d => d === digits[0])) return true;
-  
-  // Sequenza crescente/decrescente
-  let isSequential = true;
-  for (let i = 1; i < digits.length - 1; i++) {
-    if (digits[i] !== digits[i-1] + 1 && digits[i] !== digits[i-1] - 1) {
-      isSequential = false;
-      break;
-    }
-  }
-  
-  return isSequential;
-}
-
-function isValidOfficeCode(code: string): boolean {
-  const officeCode = parseInt(code);
-  // Range validi per uffici IVA italiani (semplificato)
-  return officeCode >= 1 && officeCode <= 999;
-}
-
-function extractPIVARegion(piva: string): string {
-  const officeCode = parseInt(piva.slice(7, 10));
-  
-  // Mapping semplificato codici ufficio -> regioni
-  if (officeCode >= 1 && officeCode <= 99) return 'Nord';
-  if (officeCode >= 100 && officeCode <= 199) return 'Centro';
-  if (officeCode >= 200 && officeCode <= 299) return 'Sud';
-  return 'Non determinata';
-}
-
-function determinePIVAType(piva: string): string {
-  // Analisi euristica del tipo di business basata sui pattern
-  const numeric = piva.slice(0, 7);
-  
-  // Pattern per tipi specifici (molto semplificato)
-  if (numeric.startsWith('0')) return 'Ente pubblico';
-  if (numeric.startsWith('8')) return 'Società di capitali';
-  return 'Standard';
-}
-
-// ===== EUROPEAN VAT NUMBER VALIDATION V4.0 =====
-
-/**
- * Valida partita IVA europea
- */
-export function validateEuropeanVAT(vat: string): EnhancedValidationResult {
-  if (!vat) {
-    return { 
-      isValid: false, 
-      error: 'Partita IVA europea richiesta',
-      severity: 'error'
-    };
-  }
-
-  const cleanVAT = vat.replace(/[\s\-]/g, '').toUpperCase();
+};
