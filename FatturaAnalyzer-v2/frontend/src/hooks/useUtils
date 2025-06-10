@@ -1,0 +1,426 @@
+/**
+ * Utility Hooks V4.0
+ * Hook di utilità per cache, error handling, shortcuts, etc.
+ */
+
+import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { 
+  useUIStore, 
+  useDataStore, 
+  useReconciliationStore,
+  useImportExportStore,
+  useSyncStore,
+  useAIFeaturesEnabled,
+  useCachePreferences 
+} from '@/store';
+
+/**
+ * Hook per gestire il caching intelligente con TTL dinamico
+ */
+export const useSmartCache = () => {
+  const cachePreferences = useCachePreferences();
+  const aiEnabled = useAIFeaturesEnabled();
+  
+  const getCacheTTL = (type: string) => {
+    const baseTTL = cachePreferences?.analytics_cache_ttl || 300000; // 5 min default
+    
+    // TTL dinamico basato su tipo di dato e AI
+    const multipliers = {
+      'dashboard': aiEnabled ? 0.5 : 1, // Refresh più frequente con AI
+      'analytics': aiEnabled ? 0.3 : 1,
+      'reconciliation': 0.2, // Sempre fresco per reconciliation
+      'transactions': 0.7,
+      'invoices': 1,
+      'anagraphics': 2, // Dati più stabili
+    };
+    
+    return baseTTL * (multipliers[type as keyof typeof multipliers] || 1);
+  };
+  
+  const shouldRefetch = (lastFetch: string | null, type: string) => {
+    if (!lastFetch) return true;
+    const ttl = getCacheTTL(type);
+    return Date.now() - new Date(lastFetch).getTime() > ttl;
+  };
+  
+  return { getCacheTTL, shouldRefetch };
+};
+
+/**
+ * Hook per gestione errori intelligente con retry logic
+ */
+export const useSmartErrorHandling = () => {
+  const addNotification = useUIStore(state => state.addNotification);
+  const setError = useUIStore(state => state.setError);
+  
+  const handleError = (error: any, context: string) => {
+    console.error(`[${context}] Error:`, error);
+    
+    const message = error?.message || 'Errore imprevisto';
+    const isNetworkError = message.includes('Failed to fetch') || message.includes('Network Error');
+    
+    setError(context, message);
+    
+    // Notifica solo errori critici o di rete
+    if (isNetworkError || message.includes('Backend')) {
+      addNotification({
+        type: 'error',
+        title: 'Errore di Connessione',
+        message: 'Verifica la connessione al backend',
+        duration: 5000,
+      });
+    }
+  };
+  
+  const retryLogic = (failureCount: number, error: any) => {
+    if (error?.message?.includes('Backend non raggiungibile')) {
+      return failureCount < 3; // Retry connessione backend
+    }
+    if (error?.message?.includes('5')) {
+      return failureCount < 2; // Retry errori server
+    }
+    return false;
+  };
+  
+  return { handleError, retryLogic };
+};
+
+/**
+ * Hook per gestione cache intelligente con invalidazione selettiva
+ */
+export const useIntelligentCache = () => {
+  const queryClient = useQueryClient();
+  const invalidateCache = useDataStore(state => state.invalidateCache);
+  const { getCacheTTL } = useSmartCache();
+  
+  const invalidateByType = (type: 'invoices' | 'transactions' | 'anagraphics' | 'analytics' | 'all') => {
+    switch (type) {
+      case 'invoices':
+        queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        invalidateCache('invoices');
+        break;
+      case 'transactions':
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        invalidateCache('transactions');
+        break;
+      case 'anagraphics':
+        queryClient.invalidateQueries({ queryKey: ['anagraphics'] });
+        invalidateCache('anagraphics');
+        break;
+      case 'analytics':
+        queryClient.invalidateQueries({ queryKey: ['analytics'] });
+        queryClient.invalidateQueries({ queryKey: ['analytics', 'executive'] });
+        queryClient.invalidateQueries({ queryKey: ['analytics', 'operations'] });
+        break;
+      case 'all':
+        queryClient.invalidateQueries();
+        invalidateCache('all');
+        break;
+    }
+  };
+  
+  const prefetchData = async (type: 'invoices' | 'transactions' | 'anagraphics', filters = {}) => {
+    const ttl = getCacheTTL(type);
+    
+    switch (type) {
+      case 'invoices':
+        await queryClient.prefetchQuery({
+          queryKey: ['invoices', filters],
+          queryFn: () => apiClient.getInvoices(filters),
+          staleTime: ttl,
+        });
+        break;
+      case 'transactions':
+        await queryClient.prefetchQuery({
+          queryKey: ['transactions', filters],
+          queryFn: () => apiClient.getTransactions({ ...filters, enhanced: true }),
+          staleTime: ttl,
+        });
+        break;
+      case 'anagraphics':
+        await queryClient.prefetchQuery({
+          queryKey: ['anagraphics', filters],
+          queryFn: () => apiClient.getAnagraphics(filters),
+          staleTime: ttl,
+        });
+        break;
+    }
+  };
+  
+  const getCacheStats = () => {
+    const queryCache = queryClient.getQueryCache();
+    const queries = queryCache.getAll();
+    
+    return {
+      total_queries: queries.length,
+      active_queries: queries.filter(q => q.state.status === 'success').length,
+      loading_queries: queries.filter(q => q.state.status === 'loading').length,
+      error_queries: queries.filter(q => q.state.status === 'error').length,
+      cache_size_estimate: queries.length * 1024, // Stima approssimativa
+    };
+  };
+  
+  const warmupCache = async () => {
+    // Pre-carica dati essenziali
+    await Promise.all([
+      prefetchData('invoices', { page: 1, size: 50 }),
+      prefetchData('transactions', { page: 1, size: 50, enhanced: true }),
+      prefetchData('anagraphics', { page: 1, size: 100 }),
+      queryClient.prefetchQuery({
+        queryKey: ['analytics', 'executive'],
+        queryFn: () => apiClient.getExecutiveDashboardUltra(),
+        staleTime: getCacheTTL('dashboard'),
+      }),
+    ]);
+  };
+  
+  return {
+    invalidateByType,
+    prefetchData,
+    getCacheStats,
+    warmupCache,
+    clearAll: () => {
+      queryClient.clear();
+      invalidateCache('all');
+    },
+  };
+};
+
+/**
+ * Hook per gestione notifiche sistema avanzate
+ */
+export const useSystemNotifications = () => {
+  const addNotification = useUIStore(state => state.addNotification);
+  const notifications = useUIStore(state => state.notifications);
+  const removeNotification = useUIStore(state => state.removeNotification);
+  const { handleError } = useSmartErrorHandling();
+  
+  // Monitora operazioni in background
+  const activeImports = useImportExportStore(state => state.activeImports);
+  const activeExports = useImportExportStore(state => state.activeExports);
+  const syncStatus = useSyncStore(state => state.syncStatus);
+  
+  // Notifiche automatiche per completamento operazioni
+  useEffect(() => {
+    Object.values(activeImports).forEach(importOp => {
+      if (importOp.status === 'completed') {
+        addNotification({
+          type: 'success',
+          title: 'Import Completato',
+          message: `${importOp.type} importato: ${importOp.processed_records}/${importOp.total_records} record`,
+          duration: 5000,
+        });
+      } else if (importOp.status === 'error') {
+        addNotification({
+          type: 'error',
+          title: 'Errore Import',
+          message: `Errore nell'import di ${importOp.type}`,
+          duration: 8000,
+        });
+      }
+    });
+  }, [activeImports, addNotification]);
+  
+  useEffect(() => {
+    Object.values(activeExports).forEach(exportOp => {
+      if (exportOp.status === 'completed') {
+        addNotification({
+          type: 'success',
+          title: 'Export Completato',
+          message: `Export ${exportOp.type} in formato ${exportOp.format} completato`,
+          duration: 5000,
+        });
+      }
+    });
+  }, [activeExports, addNotification]);
+  
+  useEffect(() => {
+    if (syncStatus === 'error') {
+      addNotification({
+        type: 'error',
+        title: 'Errore Sincronizzazione',
+        message: 'Verifica la connessione con Google Drive',
+        duration: 10000,
+      });
+    }
+  }, [syncStatus, addNotification]);
+  
+  const createCustomNotification = (
+    type: 'info' | 'success' | 'warning' | 'error',
+    title: string,
+    message: string,
+    options: {
+      duration?: number;
+      persistent?: boolean;
+      actionLabel?: string;
+      onAction?: () => void;
+    } = {}
+  ) => {
+    addNotification({
+      type,
+      title,
+      message,
+      duration: options.duration || (type === 'error' ? 8000 : 4000),
+      ...options,
+    });
+  };
+  
+  return {
+    notifications,
+    removeNotification,
+    createCustomNotification,
+    hasActiveNotifications: notifications.length > 0,
+    errorNotifications: notifications.filter(n => n.type === 'error'),
+    successNotifications: notifications.filter(n => n.type === 'success'),
+  };
+};
+
+/**
+ * Hook per gestione stato UI avanzato con persistenza
+ */
+export const useAdvancedUIState = () => {
+  const uiStore = useUIStore();
+  const [localState, setLocalState] = useState({
+    activePanel: 'dashboard',
+    viewMode: 'grid',
+    filtersExpanded: false,
+    quickActions: [],
+  });
+  
+  const updateLocalState = (updates: Partial<typeof localState>) => {
+    setLocalState(prev => ({ ...prev, ...updates }));
+  };
+  
+  const resetToDefaults = () => {
+    setLocalState({
+      activePanel: 'dashboard',
+      viewMode: 'grid',
+      filtersExpanded: false,
+      quickActions: [],
+    });
+    uiStore.updateSettings({
+      ai_features_enabled: true,
+      smart_reconciliation_enabled: true,
+      real_time_updates: false,
+    });
+  };
+  
+  return {
+    ...uiStore,
+    localState,
+    updateLocalState,
+    resetToDefaults,
+  };
+};
+
+/**
+ * Hook per gestione keyboard shortcuts
+ */
+export const useKeyboardShortcuts = () => {
+  const cacheManager = useIntelligentCache();
+  const reconciliationWorkflow = useReconciliationWorkflow();
+  
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        switch (event.key) {
+          case 'r':
+            event.preventDefault();
+            cacheManager.invalidateByType('all');
+            break;
+          case 's':
+            event.preventDefault();
+            // Trigger manual save/sync
+            break;
+          case 'f':
+            event.preventDefault();
+            // Focus search
+            break;
+          case 'Enter':
+            if (event.shiftKey) {
+              event.preventDefault();
+              reconciliationWorkflow.applyBestMatches();
+            }
+            break;
+        }
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [cacheManager, reconciliationWorkflow]);
+};
+
+/**
+ * Hook per gestione advanced search con debounce
+ */
+export const useAdvancedSearch = () => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState<'all' | 'invoices' | 'transactions' | 'anagraphics'>('all');
+  const [searchMode, setSearchMode] = useState<'smart' | 'exact' | 'fuzzy' | 'ai_enhanced'>('smart');
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const debouncedQuery = useMemo(() => {
+    const timer = setTimeout(() => searchQuery, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  
+  const searchInvoices = useQuery({
+    queryKey: ['search', 'invoices', searchQuery, searchMode],
+    queryFn: () => apiClient.searchInvoices(searchQuery, undefined, 20),
+    enabled: (searchType === 'all' || searchType === 'invoices') && searchQuery.length >= 2,
+    staleTime: 60000,
+    onError: (error) => handleError(error, 'search-invoices'),
+  });
+  
+  const searchTransactions = useQuery({
+    queryKey: ['search', 'transactions', searchQuery, searchMode],
+    queryFn: () => apiClient.searchTransactions(
+      searchQuery, 
+      20, 
+      false, 
+      searchMode, 
+      aiEnabled,
+      aiEnabled
+    ),
+    enabled: (searchType === 'all' || searchType === 'transactions') && searchQuery.length >= 2,
+    staleTime: 60000,
+    onError: (error) => handleError(error, 'search-transactions'),
+  });
+  
+  const searchAnagraphics = useQuery({
+    queryKey: ['search', 'anagraphics', searchQuery],
+    queryFn: () => apiClient.searchAnagraphics(searchQuery, undefined, 20),
+    enabled: (searchType === 'all' || searchType === 'anagraphics') && searchQuery.length >= 2,
+    staleTime: 60000,
+    onError: (error) => handleError(error, 'search-anagraphics'),
+  });
+  
+  const combinedResults = useMemo(() => {
+    const results = {
+      invoices: searchInvoices.data?.results || [],
+      transactions: searchTransactions.data?.results || [],
+      anagraphics: searchAnagraphics.data?.results || [],
+    };
+    
+    const total = results.invoices.length + results.transactions.length + results.anagraphics.length;
+    const isLoading = searchInvoices.isLoading || searchTransactions.isLoading || searchAnagraphics.isLoading;
+    
+    return { results, total, isLoading };
+  }, [searchInvoices.data, searchTransactions.data, searchAnagraphics.data, 
+      searchInvoices.isLoading, searchTransactions.isLoading, searchAnagraphics.isLoading]);
+  
+  return {
+    searchQuery,
+    setSearchQuery,
+    searchType,
+    setSearchType,
+    searchMode,
+    setSearchMode,
+    ...combinedResults,
+    clearSearch: () => setSearchQuery(''),
+  };
+};
