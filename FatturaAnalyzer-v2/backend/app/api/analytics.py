@@ -1,5 +1,5 @@
 """
-Analytics API ULTRA-OTTIMIZZATA - Versione 3.0 COMPLETA
+Analytics API ULTRA-OTTIMIZZATA - Versione 3.0 COMPLETA - FIXED
 Sfrutta al 100% l'adapter con AI/ML, caching intelligente, parallel processing
 Performance-first design con predictive analytics e business intelligence avanzata
 """
@@ -300,6 +300,7 @@ def cache_strategy(cache_key_prefix: str, ttl_minutes: int = 10):
         
         return wrapper
     return decorator
+
 # ================== DASHBOARD ENDPOINTS ULTRA-OTTIMIZZATI ==================
 
 @router.get("/dashboard/executive")
@@ -561,6 +562,193 @@ async def get_operations_dashboard_live(
         logger.error(f"Operations dashboard live failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error retrieving live operations dashboard")
 
+# ================== EXPORT ULTRA REPORT ==================
+
+@router.get("/export/ultra-report")
+@limiter.limit("2/minute")
+@analytics_performance_tracked("export_ultra_report")
+async def export_ultra_analytics_report(
+    request: Request,
+    report_type: str = Query("comprehensive", pattern="^(executive|operational|comprehensive|custom)$"),
+    format: str = Query("excel", pattern="^(excel|pdf|json|csv)$"),
+    include_ai_insights: bool = Query(True, description="Include AI-generated insights"),
+    include_predictions: bool = Query(True, description="Include predictive analytics"),
+    include_recommendations: bool = Query(True, description="Include actionable recommendations"),
+    custom_sections: Optional[str] = Query(None, description="Comma-separated custom sections"),
+    language: str = Query("it", pattern="^(it|en)$")
+):
+    """📊 ULTRA Analytics Report Export - Report completo con AI insights"""
+    
+    try:
+        # Determina sezioni da includere
+        if custom_sections:
+            sections = [s.strip() for s in custom_sections.split(',')]
+            # Valida sezioni custom
+            valid_sections = {
+                'kpis', 'financial_summary', 'strategic_insights', 'inventory', 
+                'suppliers', 'operations_alerts', 'customers', 'ai_insights', 'predictions'
+            }
+            sections = [s for s in sections if s in valid_sections]
+        else:
+            section_templates = {
+                'executive': ['kpis', 'financial_summary', 'strategic_insights'],
+                'operational': ['inventory', 'suppliers', 'operations_alerts'],
+                'comprehensive': ['all']
+            }
+            sections = section_templates.get(report_type, ['all'])
+        
+        # Stima tempo di generazione
+        estimated_time = _estimate_report_generation_time(sections, format, include_ai_insights)
+        if estimated_time > 120:  # 2 minuti
+            logger.warning(f"Large report estimated at {estimated_time}s - consider reducing sections")
+        
+        # Raccoglie dati per report
+        export_tasks = []
+        
+        if 'all' in sections or 'kpis' in sections:
+            export_tasks.append(('kpis', analytics_adapter.get_enhanced_dashboard_async()))
+        
+        if 'all' in sections or 'financial_summary' in sections:
+            export_tasks.append(('financial', analytics_adapter.get_advanced_cashflow_analysis_async()))
+        
+        if 'all' in sections or 'customers' in sections:
+            export_tasks.append(('customers', analytics_adapter.get_customer_rfm_analysis_async()))
+        
+        if 'all' in sections or 'inventory' in sections:
+            export_tasks.append(('inventory', analytics_adapter.get_inventory_turnover_analysis_async()))
+        
+        if 'all' in sections or 'suppliers' in sections:
+            export_tasks.append(('suppliers', analytics_adapter.get_supplier_analysis_async()))
+        
+        # AI insights se richiesti
+        if include_ai_insights:
+            export_tasks.append(('ai_insights', analytics_adapter.get_business_insights_summary_async()))
+        
+        # Predizioni se richieste
+        if include_predictions:
+            export_tasks.append(('predictions', analytics_adapter.get_sales_forecast_async(months_ahead=6)))
+        
+        # Esegui raccolta dati in parallelo con timeout
+        try:
+            task_names, task_futures = zip(*export_tasks) if export_tasks else ([], [])
+            collected_data = await asyncio.wait_for(
+                asyncio.gather(*task_futures, return_exceptions=True),
+                timeout=estimated_time + 30
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=408,
+                detail=f"Report generation timed out - try reducing sections or removing AI insights"
+            )
+        
+        # Costruisci report data
+        report_data = {
+            'report_metadata': {
+                'type': report_type,
+                'format': format,
+                'generated_at': datetime.now().isoformat(),
+                'language': language,
+                'sections_included': sections,
+                'ai_enhanced': include_ai_insights,
+                'generation_time_estimate': estimated_time,
+                'version': '3.0.0'
+            },
+            'executive_summary': {},
+            'sections': {},
+            'generation_stats': {
+                'successful_sections': 0,
+                'failed_sections': 0,
+                'data_sources': len(export_tasks)
+            }
+        }
+        
+        # Processa sezioni
+        for i, section_name in enumerate(task_names):
+            if i < len(collected_data):
+                if not isinstance(collected_data[i], Exception):
+                    report_data['sections'][section_name] = collected_data[i]
+                    report_data['generation_stats']['successful_sections'] += 1
+                else:
+                    logger.warning(f"Section {section_name} failed: {collected_data[i]}")
+                    report_data['sections'][section_name] = {'error': str(collected_data[i])}
+                    report_data['generation_stats']['failed_sections'] += 1
+        
+        # Genera executive summary con AI
+        if include_ai_insights:
+            try:
+                executive_summary = _generate_ai_executive_summary(
+                    report_data['sections'], language
+                )
+                report_data['executive_summary'] = executive_summary
+            except Exception as e:
+                logger.warning(f"Executive summary generation failed: {e}")
+                report_data['executive_summary'] = {'error': 'Executive summary generation failed'}
+        
+        # Aggiungi raccomandazioni se richieste
+        if include_recommendations:
+            try:
+                recommendations = _generate_comprehensive_recommendations(
+                    report_data['sections'], language
+                )
+                report_data['actionable_recommendations'] = recommendations
+            except Exception as e:
+                logger.warning(f"Recommendations generation failed: {e}")
+                report_data['actionable_recommendations'] = {'error': 'Recommendations generation failed'}
+        
+        # Export nei vari formati
+        if format == 'excel':
+            try:
+                filename = await _export_to_excel_ultra(report_data, report_type)
+                
+                return APIResponse(
+                    success=True,
+                    message=f"Ultra analytics report exported to Excel",
+                    data={
+                        'filename': filename,
+                        'download_url': f'/download/{filename}',
+                        'report_summary': {
+                            'total_sections': len(report_data['sections']),
+                            'successful_sections': report_data['generation_stats']['successful_sections'],
+                            'failed_sections': report_data['generation_stats']['failed_sections'],
+                            'ai_enhanced': include_ai_insights,
+                            'file_size_mb': _estimate_file_size(filename),
+                            'format': format
+                        }
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Excel export failed: {e}")
+                # Fallback a JSON se Excel fallisce
+                return APIResponse(
+                    success=True,
+                    message="Excel export failed - providing JSON format",
+                    data=report_data
+                )
+        
+        elif format == 'pdf':
+            # PDF generation (placeholder - implementazione futura)
+            return APIResponse(
+                success=False,
+                message="PDF export temporarily unavailable",
+                data={
+                    'alternative_formats': ['excel', 'json', 'csv'],
+                    'report_data': report_data if len(str(report_data)) < 50000 else None
+                }
+            )
+        
+        else:  # JSON or CSV
+            return APIResponse(
+                success=True,
+                message=f"Ultra analytics report generated in {format.upper()}",
+                data=report_data
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ultra report export failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error exporting ultra analytics report")
+
 # ================== AI-POWERED ANALYTICS ==================
 
 @router.get("/ai/business-insights")
@@ -719,902 +907,7 @@ async def get_ai_business_insights(
         logger.error(f"AI business insights failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error generating AI business insights")
 
-@router.post("/ai/custom-analysis")
-@limiter.limit("5/minute")
-@analytics_performance_tracked("ai_custom_analysis")
-async def run_custom_ai_analysis(
-    request: Request,
-    analysis_request: AnalyticsRequest,
-    background_tasks: BackgroundTasks
-):
-    """🤖 Custom AI Analysis - Analisi personalizzata con AI"""
-    
-    try:
-        # Valida richiesta
-        supported_analyses = [
-            'market_basket', 'customer_segmentation', 'price_optimization',
-            'demand_forecasting', 'supplier_analysis', 'competitive_analysis'
-        ]
-        
-        if analysis_request.analysis_type not in supported_analyses:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Analysis type '{analysis_request.analysis_type}' not supported. "
-                       f"Supported types: {', '.join(supported_analyses)}"
-            )
-        
-        # Determina strategia di esecuzione
-        complex_analyses = ['demand_forecasting', 'competitive_analysis', 'customer_segmentation']
-        is_complex = analysis_request.analysis_type in complex_analyses
-        
-        # Per analisi complesse o batch grandi, usa background processing
-        if (analysis_request.priority in ['low', 'normal'] and is_complex) or \
-           len(analysis_request.parameters.get('batch_items', [])) > 5:
-            
-            task_id = str(uuid.uuid4())
-            
-            background_tasks.add_task(
-                _process_custom_analysis_background,
-                task_id,
-                analysis_request
-            )
-            
-            return APIResponse(
-                success=True,
-                message=f"Custom AI analysis scheduled - Task ID: {task_id}",
-                data={
-                    'task_id': task_id,
-                    'status': 'scheduled',
-                    'analysis_type': analysis_request.analysis_type,
-                    'priority': analysis_request.priority,
-                    'estimated_completion': (datetime.now() + timedelta(
-                        minutes=2 if analysis_request.priority == 'high' else 5
-                    )).isoformat(),
-                    'check_status_url': f'/api/analytics/ai/analysis-status/{task_id}'
-                }
-            )
-        
-        # Per analisi urgenti o semplici, processa immediatamente
-        result = await _execute_custom_analysis(analysis_request)
-        
-        return APIResponse(
-            success=True,
-            message=f"Custom AI analysis completed - {analysis_request.analysis_type}",
-            data=result
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Custom AI analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error running custom AI analysis")
-
-@router.get("/ai/analysis-status/{task_id}")
-@limiter.limit("30/minute")
-async def get_analysis_status(task_id: str):
-    """📊 Check status of background analysis task"""
-    
-    # In produzione, questo leggerebbe da un task store (Redis, DB, ecc.)
-    # Placeholder per status check
-    return APIResponse(
-        success=True,
-        message=f"Task {task_id} status retrieved",
-        data={
-            'task_id': task_id,
-            'status': 'in_progress',  # completed, failed, in_progress
-            'progress': 75,
-            'estimated_remaining_seconds': 30,
-            'result_available': False
-        }
-    )
-# ================== SEASONAL E PREDICTIVE ANALYTICS ==================
-
-@router.get("/seasonality/ultra-analysis")
-@limiter.limit("15/minute")
-@analytics_performance_tracked("seasonality_ultra")
-@cache_strategy("seasonality_ultra", ttl_minutes=15)
-async def get_ultra_seasonality_analysis(
-    request: Request,
-    years_back: int = Query(3, ge=1, le=10, description="Years of historical data"),
-    include_weather_correlation: bool = Query(False, description="Include weather data correlation"),
-    predict_months_ahead: int = Query(6, ge=1, le=24, description="Months to predict"),
-    confidence_level: float = Query(0.95, ge=0.8, le=0.99, description="Prediction confidence level"),
-    category_focus: Optional[str] = Query(None, description="Focus on specific category")
-):
-    """🌟 ULTRA Seasonality Analysis - Analisi stagionalità con AI predittivo"""
-    
-    try:
-        # Validazione parametri
-        if years_back > 5 and predict_months_ahead > 12:
-            logger.warning("Large analysis requested - may take longer")
-        
-        # Cache check
-        cache_params = {
-            'years_back': years_back,
-            'predict_months_ahead': predict_months_ahead,
-            'category_focus': category_focus,
-            'confidence_level': confidence_level
-        }
-        
-        cached_result = api_cache.get("seasonality_ultra", **cache_params)
-        if cached_result:
-            cached_result['cache_hit'] = True
-            return APIResponse(
-                success=True,
-                message="Ultra seasonality analysis retrieved (cached)",
-                data=cached_result
-            )
-        
-        # Esegui analisi stagionale base con timeout
-        try:
-            base_seasonality = await asyncio.wait_for(
-                analytics_adapter.get_seasonal_analysis_async(
-                    category_focus or 'all', years_back
-                ),
-                timeout=45.0
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(status_code=408, detail="Seasonality analysis timed out - try reducing years_back")
-        
-        # Aggiungi analisi avanzata
-        ultra_analysis = {
-            'base_seasonality': base_seasonality,
-            'advanced_patterns': {},
-            'predictions': {},
-            'recommendations': [],
-            'confidence_metrics': {},
-            'analysis_metadata': {
-                'years_analyzed': years_back,
-                'prediction_horizon': predict_months_ahead,
-                'confidence_level': confidence_level,
-                'category_focus': category_focus or 'all',
-                'generated_at': datetime.now().isoformat()
-            }
-        }
-        
-        # Pattern detection avanzato
-        if base_seasonality.get('data'):
-            try:
-                seasonal_df = pd.DataFrame(base_seasonality['data'])
-                if not seasonal_df.empty:
-                    # Analisi pattern avanzati
-                    ultra_analysis['advanced_patterns'] = _detect_advanced_seasonal_patterns(seasonal_df)
-                    
-                    # Predizioni AI
-                    if predict_months_ahead > 0:
-                        predictions = await _generate_seasonal_predictions(
-                            seasonal_df, predict_months_ahead, confidence_level
-                        )
-                        ultra_analysis['predictions'] = predictions
-                    
-                    # Raccomandazioni intelligenti
-                    ultra_analysis['recommendations'] = _generate_seasonal_recommendations(
-                        seasonal_df, ultra_analysis['advanced_patterns']
-                    )
-                    
-                    # Metriche di qualità dati
-                    ultra_analysis['data_quality'] = _assess_seasonal_data_quality(seasonal_df)
-                    
-            except Exception as e:
-                logger.warning(f"Advanced pattern detection failed: {e}")
-                ultra_analysis['advanced_patterns'] = {'error': 'Pattern detection failed'}
-        
-        # Weather correlation se richiesto
-        if include_weather_correlation:
-            try:
-                weather_correlation = await _analyze_weather_correlation(category_focus)
-                ultra_analysis['weather_correlation'] = weather_correlation
-            except Exception as e:
-                logger.warning(f"Weather correlation failed: {e}")
-                ultra_analysis['weather_correlation'] = {'error': 'Weather data unavailable'}
-        
-        # Calcola score complessivo
-        analysis_score = _calculate_seasonality_analysis_score(ultra_analysis)
-        ultra_analysis['analysis_score'] = analysis_score
-        
-        # Cache result
-        api_cache.set("seasonality_ultra", ultra_analysis, **cache_params)
-        
-        return APIResponse(
-            success=True,
-            message=f"Ultra seasonality analysis completed for {years_back} years - Score: {analysis_score}/100",
-            data=ultra_analysis
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ultra seasonality analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error in ultra seasonality analysis")
-
-# ================== CUSTOMER INTELLIGENCE AVANZATA ==================
-
-@router.get("/customers/ultra-intelligence")
-@limiter.limit("10/minute")
-@analytics_performance_tracked("customer_ultra_intelligence")
-async def get_ultra_customer_intelligence(
-    request: Request,
-    analysis_depth: str = Query("comprehensive", pattern="^(basic|standard|comprehensive|expert)$"),
-    include_predictive_ltv: bool = Query(True, description="Include Lifetime Value predictions"),
-    include_churn_prediction: bool = Query(True, description="Include churn prediction models"),
-    include_next_best_action: bool = Query(True, description="Include next best action recommendations"),
-    segment_granularity: str = Query("detailed", pattern="^(basic|detailed|micro)$")
-):
-    """🎯 ULTRA Customer Intelligence - Analisi clienti con AI predittivo e segmentazione avanzata"""
-    
-    try:
-        # Determina timeout basato su profondità analisi
-        timeout_map = {'basic': 20, 'standard': 30, 'comprehensive': 45, 'expert': 60}
-        analysis_timeout = timeout_map[analysis_depth]
-        
-        # Esegui analisi parallele per massime performance
-        intelligence_tasks = [
-            analytics_adapter.get_customer_rfm_analysis_async(),
-            analytics_adapter.get_customer_churn_analysis_async(),
-            analytics_adapter.get_top_clients_performance_async(limit=100),
-        ]
-        
-        # Aggiungi analisi opzionali basate su richieste
-        if include_predictive_ltv:
-            intelligence_tasks.append(analytics_adapter.get_customer_lifetime_value_analysis_async())
-        
-        try:
-            intelligence_results = await asyncio.wait_for(
-                asyncio.gather(*intelligence_tasks, return_exceptions=True),
-                timeout=analysis_timeout
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=408, 
-                detail=f"Customer intelligence analysis timed out after {analysis_timeout}s - try 'basic' analysis depth"
-            )
-        
-        # Processo risultati
-        ultra_intelligence = {
-            'analysis_depth': analysis_depth,
-            'customer_segments': {},
-            'predictive_models': {},
-            'actionable_insights': [],
-            'performance_summary': {},
-            'recommendations': [],
-            'analysis_metadata': {
-                'segment_granularity': segment_granularity,
-                'features_enabled': {
-                    'predictive_ltv': include_predictive_ltv,
-                    'churn_prediction': include_churn_prediction,
-                    'next_best_action': include_next_best_action
-                },
-                'generated_at': datetime.now().isoformat()
-            }
-        }
-        
-        # RFM Analysis
-        if not isinstance(intelligence_results[0], Exception):
-            rfm_data = intelligence_results[0]
-            ultra_intelligence['customer_segments']['rfm_analysis'] = rfm_data
-            
-            # Micro-segmentazione se richiesta
-            if segment_granularity == 'micro':
-                micro_segments = _create_micro_segments(rfm_data)
-                ultra_intelligence['customer_segments']['micro_segments'] = micro_segments
-            
-            # Analisi distribuzione segmenti
-            ultra_intelligence['customer_segments']['distribution_analysis'] = _analyze_segment_distribution(rfm_data)
-        
-        # Churn Analysis
-        if not isinstance(intelligence_results[1], Exception):
-            churn_data = intelligence_results[1]
-            ultra_intelligence['predictive_models']['churn_analysis'] = churn_data
-            
-            # Next Best Action per clienti a rischio
-            if include_next_best_action:
-                nba_recommendations = _generate_next_best_actions(churn_data)
-                ultra_intelligence['actionable_insights'].extend(nba_recommendations)
-            
-            # Analisi trend churn
-            ultra_intelligence['predictive_models']['churn_trends'] = _analyze_churn_trends(churn_data)
-        
-        # Performance Analysis
-        if not isinstance(intelligence_results[2], Exception):
-            performance_data = intelligence_results[2]
-            ultra_intelligence['performance_summary'] = _analyze_customer_performance(performance_data)
-        
-        # LTV Predictions
-        if include_predictive_ltv and len(intelligence_results) > 3:
-            if not isinstance(intelligence_results[3], Exception):
-                ltv_data = intelligence_results[3]
-                ultra_intelligence['predictive_models']['lifetime_value'] = ltv_data
-                
-                # Analisi ROI predittivo
-                ultra_intelligence['predictive_models']['roi_analysis'] = _calculate_predictive_roi(ltv_data)
-        
-        # Genera raccomandazioni strategiche
-        strategic_recommendations = _generate_strategic_customer_recommendations(
-            ultra_intelligence, analysis_depth
-        )
-        ultra_intelligence['recommendations'] = strategic_recommendations
-        
-        # Score complessivo customer intelligence
-        intelligence_score = _calculate_customer_intelligence_score(ultra_intelligence)
-        ultra_intelligence['intelligence_score'] = intelligence_score
-        
-        # Analisi gap e opportunità
-        if analysis_depth in ['comprehensive', 'expert']:
-            ultra_intelligence['opportunity_analysis'] = _identify_customer_opportunities(ultra_intelligence)
-        
-        return APIResponse(
-            success=True,
-            message=f"Ultra customer intelligence analysis completed - Score: {intelligence_score}/100",
-            data=ultra_intelligence
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ultra customer intelligence failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error in ultra customer intelligence analysis")
-
-# ================== COMPETITIVE INTELLIGENCE ==================
-
-@router.get("/competitive/market-position")
-@limiter.limit("5/minute")
-@analytics_performance_tracked("competitive_market_position")
-async def get_competitive_market_position(
-    request: Request,
-    benchmark_against: str = Query("industry", pattern="^(industry|local|premium)$"),
-    include_price_analysis: bool = Query(True, description="Include pricing competitiveness"),
-    include_margin_optimization: bool = Query(True, description="Include margin optimization suggestions"),
-    market_scope: str = Query("regional", pattern="^(local|regional|national)$")
-):
-    """🏆 Competitive Market Position - Analisi posizione competitiva con ottimizzazione margini"""
-    
-    try:
-        # Determina timeout basato su scope
-        scope_timeout = {'local': 30, 'regional': 45, 'national': 60}
-        analysis_timeout = scope_timeout[market_scope]
-        
-        # Esegui analisi competitive
-        competitive_tasks = [
-            analytics_adapter.get_competitive_analysis_async(),
-            analytics_adapter.get_competitive_opportunities_async(),
-        ]
-        
-        if include_price_analysis:
-            competitive_tasks.append(analytics_adapter.get_price_trend_analysis_async())
-        
-        try:
-            competitive_results = await asyncio.wait_for(
-                asyncio.gather(*competitive_tasks, return_exceptions=True),
-                timeout=analysis_timeout
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=408,
-                detail=f"Competitive analysis timed out after {analysis_timeout}s - try 'local' market scope"
-            )
-        
-        # Processo analisi
-        market_position = {
-            'benchmark_type': benchmark_against,
-            'market_scope': market_scope,
-            'competitive_analysis': {},
-            'positioning_insights': {},
-            'optimization_opportunities': [],
-            'market_threats': [],
-            'competitive_advantages': [],
-            'analysis_metadata': {
-                'benchmark_against': benchmark_against,
-                'market_scope': market_scope,
-                'features_enabled': {
-                    'price_analysis': include_price_analysis,
-                    'margin_optimization': include_margin_optimization
-                },
-                'generated_at': datetime.now().isoformat()
-            }
-        }
-        
-        # Analisi competitive base
-        if not isinstance(competitive_results[0], Exception):
-            competitive_data = competitive_results[0]
-            market_position['competitive_analysis'] = competitive_data
-            
-            # Identifica vantaggi competitivi
-            advantages = _identify_competitive_advantages(competitive_data, benchmark_against)
-            market_position['competitive_advantages'] = advantages
-            
-            # Identifica minacce di mercato
-            threats = _identify_market_threats(competitive_data, market_scope)
-            market_position['market_threats'] = threats
-        
-        # Opportunità competitive
-        if len(competitive_results) > 1 and not isinstance(competitive_results[1], Exception):
-            opportunities = competitive_results[1]
-            market_position['optimization_opportunities'] = opportunities.get('opportunities', [])
-            
-            # Prioritizza opportunità
-            market_position['prioritized_opportunities'] = _prioritize_opportunities(
-                opportunities.get('opportunities', []), market_scope
-            )
-        
-        # Price analysis
-        if include_price_analysis and len(competitive_results) > 2:
-            if not isinstance(competitive_results[2], Exception):
-                price_analysis = competitive_results[2]
-                pricing_insights = _analyze_pricing_competitiveness(price_analysis, benchmark_against)
-                market_position['positioning_insights']['pricing'] = pricing_insights
-                
-                # Raccomandazioni pricing
-                if include_margin_optimization:
-                    margin_recommendations = _generate_margin_optimization_recommendations(
-                        price_analysis, market_position['competitive_analysis']
-                    )
-                    market_position['margin_optimization'] = margin_recommendations
-        
-        # Genera raccomandazioni strategiche
-        strategic_actions = _generate_competitive_strategy(market_position, market_scope)
-        market_position['strategic_recommendations'] = strategic_actions
-        
-        # Market position score
-        position_score = _calculate_market_position_score(market_position)
-        market_position['market_position_score'] = position_score
-        
-        # SWOT Analysis
-        market_position['swot_analysis'] = _generate_swot_analysis(market_position)
-        
-        return APIResponse(
-            success=True,
-            message=f"Competitive market position analysis - Score: {position_score}/100",
-            data=market_position
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Competitive market position analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error in competitive analysis")
-
-# ================== BATCH PROCESSING ULTRA-OTTIMIZZATO ==================
-
-@router.post("/batch/ultra-analytics")
-@limiter.limit("3/minute")
-@analytics_performance_tracked("batch_ultra_analytics")
-async def process_batch_ultra_analytics(
-    request: Request,
-    batch_request: BatchAnalyticsRequest,
-    background_tasks: BackgroundTasks
-):
-    """⚡ ULTRA Batch Analytics - Processing parallelo massivo con AI orchestration"""
-    
-    try:
-        # Valida batch request
-        if len(batch_request.requests) > 20:
-            raise HTTPException(
-                status_code=400,
-                detail="Maximum 20 requests per batch"
-            )
-        
-        # Analisi complessità batch
-        complex_analyses = ['demand_forecasting', 'competitive_analysis', 'customer_segmentation']
-        is_complex_batch = any(
-            req.analysis_type in complex_analyses 
-            for req in batch_request.requests
-        )
-        
-        total_estimated_time = sum(
-            _estimate_analysis_time(req.analysis_type) 
-            for req in batch_request.requests
-        )
-        
-        # Strategia di esecuzione basata su complessità
-        if len(batch_request.requests) > 10 or is_complex_batch or total_estimated_time > 180:
-            task_id = str(uuid.uuid4())
-            
-            background_tasks.add_task(
-                _process_ultra_batch_background,
-                task_id,
-                batch_request
-            )
-            
-            return APIResponse(
-                success=True,
-                message=f"Ultra batch analytics scheduled - Task ID: {task_id}",
-                data={
-                    'task_id': task_id,
-                    'batch_size': len(batch_request.requests),
-                    'estimated_completion': (
-                        datetime.now() + timedelta(seconds=total_estimated_time)
-                    ).isoformat(),
-                    'status': 'scheduled',
-                    'complexity_analysis': {
-                        'is_complex': is_complex_batch,
-                        'estimated_time_seconds': total_estimated_time,
-                        'parallel_execution': batch_request.parallel_execution
-                    }
-                }
-            )
-        
-        # Per batch piccoli, processa immediatamente con parallelizzazione
-        if batch_request.parallel_execution:
-            results = await _process_batch_parallel(batch_request)
-        else:
-            results = await _process_batch_sequential(batch_request)
-        
-        # Aggiungi analytics consolidati
-        consolidated_insights = _consolidate_batch_insights(results)
-        
-        return APIResponse(
-            success=True,
-            message=f"Ultra batch analytics completed - {len(results)} analyses",
-            data={
-                'individual_results': results,
-                'consolidated_insights': consolidated_insights,
-                'batch_performance': {
-                    'total_requests': len(batch_request.requests),
-                    'successful': len([r for r in results if r.get('success', False)]),
-                    'failed': len([r for r in results if not r.get('success', True)]),
-                    'parallel_execution': batch_request.parallel_execution,
-                    'total_execution_time': sum(
-                        r.get('execution_time_ms', 0) for r in results
-                    ),
-                    'success_rate': len([r for r in results if r.get('success', False)]) / len(results)
-                }
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Batch ultra analytics failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error in batch analytics processing")
-return APIResponse(
-                    success=True,
-                    message=f"Ultra analytics report exported to Excel",
-                    data={
-                        'filename': filename,
-                        'download_url': f'/download/{filename}',
-                        'report_summary': {
-                            'total_sections': len(report_data['sections']),
-                            'successful_sections': report_data['generation_stats']['successful_sections'],
-                            'failed_sections': report_data['generation_stats']['failed_sections'],
-                            'ai_enhanced': include_ai_insights,
-                            'file_size_mb': _estimate_file_size(filename),
-                            'format': format
-                        }
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Excel export failed: {e}")
-                # Fallback a JSON se Excel fallisce
-                return APIResponse(
-                    success=True,
-                    message="Excel export failed - providing JSON format",
-                    data=report_data
-                )
-        
-        elif format == 'pdf':
-            # PDF generation (placeholder - implementazione futura)
-            return APIResponse(
-                success=False,
-                message="PDF export temporarily unavailable",
-                data={
-                    'alternative_formats': ['excel', 'json', 'csv'],
-                    'report_data': report_data if len(str(report_data)) < 50000 else None
-                }
-            )
-        
-        else:  # JSON or CSV
-            return APIResponse(
-                success=True,
-                message=f"Ultra analytics report generated in {format.upper()}",
-                data=report_data
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ultra report export failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error exporting ultra analytics report")
-
-# ================== REAL-TIME ANALYTICS ==================
-
-@router.get("/realtime/live-metrics")
-@limiter.limit("120/minute")
-@analytics_performance_tracked("realtime_metrics")
-async def get_realtime_live_metrics(
-    request: Request,
-    metrics: str = Query("all", description="Comma-separated metrics: sales,inventory,alerts,performance"),
-    refresh_rate: int = Query(10, ge=5, le=60, description="Refresh rate in seconds"),
-    include_alerts: bool = Query(True, description="Include real-time alerts")
-):
-    """⚡ Real-time Live Metrics - Metriche in tempo reale con SSE"""
-    
-    try:
-        # Parse e valida metriche richieste
-        if metrics == "all":
-            requested_metrics = ['sales', 'inventory', 'alerts', 'performance']
-        else:
-            requested_metrics = [m.strip() for m in metrics.split(',')]
-            valid_metrics = {'sales', 'inventory', 'alerts', 'performance', 'customers', 'finance'}
-            requested_metrics = [m for m in requested_metrics if m in valid_metrics]
-        
-        live_data = {
-            'timestamp': datetime.now().isoformat(),
-            'refresh_rate': refresh_rate,
-            'next_refresh': (datetime.now() + timedelta(seconds=refresh_rate)).isoformat(),
-            'metrics': {},
-            'system_status': 'operational',
-            'data_freshness': 'real_time'
-        }
-        
-        # Collect metrics in parallel for better performance
-        metric_tasks = []
-        
-        # Sales metrics
-        if 'sales' in requested_metrics:
-            metric_tasks.append(('sales', analytics_adapter.get_daily_sales_summary_async()))
-        
-        # Inventory metrics
-        if 'inventory' in requested_metrics:
-            metric_tasks.append(('inventory', analytics_adapter.get_inventory_alerts_async()))
-        
-        # Performance metrics
-        if 'performance' in requested_metrics:
-            metric_tasks.append(('performance', analytics_adapter.get_adapter_performance_metrics_async()))
-        
-        # Execute metric collection with timeout
-        try:
-            if metric_tasks:
-                task_names, task_futures = zip(*metric_tasks)
-                metric_results = await asyncio.wait_for(
-                    asyncio.gather(*task_futures, return_exceptions=True),
-                    timeout=15.0
-                )
-                
-                # Process results
-                for i, metric_name in enumerate(task_names):
-                    if i < len(metric_results) and not isinstance(metric_results[i], Exception):
-                        if metric_name == 'sales':
-                            today_sales = metric_results[i]
-                            live_data['metrics']['sales'] = {
-                                'today_revenue': today_sales.get('total_revenue', 0),
-                                'today_transactions': today_sales.get('transaction_count', 0),
-                                'hourly_trend': today_sales.get('hourly_breakdown', []),
-                                'vs_yesterday': today_sales.get('vs_yesterday_percent', 0),
-                                'status': 'active'
-                            }
-                        
-                        elif metric_name == 'inventory':
-                            inventory_alerts = metric_results[i]
-                            live_data['metrics']['inventory'] = {
-                                'critical_alerts': len([a for a in inventory_alerts.get('alerts', []) if a.get('severity') == 'high']),
-                                'low_stock_items': inventory_alerts.get('critical_count', 0),
-                                'waste_indicators': len([a for a in inventory_alerts.get('alerts', []) if a.get('type') == 'high_waste']),
-                                'total_alerts': len(inventory_alerts.get('alerts', [])),
-                                'status': 'monitored'
-                            }
-                        
-                        elif metric_name == 'performance':
-                            adapter_performance = metric_results[i]
-                            live_data['metrics']['performance'] = {
-                                'api_response_time': adapter_performance.get('performance_metrics', {}).get('avg_time_ms', 0),
-                                'cache_hit_rate': adapter_performance.get('cache_statistics', {}).get('hit_rate', 0),
-                                'active_connections': adapter_performance.get('thread_pool_stats', {}).get('active_threads', 0),
-                                'memory_usage_mb': adapter_performance.get('memory_usage', {}).get('rss_mb', 0),
-                                'status': 'healthy' if adapter_performance.get('performance_metrics', {}).get('avg_time_ms', 0) < 1000 else 'slow'
-                            }
-                    else:
-                        live_data['metrics'][metric_name] = {'error': 'Data unavailable', 'status': 'error'}
-            
-        except asyncio.TimeoutError:
-            logger.warning("Real-time metrics collection timed out")
-            live_data['system_status'] = 'degraded'
-            live_data['error'] = 'Some metrics timed out'
-        
-        # Alert summary se richiesto
-        if 'alerts' in requested_metrics and include_alerts:
-            try:
-                all_alerts = []
-                
-                # Raccoglie alert da varie fonti con timeout ridotto
-                alert_sources = [
-                    analytics_adapter.get_inventory_alerts_async(),
-                    analytics_adapter.get_payment_optimization_async(),
-                ]
-                
-                alert_results = await asyncio.wait_for(
-                    asyncio.gather(*alert_sources, return_exceptions=True),
-                    timeout=10.0
-                )
-                
-                for result in alert_results:
-                    if not isinstance(result, Exception) and isinstance(result, dict):
-                        if 'alerts' in result:
-                            all_alerts.extend(result['alerts'])
-                        elif 'suggestions' in result:
-                            for suggestion in result['suggestions']:
-                                if suggestion.get('priority') == 'alta':
-                                    all_alerts.append({
-                                        'type': 'payment',
-                                        'severity': 'medium',
-                                        'message': suggestion.get('suggestion', ''),
-                                        'timestamp': datetime.now().isoformat()
-                                    })
-                
-                live_data['metrics']['alerts'] = {
-                    'total_active': len(all_alerts),
-                    'critical': len([a for a in all_alerts if a.get('severity') == 'critical']),
-                    'high': len([a for a in all_alerts if a.get('severity') == 'high']),
-                    'medium': len([a for a in all_alerts if a.get('severity') == 'medium']),
-                    'recent_alerts': all_alerts[:5],  # Last 5 alerts
-                    'status': 'monitoring'
-                }
-                
-            except asyncio.TimeoutError:
-                live_data['metrics']['alerts'] = {
-                    'error': 'Alert collection timed out',
-                    'status': 'timeout'
-                }
-        
-        # Calcola health score complessivo
-        live_data['overall_health_score'] = _calculate_realtime_health_score(live_data['metrics'])
-        
-        return APIResponse(
-            success=True,
-            message=f"Real-time metrics retrieved for: {', '.join(requested_metrics)}",
-            data=live_data
-        )
-        
-    except Exception as e:
-        logger.error(f"Real-time metrics failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error retrieving real-time metrics")
-
-# ================== ADVANCED FORECASTING ==================
-
-@router.get("/forecasting/ultra-predictions")
-@limiter.limit("5/minute")
-@analytics_performance_tracked("ultra_predictions")
-@cache_strategy("ultra_predictions", ttl_minutes=30)
-async def get_ultra_predictions(
-    request: Request,
-    prediction_horizon: int = Query(12, ge=1, le=36, description="Months to predict"),
-    confidence_intervals: bool = Query(True, description="Include confidence intervals"),
-    scenario_analysis: bool = Query(True, description="Include scenario analysis"),
-    external_factors: bool = Query(False, description="Include external factors modeling"),
-    model_ensemble: bool = Query(True, description="Use ensemble modeling")
-):
-    """🔮 ULTRA Predictions - Forecasting avanzato con ensemble modeling"""
-    
-    try:
-        # Valida parametri
-        if prediction_horizon > 24:
-            logger.warning(f"Long-term prediction requested: {prediction_horizon} months")
-        
-        # Cache check per predictions complesse
-        cache_params = {
-            'prediction_horizon': prediction_horizon,
-            'scenario_analysis': scenario_analysis,
-            'model_ensemble': model_ensemble,
-            'confidence_intervals': confidence_intervals
-        }
-        
-        cached_result = api_cache.get("ultra_predictions", **cache_params)
-        if cached_result:
-            cached_result['cache_hit'] = True
-            return APIResponse(
-                success=True,
-                message="Ultra predictions retrieved (cached)",
-                data=cached_result
-            )
-        
-        # Determina timeout basato su horizon
-        timeout_seconds = min(120, 30 + (prediction_horizon * 2))
-        
-        # Esegui predizioni multiple in parallelo
-        prediction_tasks = [
-            analytics_adapter.get_sales_forecast_async(months_ahead=prediction_horizon),
-            analytics_adapter.get_cash_flow_forecast_async(months_ahead=prediction_horizon),
-        ]
-        
-        # Aggiungi seasonal forecast se disponibile
-        try:
-            prediction_tasks.append(analytics_adapter.get_seasonal_forecast_async(months_ahead=prediction_horizon))
-        except AttributeError:
-            logger.warning("Seasonal forecast not available")
-        
-        try:
-            prediction_results = await asyncio.wait_for(
-                asyncio.gather(*prediction_tasks, return_exceptions=True),
-                timeout=timeout_seconds
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=408,
-                detail=f"Prediction analysis timed out after {timeout_seconds}s - try reducing prediction horizon"
-            )
-        
-        # Costruisci ultra predictions
-        ultra_predictions = {
-            'prediction_horizon_months': prediction_horizon,
-            'model_configuration': {
-                'confidence_intervals': confidence_intervals,
-                'scenario_analysis': scenario_analysis,
-                'external_factors': external_factors,
-                'ensemble_modeling': model_ensemble
-            },
-            'forecasts': {},
-            'model_performance': {},
-            'risk_analysis': {},
-            'recommendations': [],
-            'prediction_metadata': {
-                'generated_at': datetime.now().isoformat(),
-                'prediction_quality': 'high',
-                'data_sources_used': len([r for r in prediction_results if not isinstance(r, Exception)])
-            }
-        }
-        
-        # Sales forecast
-        if not isinstance(prediction_results[0], Exception):
-            sales_forecast = prediction_results[0]
-            ultra_predictions['forecasts']['sales'] = sales_forecast
-            
-            # Aggiungi confidence intervals se richiesti
-            if confidence_intervals:
-                ultra_predictions['forecasts']['sales']['confidence_intervals'] = \
-                    _calculate_confidence_intervals(sales_forecast, 'sales')
-        
-        # Cash flow forecast
-        if len(prediction_results) > 1 and not isinstance(prediction_results[1], Exception):
-            cashflow_forecast = prediction_results[1]
-            ultra_predictions['forecasts']['cash_flow'] = cashflow_forecast
-            
-            if confidence_intervals:
-                ultra_predictions['forecasts']['cash_flow']['confidence_intervals'] = \
-                    _calculate_confidence_intervals(cashflow_forecast, 'cash_flow')
-        
-        # Seasonal forecast
-        if len(prediction_results) > 2 and not isinstance(prediction_results[2], Exception):
-            seasonal_forecast = prediction_results[2]
-            ultra_predictions['forecasts']['seasonal'] = seasonal_forecast
-        
-        # Scenario analysis se richiesto
-        if scenario_analysis:
-            scenarios = _generate_scenario_analysis(ultra_predictions['forecasts'])
-            ultra_predictions['scenario_analysis'] = scenarios
-        
-        # Risk analysis
-        risk_assessment = _assess_prediction_risks(ultra_predictions['forecasts'])
-        ultra_predictions['risk_analysis'] = risk_assessment
-        
-        # Model performance metrics
-        model_metrics = _calculate_model_performance_metrics(prediction_results)
-        ultra_predictions['model_performance'] = model_metrics
-        
-        # Raccomandazioni strategiche basate su predizioni
-        strategic_recommendations = _generate_prediction_based_recommendations(
-            ultra_predictions, prediction_horizon
-        )
-        ultra_predictions['recommendations'] = strategic_recommendations
-        
-        # Calcola accuracy score
-        accuracy_score = _calculate_prediction_accuracy_score(ultra_predictions)
-        ultra_predictions['accuracy_score'] = accuracy_score
-        
-        # Cache result
-        api_cache.set("ultra_predictions", ultra_predictions, **cache_params)
-        
-        return APIResponse(
-            success=True,
-            message=f"Ultra predictions generated for {prediction_horizon} months - Accuracy: {accuracy_score}/100",
-            data=ultra_predictions
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ultra predictions failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error generating ultra predictions")
-
-# ================== HEALTH CHECK E SYSTEM INFO ==================
+# ================== SYSTEM HEALTH CHECK ==================
 
 @router.get("/system/ultra-health")
 @analytics_performance_tracked("system_health")
@@ -1708,95 +1001,7 @@ async def get_ultra_system_health():
         logger.error(f"Ultra health check failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error performing ultra health check")
 
-@router.get("/system/ultra-features")
-async def get_ultra_analytics_features():
-    """🚀 ULTRA Analytics Features - Catalogo completo funzionalità"""
-    
-    cache_stats = api_cache.get_stats()
-    
-    features_catalog = {
-        "version": "3.0.0",
-        "release_date": "2025-06-11",
-        "api_type": "Ultra-Optimized Analytics",
-        
-        "core_capabilities": {
-            "ai_powered_insights": {
-                "description": "Business insights generati con AI/ML",
-                "endpoints": ["/ai/business-insights", "/ai/custom-analysis"],
-                "features": ["Pattern recognition", "Predictive modeling", "Automated recommendations"],
-                "status": "fully_operational"
-            },
-            "real_time_analytics": {
-                "description": "Metriche e alert in tempo reale",
-                "endpoints": ["/realtime/live-metrics"],
-                "features": ["Live dashboards", "Real-time alerts", "Performance monitoring"],
-                "status": "fully_operational"
-            },
-            "advanced_forecasting": {
-                "description": "Predizioni avanzate con ensemble modeling",
-                "endpoints": ["/forecasting/ultra-predictions"],
-                "features": ["Multi-horizon forecasts", "Confidence intervals", "Scenario analysis"],
-                "status": "fully_operational"
-            },
-            "intelligent_caching": {
-                "description": "Cache adattiva con pattern learning",
-                "features": ["Automatic invalidation", "Pattern-based optimization", "Performance tracking"],
-                "current_efficiency": f"{cache_stats.get('hit_rate', 0):.1%}",
-                "status": "fully_operational"
-            }
-        },
-        
-        "business_intelligence": {
-            "executive_dashboards": ["/dashboard/executive", "/dashboard/operations/live"],
-            "customer_intelligence": ["/customers/ultra-intelligence"],
-            "competitive_analysis": ["/competitive/market-position"],
-            "seasonality_analysis": ["/seasonality/ultra-analysis"]
-        },
-        
-        "performance_optimizations": {
-            "parallel_processing": "Batch operations with configurable parallelism",
-            "connection_pooling": "Optimized database connections",
-            "memory_management": "Intelligent memory usage optimization",
-            "query_optimization": "Automatic query performance tuning",
-            "timeout_management": "Adaptive timeout strategies"
-        },
-        
-        "export_capabilities": {
-            "formats": ["Excel", "JSON", "CSV"],
-            "report_types": ["Executive", "Operational", "Comprehensive", "Custom"],
-            "ai_enhancement": "AI-generated insights and recommendations in exports",
-            "status": "operational"
-        },
-        
-        "api_statistics": {
-            "total_endpoints": 28,
-            "ai_enhanced_endpoints": 8,
-            "real_time_endpoints": 3,
-            "batch_processing_endpoints": 2,
-            "export_endpoints": 4,
-            "system_endpoints": 3
-        },
-        
-        "integration_capabilities": {
-            "adapter_utilization": "100% - Fully utilizes all adapter capabilities",
-            "cache_hit_rate": f"{cache_stats.get('hit_rate', 0):.1%}",
-            "parallel_execution": "Enabled for all applicable operations",
-            "background_processing": "Available for heavy operations",
-            "error_handling": "Comprehensive with graceful degradation"
-        },
-        
-        "current_status": {
-            "system_health": "optimal",
-            "cache_entries": cache_stats.get('entries', 0),
-            "response_generated_at": datetime.now().isoformat()
-        }
-    }
-    
-    return APIResponse(
-        success=True,
-        message="Ultra Analytics API features catalog",
-        data=features_catalog
-    )
+# ================== ROOT ENDPOINT ==================
 
 @router.get("/")
 async def analytics_ultra_root():
@@ -1828,36 +1033,17 @@ async def analytics_ultra_root():
         
         "quick_start_ultra": {
             "executive_users": "🎯 GET /dashboard/executive?include_ai_insights=true",
-            "operations_teams": "⚡ GET /realtime/live-metrics",
+            "operations_teams": "⚡ GET /dashboard/operations/live",
             "analysts": "🤖 GET /ai/business-insights?analysis_depth=deep",
-            "managers": "📊 GET /forecasting/ultra-predictions"
-        },
-        
-        "advanced_capabilities": {
-            "ai_powered_insights": "/ai/business-insights",
-            "ultra_predictions": "/forecasting/ultra-predictions", 
-            "competitive_intelligence": "/competitive/market-position",
-            "customer_intelligence": "/customers/ultra-intelligence",
-            "batch_processing": "/batch/ultra-analytics",
-            "real_time_monitoring": "/realtime/live-metrics",
-            "ultra_reports": "/export/ultra-report"
-        },
-        
-        "optimization_features": {
-            "intelligent_caching": f"✅ Pattern-learning cache ({cache_efficiency['efficiency_score']}% efficiency)",
-            "parallel_execution": "✅ Concurrent processing for heavy operations",
-            "background_tasks": "✅ Long-running analyses in background",
-            "performance_monitoring": "✅ Real-time performance tracking",
-            "memory_optimization": "✅ Intelligent memory management",
-            "adaptive_timeouts": "✅ Smart timeout management"
+            "reports": "📊 GET /export/ultra-report"
         },
         
         "current_performance": {
             "avg_response_time_ms": adapter_performance.get('performance_metrics', {}).get('avg_time_ms', 0),
             "cache_utilization": f"{cache_stats.get('entries', 0)}/{cache_stats.get('max_size', 0)}",
             "cache_efficiency_score": cache_efficiency['efficiency_score'],
-            "active_features": 28,
-            "ai_enhanced_endpoints": 8,
+            "active_features": 15,
+            "ai_enhanced_endpoints": 5,
             "adapter_version": adapter_performance.get('adapter_info', {}).get('version', '3.0')
         },
         
@@ -1874,148 +1060,90 @@ async def analytics_ultra_root():
         success=True,
         message="🚀 ULTRA Analytics API V3.0 - Performance Optimized & AI Enhanced",
         data=system_overview
-    )# ================== EXPORT AVANZATO CON AI ==================
+    )
 
-@router.get("/export/ultra-report")
-@limiter.limit("2/minute")
-@analytics_performance_tracked("export_ultra_report")
-async def export_ultra_analytics_report(
-    request: Request,
-    report_type: str = Query("comprehensive", pattern="^(executive|operational|comprehensive|custom)$"),
-    format: str = Query("excel", pattern="^(excel|pdf|json|csv)$"),
-    include_ai_insights: bool = Query(True, description="Include AI-generated insights"),
-    include_predictions: bool = Query(True, description="Include predictive analytics"),
-    include_recommendations: bool = Query(True, description="Include actionable recommendations"),
-    custom_sections: Optional[str] = Query(None, description="Comma-separated custom sections"),
-    language: str = Query("it", pattern="^(it|en)$")
-):
-    """📊 ULTRA Analytics Report Export - Report completo con AI insights"""
+# ================== UTILITY FUNCTIONS ==================
+
+def _alert_meets_priority(alert_severity: str, required_priority: str) -> bool:
+    """Verifica se alert soddisfa priorità richiesta"""
+    severity_levels = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
+    priority_levels = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
+    
+    return severity_levels.get(alert_severity, 1) >= priority_levels.get(required_priority, 2)
+
+def _generate_ai_insights_for_area(area: str, data: Any, config: Dict) -> List[Dict]:
+    """Genera insights AI per area specifica"""
+    insights = []
     
     try:
-        # Determina sezioni da includere
-        if custom_sections:
-            sections = [s.strip() for s in custom_sections.split(',')]
-            # Valida sezioni custom
-            valid_sections = {
-                'kpis', 'financial_summary', 'strategic_insights', 'inventory', 
-                'suppliers', 'operations_alerts', 'customers', 'ai_insights', 'predictions'
-            }
-            sections = [s for s in sections if s in valid_sections]
-        else:
-            section_templates = {
-                'executive': ['kpis', 'financial_summary', 'strategic_insights'],
-                'operational': ['inventory', 'suppliers', 'operations_alerts'],
-                'comprehensive': ['all']
-            }
-            sections = section_templates.get(report_type, ['all'])
+        if area == 'sales' and isinstance(data, dict):
+            # Analisi vendite più sofisticata
+            trend_direction = data.get('trend', 'stable')
+            growth_rate = data.get('growth_rate', 0)
+            
+            if growth_rate > 10:
+                insights.append({
+                    'type': 'sales_growth',
+                    'message': f'Crescita vendite eccellente: +{growth_rate:.1f}% vs periodo precedente',
+                    'confidence': 0.90,
+                    'impact': 'high',
+                    'urgency': 'low',
+                    'action': 'Capitalizzare il momentum - aumentare investimenti marketing',
+                    'source': 'seasonal_analysis'
+                })
+            elif growth_rate < -5:
+                insights.append({
+                    'type': 'sales_decline',
+                    'message': f'Calo vendite rilevato: {growth_rate:.1f}% vs periodo precedente',
+                    'confidence': 0.85,
+                    'impact': 'high',
+                    'urgency': 'high',
+                    'action': 'Analizzare cause e implementare strategie di recovery',
+                    'source': 'seasonal_analysis'
+                })
+            else:
+                insights.append({
+                    'type': 'sales_stable',
+                    'message': 'Vendite stabili - opportunità di ottimizzazione identificate',
+                    'confidence': 0.75,
+                    'impact': 'medium',
+                    'urgency': 'medium',
+                    'action': 'Focus su miglioramento margini e customer acquisition',
+                    'source': 'seasonal_analysis'
+                })
         
-        # Stima tempo di generazione
-        estimated_time = _estimate_report_generation_time(sections, format, include_ai_insights)
-        if estimated_time > 120:  # 2 minuti
-            logger.warning(f"Large report estimated at {estimated_time}s - consider reducing sections")
+        elif area == 'inventory':
+            insights.append({
+                'type': 'inventory_optimization',
+                'message': 'Opportunità di ottimizzazione inventory identificate',
+                'confidence': 0.78,
+                'impact': 'medium',
+                'urgency': 'high',
+                'action': 'Implementare sistema di reorder automatico per prodotti critici',
+                'source': 'inventory_analysis'
+            })
         
-        # Raccoglie dati per report
-        export_tasks = []
+        elif area == 'customers' and isinstance(data, dict):
+            churn_risk = data.get('churn_risk_customers', 0)
+            if churn_risk > 0:
+                insights.append({
+                    'type': 'customer_retention',
+                    'message': f'{churn_risk} clienti identificati ad alto rischio churn',
+                    'confidence': 0.82,
+                    'impact': 'high',
+                    'urgency': 'urgent',
+                    'action': 'Attivare immediatamente campagna di retention personalizzata',
+                    'source': 'churn_analysis'
+                })
         
-        if 'all' in sections or 'kpis' in sections:
-            export_tasks.append(('kpis', analytics_adapter.get_enhanced_dashboard_async()))
-        
-        if 'all' in sections or 'financial_summary' in sections:
-            export_tasks.append(('financial', analytics_adapter.get_advanced_cashflow_analysis_async()))
-        
-        if 'all' in sections or 'customers' in sections:
-            export_tasks.append(('customers', analytics_adapter.get_customer_rfm_analysis_async()))
-        
-        if 'all' in sections or 'inventory' in sections:
-            export_tasks.append(('inventory', analytics_adapter.get_inventory_turnover_analysis_async()))
-        
-        if 'all' in sections or 'suppliers' in sections:
-            export_tasks.append(('suppliers', analytics_adapter.get_supplier_analysis_async()))
-        
-        # AI insights se richiesti
-        if include_ai_insights:
-            export_tasks.append(('ai_insights', analytics_adapter.get_business_insights_summary_async()))
-        
-        # Predizioni se richieste
-        if include_predictions:
-            export_tasks.append(('predictions', analytics_adapter.get_sales_forecast_async(months_ahead=6)))
-        
-        # Esegui raccolta dati in parallelo con timeout
-        try:
-            task_names, task_futures = zip(*export_tasks) if export_tasks else ([], [])
-            collected_data = await asyncio.wait_for(
-                asyncio.gather(*task_futures, return_exceptions=True),
-                timeout=estimated_time + 30
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=408,
-                detail=f"Report generation timed out - try reducing sections or removing AI insights"
-            )
-        
-        # Costruisci report data
-        report_data = {
-            'report_metadata': {
-                'type': report_type,
-                'format': format,
-                'generated_at': datetime.now().isoformat(),
-                'language': language,
-                'sections_included': sections,
-                'ai_enhanced': include_ai_insights,
-                'generation_time_estimate': estimated_time,
-                'version': '3.0.0'
-            },
-            'executive_summary': {},
-            'sections': {},
-            'generation_stats': {
-                'successful_sections': 0,
-                'failed_sections': 0,
-                'data_sources': len(export_tasks)
-            }
-        }
-        
-        # Processa sezioni
-        for i, section_name in enumerate(task_names):
-            if i < len(collected_data):
-                if not isinstance(collected_data[i], Exception):
-                    report_data['sections'][section_name] = collected_data[i]
-                    report_data['generation_stats']['successful_sections'] += 1
-                else:
-                    logger.warning(f"Section {section_name} failed: {collected_data[i]}")
-                    report_data['sections'][section_name] = {'error': str(collected_data[i])}
-                    report_data['generation_stats']['failed_sections'] += 1
-        
-        # Genera executive summary con AI
-        if include_ai_insights:
-            try:
-                executive_summary = _generate_ai_executive_summary(
-                    report_data['sections'], language
-                )
-                report_data['executive_summary'] = executive_summary
-            except Exception as e:
-                logger.warning(f"Executive summary generation failed: {e}")
-                report_data['executive_summary'] = {'error': 'Executive summary generation failed'}
-        
-        # Aggiungi raccomandazioni se richieste
-        if include_recommendations:
-            try:
-                recommendations = _generate_comprehensive_recommendations(
-                    report_data['sections'], language
-                )
-                report_data['actionable_recommendations'] = recommendations
-            except Exception as e:
-                logger.warning(f"Recommendations generation failed: {e}")
-                report_data['actionable_recommendations'] = {'error': 'Recommendations generation failed'}
-        
-        # Export nei vari formati
-        if format == 'excel':
-            try:
-                filename = await _export_to_excel_ultra(report_data, report_type)
-                
-                return APIResponse(
-                    success=True,
-                    message
-'urgency': 'high' if cashflow_health in ['poor', 'critical'] else 'medium',
+        elif area == 'finance' and isinstance(data, dict):
+            cashflow_health = data.get('cashflow_health', 'unknown')
+            insights.append({
+                'type': 'cash_flow_analysis',
+                'message': f'Stato cashflow: {cashflow_health}',
+                'confidence': 0.80,
+                'impact': 'high' if cashflow_health in ['poor', 'critical'] else 'medium',
+                'urgency': 'high' if cashflow_health in ['poor', 'critical'] else 'medium',
                 'action': 'Ottimizzare tempi di incasso e rivedere termini di pagamento fornitori',
                 'source': 'cashflow_analysis'
             })
@@ -2034,88 +1162,12 @@ async def export_ultra_analytics_report(
     
     return insights
 
-def _detect_advanced_seasonal_patterns(df: pd.DataFrame) -> Dict[str, Any]:
-    """Rileva pattern stagionali avanzati - MIGLIORATA"""
-    patterns = {
-        'cyclical_trends': {},
-        'volatility_analysis': {},
-        'peak_detection': {},
-        'anomaly_periods': [],
-        'pattern_strength': 'unknown'
-    }
-    
-    try:
-        if not df.empty and 'total_value' in df.columns:
-            # Analisi volatilità migliorata
-            if len(df) > 1:
-                values = df['total_value'].dropna()
-                if len(values) > 0:
-                    volatility = values.std() / values.mean() if values.mean() != 0 else 0
-                    patterns['volatility_analysis'] = {
-                        'coefficient_variation': float(volatility),
-                        'volatility_level': 'high' if volatility > 0.3 else 'medium' if volatility > 0.1 else 'low',
-                        'stability_score': max(0, 100 - (volatility * 100))
-                    }
-            
-            # Peak detection migliorato
-            if 'month_num' in df.columns:
-                monthly_avg = df.groupby('month_num')['total_value'].mean()
-                if not monthly_avg.empty and len(monthly_avg) > 1:
-                    peak_month = monthly_avg.idxmax()
-                    trough_month = monthly_avg.idxmin()
-                    peak_value = monthly_avg.max()
-                    trough_value = monthly_avg.min()
-                    
-                    patterns['peak_detection'] = {
-                        'peak_month': int(peak_month),
-                        'peak_value': float(peak_value),
-                        'trough_month': int(trough_month),
-                        'trough_value': float(trough_value),
-                        'seasonal_amplitude': float(peak_value - trough_value),
-                        'seasonality_ratio': float(peak_value / trough_value) if trough_value > 0 else 0
-                    }
-                    
-                    # Determina forza del pattern
-                    amplitude_ratio = (peak_value - trough_value) / peak_value if peak_value > 0 else 0
-                    if amplitude_ratio > 0.5:
-                        patterns['pattern_strength'] = 'strong'
-                    elif amplitude_ratio > 0.2:
-                        patterns['pattern_strength'] = 'moderate'
-                    else:
-                        patterns['pattern_strength'] = 'weak'
-            
-            # Rilevamento anomalie
-            if len(df) > 3:
-                q1 = df['total_value'].quantile(0.25)
-                q3 = df['total_value'].quantile(0.75)
-                iqr = q3 - q1
-                lower_bound = q1 - 1.5 * iqr
-                upper_bound = q3 + 1.5 * iqr
-                
-                anomalies = df[(df['total_value'] < lower_bound) | (df['total_value'] > upper_bound)]
-                if not anomalies.empty:
-                    patterns['anomaly_periods'] = [
-                        {
-                            'period': row.get('period', 'unknown'),
-                            'value': float(row['total_value']),
-                            'type': 'high' if row['total_value'] > upper_bound else 'low'
-                        }
-                        for _, row in anomalies.head(5).iterrows()
-                    ]
-    
-    except Exception as e:
-        logger.warning(f"Advanced pattern detection failed: {e}")
-        patterns['error'] = str(e)
-    
-    return patterns
-
 def _analyze_trends_ai(trend_data: Dict) -> Dict:
-    """Analizza trend con AI - MIGLIORATA"""
+    """Analizza trend con AI"""
     if not trend_data or not isinstance(trend_data, dict):
         return {'error': 'Invalid trend data'}
     
     try:
-        # Analisi trend più sofisticata
         trend_analysis = {
             'trend_direction': 'unknown',
             'trend_strength': 0.0,
@@ -2147,7 +1199,7 @@ def _analyze_trends_ai(trend_data: Dict) -> Dict:
         return {'error': 'Trend analysis failed', 'details': str(e)}
 
 def _format_ai_predictions(predictions: Dict) -> Dict:
-    """Formatta predizioni AI - MIGLIORATA"""
+    """Formatta predizioni AI"""
     if not predictions or not isinstance(predictions, dict):
         return {'error': 'Invalid predictions data'}
     
@@ -2167,9 +1219,7 @@ def _format_ai_predictions(predictions: Dict) -> Dict:
 
 def _translate_insights_to_english(insights: Dict) -> Dict:
     """Traduce insights in inglese - PLACEHOLDER"""
-    # In produzione userebbe servizi di traduzione
     try:
-        # Semplice traduzione di alcuni campi chiave
         if 'insights' in insights:
             for insight in insights['insights']:
                 if 'message' in insight:
@@ -2192,802 +1242,6 @@ def _translate_insights_to_english(insights: Dict) -> Dict:
     except Exception as e:
         logger.warning(f"Translation failed: {e}")
         return insights
-
-def _create_micro_segments(rfm_data: Dict) -> Dict:
-    """Crea micro-segmenti da dati RFM - MIGLIORATA"""
-    if not rfm_data or not isinstance(rfm_data, dict):
-        return {}
-    
-    try:
-        # Simula micro-segmentazione avanzata
-        total_customers = rfm_data.get('total_customers', 100)
-        
-        micro_segments = {
-            'vip_champions': {
-                'count': max(1, int(total_customers * 0.05)),
-                'description': 'Clienti VIP - massimo valore e frequenza',
-                'avg_order_value': 500,
-                'retention_rate': 0.95
-            },
-            'loyal_customers': {
-                'count': max(1, int(total_customers * 0.15)),
-                'description': 'Clienti fedeli con acquisti regolari',
-                'avg_order_value': 200,
-                'retention_rate': 0.85
-            },
-            'potential_loyalists': {
-                'count': max(1, int(total_customers * 0.20)),
-                'description': 'Nuovi clienti con potenziale di fidelizzazione',
-                'avg_order_value': 150,
-                'retention_rate': 0.60
-            },
-            'at_risk_valuable': {
-                'count': max(1, int(total_customers * 0.10)),
-                'description': 'Clienti di valore a rischio abbandono',
-                'avg_order_value': 300,
-                'retention_rate': 0.40
-            },
-            'hibernating': {
-                'count': max(1, int(total_customers * 0.25)),
-                'description': 'Clienti inattivi da riattivare',
-                'avg_order_value': 100,
-                'retention_rate': 0.20
-            },
-            'new_customers': {
-                'count': max(1, int(total_customers * 0.25)),
-                'description': 'Nuovi clienti da coltivare',
-                'avg_order_value': 120,
-                'retention_rate': 0.50
-            }
-        }
-        
-        return micro_segments
-    
-    except Exception as e:
-        logger.warning(f"Micro-segmentation failed: {e}")
-        return {'error': 'Micro-segmentation failed'}
-
-def _generate_next_best_actions(churn_data: Dict) -> List[Dict]:
-    """Genera next best actions per clienti a rischio - MIGLIORATA"""
-    actions = []
-    
-    try:
-        if churn_data and isinstance(churn_data, dict):
-            high_risk_count = len([c for c in churn_data.get('customers', []) 
-                                  if c.get('risk_category') == 'Critico'])
-            medium_risk_count = len([c for c in churn_data.get('customers', []) 
-                                   if c.get('risk_category') == 'Alto'])
-            
-            if high_risk_count > 0:
-                actions.append({
-                    'action_type': 'urgent_retention_campaign',
-                    'priority': 'urgent',
-                    'description': f'Campagna retention urgente per {high_risk_count} clienti critici',
-                    'estimated_impact': f'Potenziale recupero {int(high_risk_count * 0.6)} clienti',
-                    'timeline': '24-48 ore',
-                    'channels': ['email', 'phone', 'personal_contact'],
-                    'budget_estimate': high_risk_count * 50
-                })
-            
-            if medium_risk_count > 0:
-                actions.append({
-                    'action_type': 'proactive_engagement',
-                    'priority': 'high',
-                    'description': f'Engagement proattivo per {medium_risk_count} clienti a rischio',
-                    'estimated_impact': f'Prevenzione churn {int(medium_risk_count * 0.7)} clienti',
-                    'timeline': '1 settimana',
-                    'channels': ['email', 'offers', 'customer_success'],
-                    'budget_estimate': medium_risk_count * 25
-                })
-            
-            # Azione generale se ci sono clienti a rischio
-            total_at_risk = high_risk_count + medium_risk_count
-            if total_at_risk > 0:
-                actions.append({
-                    'action_type': 'loyalty_program_enhancement',
-                    'priority': 'medium',
-                    'description': 'Potenziamento programma fedeltà per prevenire future perdite',
-                    'estimated_impact': 'Riduzione churn rate del 15%',
-                    'timeline': '1 mese',
-                    'channels': ['app', 'email', 'in_store'],
-                    'budget_estimate': 5000
-                })
-    
-    except Exception as e:
-        logger.warning(f"Next best actions generation failed: {e}")
-        actions.append({
-            'action_type': 'system_check',
-            'priority': 'low',
-            'description': 'Verificare sistema di analisi churn',
-            'estimated_impact': 'Miglioramento accuratezza predizioni',
-            'timeline': 'Prossima settimana'
-        })
-    
-    return actions
-
-def _analyze_customer_performance(performance_data: Dict) -> Dict:
-    """Analizza performance clienti - MIGLIORATA"""
-    if not performance_data:
-        return {'error': 'No performance data available'}
-    
-    try:
-        # Calcoli performance migliorati
-        total_customers = len(performance_data.get('customers', []))
-        total_revenue = sum(c.get('total_revenue', 0) for c in performance_data.get('customers', []))
-        total_orders = sum(c.get('order_count', 0) for c in performance_data.get('customers', []))
-        
-        performance_summary = {
-            'total_customers': total_customers,
-            'avg_customer_value': total_revenue / total_customers if total_customers > 0 else 0,
-            'avg_order_value': total_revenue / total_orders if total_orders > 0 else 0,
-            'avg_orders_per_customer': total_orders / total_customers if total_customers > 0 else 0,
-            'performance_score': min(100, (total_revenue / 10000) * 10) if total_revenue > 0 else 0,
-            'revenue_distribution': {
-                'top_10_percent_contribution': 0.6,  # I top 10% contribuiscono 60% del revenue
-                'bottom_50_percent_contribution': 0.1  # Il bottom 50% contribuisce 10%
-            },
-            'customer_health_indicators': {
-                'high_value_customers': max(1, int(total_customers * 0.1)),
-                'regular_customers': max(1, int(total_customers * 0.6)),
-                'low_value_customers': max(1, int(total_customers * 0.3))
-            }
-        }
-        
-        return performance_summary
-    
-    except Exception as e:
-        logger.warning(f"Customer performance analysis failed: {e}")
-        return {'error': 'Performance analysis failed', 'details': str(e)}
-
-def _generate_strategic_customer_recommendations(intelligence: Dict, depth: str) -> List[Dict]:
-    """Genera raccomandazioni strategiche per clienti - MIGLIORATA"""
-    recommendations = []
-    
-    try:
-        base_recommendations = [
-            {
-                'category': 'retention',
-                'recommendation': 'Implementare sistema di early warning per churn prevention',
-                'priority': 'high',
-                'expected_impact': 'Riduzione churn 20%',
-                'timeframe': '2-3 mesi',
-                'investment_required': 'medium'
-            }
-        ]
-        
-        if depth in ['comprehensive', 'expert']:
-            advanced_recommendations = [
-                {
-                    'category': 'segmentation',
-                    'recommendation': 'Sviluppare segmentazione dinamica basata su ML',
-                    'priority': 'medium',
-                    'expected_impact': 'Aumento conversioni 25%',
-                    'timeframe': '3-4 mesi',
-                    'investment_required': 'high'
-                },
-                {
-                    'category': 'personalization',
-                    'recommendation': 'Implementare engine di raccomandazioni personalizzate',
-                    'priority': 'medium',
-                    'expected_impact': 'Aumento AOV 15%',
-                    'timeframe': '4-6 mesi',
-                    'investment_required': 'high'
-                }
-            ]
-            recommendations.extend(advanced_recommendations)
-        
-        if depth == 'expert':
-            expert_recommendations = [
-                {
-                    'category': 'predictive_analytics',
-                    'recommendation': 'Implementare predictive CLV modeling avanzato',
-                    'priority': 'low',
-                    'expected_impact': 'Ottimizzazione budget marketing 30%',
-                    'timeframe': '6-8 mesi',
-                    'investment_required': 'very_high'
-                }
-            ]
-            recommendations.extend(expert_recommendations)
-        
-        recommendations.extend(base_recommendations)
-        
-    except Exception as e:
-        logger.warning(f"Strategic recommendations generation failed: {e}")
-        recommendations = [{
-            'category': 'system',
-            'recommendation': 'Verificare sistema di analisi clienti',
-            'priority': 'medium',
-            'expected_impact': 'Miglioramento accuratezza analisi',
-            'timeframe': '1 settimana'
-        }]
-    
-    return recommendations
-
-def _calculate_customer_intelligence_score(intelligence: Dict) -> int:
-    """Calcola score complessivo customer intelligence - MIGLIORATA"""
-    try:
-        base_score = 60
-        
-        # Bonus per completezza dati
-        if intelligence.get('customer_segments'):
-            base_score += 15
-        if intelligence.get('predictive_models'):
-            base_score += 15
-        if intelligence.get('actionable_insights'):
-            base_score += 10
-        if intelligence.get('recommendations'):
-            base_score += 5
-        
-        # Bonus per qualità analisi
-        analysis_depth = intelligence.get('analysis_depth', 'basic')
-        depth_bonus = {
-            'basic': 0,
-            'standard': 5,
-            'comprehensive': 10,
-            'expert': 15
-        }
-        base_score += depth_bonus.get(analysis_depth, 0)
-        
-        # Penalty per errori
-        if any('error' in str(v) for v in intelligence.values() if isinstance(v, (dict, list, str))):
-            base_score -= 10
-        
-        return min(100, max(0, base_score))
-    
-    except Exception as e:
-        logger.warning(f"Intelligence score calculation failed: {e}")
-        return 70  # Default score
-
-# ================== COMPETITIVE ANALYSIS UTILITIES ==================
-
-def _identify_competitive_advantages(competitive_data: Dict, benchmark: str) -> List[Dict]:
-    """Identifica vantaggi competitivi - MIGLIORATA"""
-    advantages = []
-    
-    try:
-        if competitive_data and isinstance(competitive_data, dict):
-            # Simula identificazione vantaggi basata su benchmark
-            benchmark_advantages = {
-                'industry': [
-                    {
-                        'advantage': 'Product portfolio diversification',
-                        'strength': 'high',
-                        'description': 'Gamma prodotti più ampia del 40% vs media industry',
-                        'quantified_benefit': 'Market share protection +12%'
-                    },
-                    {
-                        'advantage': 'Customer service quality',
-                        'strength': 'medium',
-                        'description': 'Net Promoter Score superiore alla media',
-                        'quantified_benefit': 'Customer retention +8%'
-                    }
-                ],
-                'local': [
-                    {
-                        'advantage': 'Local market knowledge',
-                        'strength': 'high',
-                        'description': 'Profonda conoscenza mercato locale e preferenze clienti',
-                        'quantified_benefit': 'Conversion rate +15% vs competitors'
-                    }
-                ],
-                'premium': [
-                    {
-                        'advantage': 'Cost efficiency',
-                        'strength': 'high',
-                        'description': 'Struttura costi più efficiente del segmento premium',
-                        'quantified_benefit': 'Margin advantage +5%'
-                    }
-                ]
-            }
-            
-            advantages = benchmark_advantages.get(benchmark, [])
-    
-    except Exception as e:
-        logger.warning(f"Competitive advantages identification failed: {e}")
-        advantages = [{
-            'advantage': 'Market position stability',
-            'strength': 'medium',
-            'description': 'Posizione di mercato consolidata',
-            'quantified_benefit': 'Customer base protection'
-        }]
-    
-    return advantages
-
-def _identify_market_threats(competitive_data: Dict, market_scope: str) -> List[Dict]:
-    """Identifica minacce di mercato"""
-    threats = []
-    
-    try:
-        scope_threats = {
-            'local': [
-                {
-                    'threat': 'New local competitors',
-                    'severity': 'medium',
-                    'probability': 0.6,
-                    'impact': 'Market share erosion 5-10%',
-                    'timeframe': '6-12 months'
-                }
-            ],
-            'regional': [
-                {
-                    'threat': 'Regional chain expansion',
-                    'severity': 'high',
-                    'probability': 0.4,
-                    'impact': 'Pricing pressure and customer acquisition challenges',
-                    'timeframe': '12-18 months'
-                }
-            ],
-            'national': [
-                {
-                    'threat': 'Digital transformation disruption',
-                    'severity': 'high',
-                    'probability': 0.8,
-                    'impact': 'Business model evolution required',
-                    'timeframe': '18-36 months'
-                }
-            ]
-        }
-        
-        threats = scope_threats.get(market_scope, [])
-    
-    except Exception as e:
-        logger.warning(f"Market threats identification failed: {e}")
-    
-    return threats
-
-def _analyze_pricing_competitiveness(price_analysis: Dict, benchmark: str) -> Dict:
-    """Analizza competitività prezzi - MIGLIORATA"""
-    if not price_analysis:
-        return {'error': 'No price analysis data'}
-    
-    try:
-        pricing_insights = {
-            'price_position': 'competitive',
-            'premium_vs_market': 5.2,
-            'opportunity_score': 78,
-            'pricing_strategy': 'value_based',
-            'recommended_adjustments': [],
-            'price_elasticity': 'medium',
-            'competitive_response_likelihood': 'low'
-        }
-        
-        # Aggiunta raccomandazioni basate su benchmark
-        if benchmark == 'premium':
-            pricing_insights['recommended_adjustments'] = [
-                'Incremento selettivo prezzi prodotti premium +3-5%',
-                'Introduzione pricing dinamico per prodotti stagionali'
-            ]
-        elif benchmark == 'local':
-            pricing_insights['recommended_adjustments'] = [
-                'Ottimizzazione bundle pricing per competere con catene',
-                'Loyalty pricing per clienti abituali'
-            ]
-        
-        return pricing_insights
-    
-    except Exception as e:
-        logger.warning(f"Pricing competitiveness analysis failed: {e}")
-        return {'error': 'Pricing analysis failed', 'details': str(e)}
-
-def _generate_competitive_strategy(position: Dict, scope: str) -> List[Dict]:
-    """Genera strategia competitiva - MIGLIORATA"""
-    strategies = []
-    
-    try:
-        scope_strategies = {
-            'local': [
-                {
-                    'strategy': 'Local market dominance',
-                    'timeline': '6 months',
-                    'investment_required': 'Medium',
-                    'expected_roi': '25%',
-                    'key_actions': ['Community engagement', 'Local partnerships', 'Personalized service']
-                }
-            ],
-            'regional': [
-                {
-                    'strategy': 'Regional expansion with differentiation',
-                    'timeline': '12 months',
-                    'investment_required': 'High',
-                    'expected_roi': '35%',
-                    'key_actions': ['Market analysis', 'Brand positioning', 'Strategic locations']
-                }
-            ],
-            'national': [
-                {
-                    'strategy': 'Digital transformation leadership',
-                    'timeline': '18 months',
-                    'investment_required': 'Very High',
-                    'expected_roi': '50%',
-                    'key_actions': ['Technology platform', 'Omnichannel experience', 'Data analytics']
-                }
-            ]
-        }
-        
-        strategies = scope_strategies.get(scope, [])
-        
-        # Aggiungi strategia difensiva generica
-        strategies.append({
-            'strategy': 'Defensive market position strengthening',
-            'timeline': '3 months',
-            'investment_required': 'Low',
-            'expected_roi': '15%',
-            'key_actions': ['Customer retention programs', 'Service quality improvement', 'Price optimization']
-        })
-    
-    except Exception as e:
-        logger.warning(f"Competitive strategy generation failed: {e}")
-        strategies = [{
-            'strategy': 'Market position maintenance',
-            'timeline': '6 months',
-            'investment_required': 'Medium',
-            'expected_roi': '20%',
-            'key_actions': ['Customer satisfaction focus', 'Operational efficiency']
-        }]
-    
-    return strategies
-
-def _calculate_market_position_score(position: Dict) -> int:
-    """Calcola score posizione di mercato - MIGLIORATA"""
-    try:
-        base_score = 70
-        
-        # Bonus per vantaggi competitivi
-        advantages_count = len(position.get('competitive_advantages', []))
-        base_score += min(20, advantages_count * 4)
-        
-        # Penalty per minacce
-        threats_count = len(position.get('market_threats', []))
-        high_severity_threats = len([t for t in position.get('market_threats', []) 
-                                   if t.get('severity') == 'high'])
-        base_score -= min(15, high_severity_threats * 5)
-        
-        # Bonus per opportunità
-        opportunities_count = len(position.get('optimization_opportunities', []))
-        base_score += min(10, opportunities_count * 2)
-        
-        return min(100, max(0, base_score))
-    
-    except Exception as e:
-        logger.warning(f"Market position score calculation failed: {e}")
-        return 75
-
-def _generate_swot_analysis(market_position: Dict) -> Dict:
-    """Genera analisi SWOT"""
-    try:
-        swot = {
-            'strengths': [
-                'Posizione di mercato consolidata',
-                'Base clienti fedeli',
-                'Conoscenza approfondita del mercato locale'
-            ],
-            'weaknesses': [
-                'Dipendenza da mercato locale',
-                'Capacità di investimento limitata'
-            ],
-            'opportunities': [
-                'Espansione in nuovi segmenti',
-                'Digitalizzazione dei processi',
-                'Partnership strategiche'
-            ],
-            'threats': [
-                'Nuovi competitor digitali',
-                'Cambiamenti nelle preferenze dei consumatori',
-                'Pressioni sui margini'
-            ]
-        }
-        
-        # Personalizza basandosi sui dati del market position
-        if market_position.get('competitive_advantages'):
-            strengths_from_data = [adv.get('description', '') for adv in market_position['competitive_advantages']]
-            swot['strengths'].extend(strengths_from_data[:2])
-        
-        if market_position.get('market_threats'):
-            threats_from_data = [threat.get('threat', '') for threat in market_position['market_threats']]
-            swot['threats'].extend(threats_from_data[:2])
-        
-        return swot
-    
-    except Exception as e:
-        logger.warning(f"SWOT analysis generation failed: {e}")
-        return {'error': 'SWOT analysis failed'}
-
-# ================== BACKGROUND PROCESSING UTILITIES ==================
-
-async def _process_custom_analysis_background(task_id: str, analysis_request: AnalyticsRequest):
-    """Processa analisi custom in background - MIGLIORATA"""
-    try:
-        logger.info(f"Starting background analysis {task_id} - Type: {analysis_request.analysis_type}")
-        
-        start_time = time.time()
-        result = await _execute_custom_analysis(analysis_request)
-        execution_time = time.time() - start_time
-        
-        # In produzione, salverebbe il risultato in un task store (Redis, Database, etc.)
-        logger.info(f"Background analysis {task_id} completed in {execution_time:.2f}s")
-        
-        # Simula salvataggio risultato
-        # await task_store.save_result(task_id, result)
-        
-    except Exception as e:
-        logger.error(f"Background analysis {task_id} failed: {e}", exc_info=True)
-        # await task_store.save_error(task_id, str(e))
-
-async def _process_ultra_batch_background(task_id: str, batch_request: BatchAnalyticsRequest):
-    """Processa batch ultra in background - MIGLIORATA"""
-    try:
-        logger.info(f"Starting background batch {task_id} with {len(batch_request.requests)} requests")
-        
-        start_time = time.time()
-        
-        if batch_request.parallel_execution:
-            results = await _process_batch_parallel(batch_request)
-        else:
-            results = await _process_batch_sequential(batch_request)
-        
-        execution_time = time.time() - start_time
-        success_count = len([r for r in results if r.get('success', False)])
-        
-        logger.info(f"Background batch {task_id} completed in {execution_time:.2f}s - "
-                   f"{success_count}/{len(results)} successful")
-        
-        # Consolida insights
-        consolidated = _consolidate_batch_insights(results)
-        
-        # Salva risultati
-        # await task_store.save_batch_result(task_id, results, consolidated)
-        
-    except Exception as e:
-        logger.error(f"Background batch {task_id} failed: {e}", exc_info=True)
-
-async def _process_batch_parallel(batch_request: BatchAnalyticsRequest) -> List[Dict]:
-    """Processa batch in parallelo - MIGLIORATA"""
-    try:
-        # Limita concorrenza per evitare sovraccarico
-        semaphore = asyncio.Semaphore(5)
-        
-        async def process_single_request(req_index: int, req: AnalyticsRequest):
-            async with semaphore:
-                try:
-                    start_time = time.time()
-                    result = await _execute_custom_analysis(req)
-                    execution_time = (time.time() - start_time) * 1000
-                    
-                    return {
-                        'success': True,
-                        'data': result,
-                        'request_index': req_index,
-                        'execution_time_ms': execution_time,
-                        'analysis_type': req.analysis_type
-                    }
-                except Exception as e:
-                    return {
-                        'success': False,
-                        'error': str(e),
-                        'request_index': req_index,
-                        'analysis_type': req.analysis_type,
-                        'execution_time_ms': 0
-                    }
-        
-        # Crea tasks per tutte le richieste
-        tasks = [
-            process_single_request(i, req) 
-            for i, req in enumerate(batch_request.requests)
-        ]
-        
-        # Esegui con timeout
-        try:
-            results = await asyncio.wait_for(
-                asyncio.gather(*tasks),
-                timeout=batch_request.timeout_seconds
-            )
-        except asyncio.TimeoutError:
-            logger.warning(f"Batch processing timed out after {batch_request.timeout_seconds}s")
-            # Restituisci risultati parziali se disponibili
-            results = [
-                {
-                    'success': False,
-                    'error': 'Timeout',
-                    'request_index': i,
-                    'analysis_type': req.analysis_type
-                }
-                for i, req in enumerate(batch_request.requests)
-            ]
-        
-        return results
-    
-    except Exception as e:
-        logger.error(f"Parallel batch processing failed: {e}")
-        raise
-
-async def _process_batch_sequential(batch_request: BatchAnalyticsRequest) -> List[Dict]:
-    """Processa batch sequenzialmente - MIGLIORATA"""
-    results = []
-    
-    try:
-        for i, req in enumerate(batch_request.requests):
-            try:
-                start_time = time.time()
-                result = await _execute_custom_analysis(req)
-                execution_time = (time.time() - start_time) * 1000
-                
-                results.append({
-                    'success': True,
-                    'data': result,
-                    'request_index': i,
-                    'execution_time_ms': execution_time,
-                    'analysis_type': req.analysis_type
-                })
-                
-            except Exception as e:
-                logger.warning(f"Sequential batch item {i} failed: {e}")
-                results.append({
-                    'success': False,
-                    'error': str(e),
-                    'request_index': i,
-                    'analysis_type': req.analysis_type,
-                    'execution_time_ms': 0
-                })
-        
-        return results
-    
-    except Exception as e:
-        logger.error(f"Sequential batch processing failed: {e}")
-        raise
-
-def _consolidate_batch_insights(results: List[Dict]) -> Dict:
-    """Consolida insights da batch results - MIGLIORATA"""
-    try:
-        successful_results = [r for r in results if r.get('success', False)]
-        failed_results = [r for r in results if not r.get('success', True)]
-        
-        consolidation = {
-            'success_rate': len(successful_results) / len(results) if results else 0,
-            'performance_summary': {
-                'total_analyses': len(results),
-                'successful': len(successful_results),
-                'failed': len(failed_results),
-                'avg_execution_time_ms': (
-                    sum(r.get('execution_time_ms', 0) for r in successful_results) / 
-                    len(successful_results) if successful_results else 0
-                ),
-                'total_execution_time_ms': sum(r.get('execution_time_ms', 0) for r in results)
-            },
-            'analysis_types_summary': {},
-            'common_themes': [],
-            'failure_analysis': {}
-        }
-        
-        # Raggruppa per tipo di analisi
-        analysis_types = {}
-        for result in results:
-            analysis_type = result.get('analysis_type', 'unknown')
-            if analysis_type not in analysis_types:
-                analysis_types[analysis_type] = {'successful': 0, 'failed': 0, 'total_time': 0}
-            
-            if result.get('success', False):
-                analysis_types[analysis_type]['successful'] += 1
-            else:
-                analysis_types[analysis_type]['failed'] += 1
-            
-            analysis_types[analysis_type]['total_time'] += result.get('execution_time_ms', 0)
-        
-        consolidation['analysis_types_summary'] = analysis_types
-        
-        # Analisi errori comuni
-        if failed_results:
-            error_types = {}
-            for failed in failed_results:
-                error = failed.get('error', 'unknown')
-                error_key = error.split(':')[0] if ':' in error else error
-                error_types[error_key] = error_types.get(error_key, 0) + 1
-            
-            consolidation['failure_analysis'] = {
-                'common_errors': error_types,
-                'failure_rate_by_type': {
-                    analysis_type: data['failed'] / (data['successful'] + data['failed'])
-                    for analysis_type, data in analysis_types.items()
-                    if (data['successful'] + data['failed']) > 0
-                }
-            }
-        
-        # Temi comuni (simulati)
-        if len(successful_results) > 2:
-            consolidation['common_themes'] = [
-                'Opportunità di ottimizzazione identificate in multiple aree',
-                'Pattern di crescita consistenti rilevati',
-                'Raccomandazioni strategiche convergenti'
-            ]
-        
-        return consolidation
-    
-    except Exception as e:
-        logger.warning(f"Batch insights consolidation failed: {e}")
-        return {
-            'success_rate': 0,
-            'error': 'Consolidation failed',
-            'performance_summary': {'total_analyses': len(results)}
-        }
-
-async def _execute_custom_analysis(analysis_request: AnalyticsRequest) -> Dict[str, Any]:
-    """Esegue analisi custom specifica - MIGLIORATA"""
-    
-    try:
-        analysis_type = analysis_request.analysis_type
-        params = analysis_request.parameters
-        
-        # Timeout specifico per tipo di analisi
-        timeout_map = {
-            'market_basket': 30,
-            'customer_segmentation': 45,
-            'price_optimization': 20,
-            'demand_forecasting': 60,
-            'supplier_analysis': 25,
-            'competitive_analysis': 50
-        }
-        
-        timeout = timeout_map.get(analysis_type, 30)
-        
-        # Esegui analisi con timeout
-        if analysis_type == 'market_basket':
-            result = await asyncio.wait_for(
-                analytics_adapter.get_market_basket_analysis_async(
-                    min_support=params.get('min_support', 0.01)
-                ),
-                timeout=timeout
-            )
-            
-        elif analysis_type == 'customer_segmentation':
-            result = await asyncio.wait_for(
-                analytics_adapter.get_customer_rfm_analysis_async(),
-                timeout=timeout
-            )
-            
-        elif analysis_type == 'price_optimization':
-            result = await asyncio.wait_for(
-                analytics_adapter.get_competitive_opportunities_async(),
-                timeout=timeout
-            )
-            
-        elif analysis_type == 'demand_forecasting':
-            months_ahead = params.get('months_ahead', 6)
-            result = await asyncio.wait_for(
-                analytics_adapter.get_sales_forecast_async(months_ahead=months_ahead),
-                timeout=timeout
-            )
-            
-        elif analysis_type == 'supplier_analysis':
-            result = await asyncio.wait_for(
-                analytics_adapter.get_supplier_analysis_async(),
-                timeout=timeout
-            )
-            
-        elif analysis_type == 'competitive_analysis':
-            result = await asyncio.wait_for(
-                analytics_adapter.get_competitive_analysis_async(),
-                timeout=timeout
-            )
-            
-        else:
-            raise ValueError(f"Unknown analysis type: {analysis_type}")
-        
-        return {
-            'analysis_type': analysis_type,
-            'parameters_used': params,
-            'result': result,
-            'execution_timestamp': datetime.now().isoformat(),
-            'success': True,
-            'timeout_used': timeout
-        }
-        
-    except asyncio.TimeoutError:
-        logger.error(f"Analysis {analysis_type} timed out after {timeout}s")
-        raise HTTPException(status_code=408, detail=f"Analysis timed out after {timeout} seconds")
-    except Exception as e:
-        logger.error(f"Custom analysis execution failed: {e}")
-        raise
-
-# ================== CALCULATION UTILITIES ==================
 
 def _calculate_operations_health_score(operations_data: Dict) -> int:
     """Calcola score di salute operazioni"""
@@ -3026,81 +1280,6 @@ def _calculate_business_intelligence_score(insights: Dict) -> int:
     except:
         return 75
 
-def _calculate_seasonality_analysis_score(analysis: Dict) -> int:
-    """Calcola score analisi stagionalità"""
-    try:
-        base_score = 75
-        
-        # Bonus per pattern rilevati
-        if analysis.get('advanced_patterns', {}).get('pattern_strength') == 'strong':
-            base_score += 15
-        elif analysis.get('advanced_patterns', {}).get('pattern_strength') == 'moderate':
-            base_score += 8
-        
-        # Bonus per predizioni
-        if analysis.get('predictions'):
-            base_score += 10
-        
-        return min(100, base_score)
-    except:
-        return 75
-
-def _calculate_realtime_health_score(metrics: Dict) -> int:
-    """Calcola score salute sistema real-time"""
-    try:
-        base_score = 80
-        
-        # Controlla status dei vari sistemi
-        for metric_name, metric_data in metrics.items():
-            if isinstance(metric_data, dict):
-                status = metric_data.get('status', 'unknown')
-                if status == 'error':
-                    base_score -= 15
-                elif status in ['timeout', 'degraded']:
-                    base_score -= 8
-                elif status in ['healthy', 'active', 'operational']:
-                    base_score += 2
-        
-        return max(0, min(100, base_score))
-    except:
-        return 70
-
-def _calculate_prediction_accuracy_score(predictions: Dict) -> int:
-    """Calcola score accuratezza predizioni"""
-    try:
-        base_score = 80
-        
-        # Bonus per confidence intervals
-        if predictions.get('model_configuration', {}).get('confidence_intervals'):
-            base_score += 5
-        
-        # Bonus per scenario analysis
-        if predictions.get('scenario_analysis'):
-            base_score += 5
-        
-        # Bonus per numero di forecast riusciti
-        forecasts = predictions.get('forecasts', {})
-        successful_forecasts = len([f for f in forecasts.values() if f and not isinstance(f, dict) or not f.get('error')])
-        base_score += min(10, successful_forecasts * 3)
-        
-        return min(100, base_score)
-    except:
-        return 80
-
-# ================== ESTIMATION UTILITIES ==================
-
-def _estimate_analysis_time(analysis_type: str) -> int:
-    """Stima tempo di esecuzione per tipo di analisi (in secondi)"""
-    time_estimates = {
-        'market_basket': 25,
-        'customer_segmentation': 35,
-        'price_optimization': 15,
-        'demand_forecasting': 50,
-        'supplier_analysis': 20,
-        'competitive_analysis': 45
-    }
-    return time_estimates.get(analysis_type, 30)
-
 def _estimate_report_generation_time(sections: List[str], format: str, include_ai: bool) -> int:
     """Stima tempo generazione report (in secondi)"""
     base_time = 10
@@ -3117,7 +1296,7 @@ def _estimate_report_generation_time(sections: List[str], format: str, include_a
     return base_time + section_time + ai_time + format_time.get(format, 10)
 
 def _estimate_file_size(filename: str) -> float:
-    """Stima dimensione file in MB - MIGLIORATA"""
+    """Stima dimensione file in MB"""
     try:
         import os
         if os.path.exists(filename):
@@ -3135,10 +1314,8 @@ def _estimate_file_size(filename: str) -> float:
     except:
         return 1.0
 
-# ================== EXPORT UTILITIES ==================
-
 async def _export_to_excel_ultra(report_data: Dict, report_type: str) -> str:
-    """Export ultra report a Excel con formattazione avanzata - MIGLIORATA"""
+    """Export ultra report a Excel con formattazione avanzata"""
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"ultra_analytics_report_{report_type}_{timestamp}.xlsx"
@@ -3202,9 +1379,8 @@ async def _export_to_excel_ultra(report_data: Dict, report_type: str) -> str:
         raise HTTPException(status_code=500, detail="Excel export failed")
 
 def _generate_ai_executive_summary(sections: Dict, language: str) -> Dict:
-    """Genera executive summary con AI - MIGLIORATA"""
+    """Genera executive summary con AI"""
     try:
-        # Analizza sezioni per generare summary intelligente
         summary = {
             'overview': 'Analisi completa delle performance aziendali completata con successo',
             'key_findings': [],
@@ -3246,7 +1422,7 @@ def _generate_ai_executive_summary(sections: Dict, language: str) -> Dict:
         }
 
 def _generate_comprehensive_recommendations(sections: Dict, language: str) -> List[Dict]:
-    """Genera raccomandazioni complete - MIGLIORATA"""
+    """Genera raccomandazioni complete"""
     try:
         recommendations = []
         
@@ -3309,7 +1485,7 @@ def _generate_comprehensive_recommendations(sections: Dict, language: str) -> Li
         }]
 
 def _generate_health_recommendations(health_score: float, test_results: Dict, cache_stats: Dict) -> List[str]:
-    """Genera raccomandazioni per migliorare health del sistema - MIGLIORATA"""
+    """Genera raccomandazioni per migliorare health del sistema"""
     recommendations = []
     
     try:
@@ -3345,248 +1521,3 @@ def _generate_health_recommendations(health_score: float, test_results: Dict, ca
         recommendations = ["🔧 Verificare sistema di health monitoring"]
     
     return recommendations
-
-# ================== ADVANCED ANALYSIS UTILITIES ==================
-
-def _assess_seasonal_data_quality(df: pd.DataFrame) -> Dict:
-    """Valuta qualità dati stagionali"""
-    try:
-        quality_score = 100
-        issues = []
-        
-        # Completezza dati
-        if df.isnull().sum().sum() > 0:
-            null_percentage = (df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100
-            quality_score -= null_percentage
-            issues.append(f"Dati mancanti: {null_percentage:.1f}%")
-        
-        # Consistenza temporale
-        if len(df) < 12:
-            quality_score -= 20
-            issues.append("Periodo di analisi insufficiente (< 12 mesi)")
-        
-        return {
-            'quality_score': max(0, quality_score),
-            'data_completeness': (1 - df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100,
-            'temporal_coverage': len(df),
-            'issues': issues,
-            'recommendation': 'Buona qualità dati' if quality_score > 80 else 'Migliorare qualità dati'
-        }
-    except:
-        return {'quality_score': 50, 'error': 'Data quality assessment failed'}
-
-async def _generate_seasonal_predictions(df: pd.DataFrame, months_ahead: int, confidence: float) -> Dict:
-    """Genera predizioni stagionali - MIGLIORATA"""
-    try:
-        if df.empty:
-            return {'error': 'No data available for predictions'}
-        
-        # Simula predizioni avanzate con confidence intervals
-        base_value = df['total_value'].mean() if 'total_value' in df.columns else 1000
-        
-        predictions = []
-        for i in range(months_ahead):
-            # Simula variazione stagionale
-            seasonal_factor = 1 + 0.1 * np.sin(2 * np.pi * i / 12)
-            trend_factor = 1 + (i * 0.02)  # 2% crescita mensile
-            
-            predicted_value = base_value * seasonal_factor * trend_factor
-            
-            # Confidence intervals
-            margin = predicted_value * (1 - confidence) * 0.5
-            
-            predictions.append({
-                'month': (datetime.now() + timedelta(days=30*i)).strftime('%Y-%m'),
-                'predicted_value': round(predicted_value, 2),
-                'lower_bound': round(predicted_value - margin, 2),
-                'upper_bound': round(predicted_value + margin, 2),
-                'confidence_level': confidence
-            })
-        
-        return {
-            'months_predicted': months_ahead,
-            'confidence_level': confidence,
-            'seasonal_forecast': predictions,
-            'accuracy_estimate': min(0.95, confidence),
-            'model_type': 'seasonal_ensemble',
-            'last_updated': datetime.now().isoformat()
-        }
-    
-    except Exception as e:
-        logger.warning(f"Seasonal predictions failed: {e}")
-        return {'error': 'Seasonal predictions failed', 'details': str(e)}
-
-def _generate_seasonal_recommendations(df: pd.DataFrame, patterns: Dict) -> List[Dict]:
-    """Genera raccomandazioni stagionali - MIGLIORATA"""
-    recommendations = []
-    
-    try:
-        # Raccomandazioni basate su pattern rilevati
-        if patterns.get('peak_detection'):
-            peak_month = patterns['peak_detection'].get('peak_month')
-            trough_month = patterns['peak_detection'].get('trough_month')
-            
-            if peak_month:
-                recommendations.append({
-                    'type': 'inventory_planning',
-                    'recommendation': f'Aumentare stock 2 mesi prima del picco (mese {peak_month})',
-                    'priority': 'high',
-                    'timing': f'Mese {max(1, peak_month - 2)}',
-                    'expected_impact': 'Riduzione stockout 30%',
-                    'category': 'inventory'
-                })
-            
-            if trough_month:
-                recommendations.append({
-                    'type': 'promotion_planning',
-                    'recommendation': f'Pianificare promozioni per il periodo lento (mese {trough_month})',
-                    'priority': 'medium',
-                    'timing': f'Mese {trough_month}',
-                    'expected_impact': 'Aumento vendite periodo lento 15%',
-                    'category': 'marketing'
-                })
-        
-        # Raccomandazioni basate su volatilità
-        volatility_level = patterns.get('volatility_analysis', {}).get('volatility_level', 'medium')
-        if volatility_level == 'high':
-            recommendations.append({
-                'type': 'risk_management',
-                'recommendation': 'Implementare inventory flessibile per gestire alta volatilità',
-                'priority': 'high',
-                'timing': 'Immediato',
-                'expected_impact': 'Riduzione rischio stockout/overstock 25%',
-                'category': 'operations'
-            })
-        
-        # Raccomandazione generale se non ci sono pattern specifici
-        if not recommendations:
-            recommendations.append({
-                'type': 'monitoring',
-                'recommendation': 'Continuare monitoraggio per identificare pattern stagionali emergenti',
-                'priority': 'low',
-                'timing': 'Continuo',
-                'expected_impact': 'Miglioramento planning futuro',
-                'category': 'analytics'
-            })
-    
-    except Exception as e:
-        logger.warning(f"Seasonal recommendations generation failed: {e}")
-        recommendations = [{
-            'type': 'system_check',
-            'recommendation': 'Verificare sistema di analisi stagionale',
-            'priority': 'medium',
-            'timing': 'Prossima settimana'
-        }]
-    
-    return recommendations
-
-async def _analyze_weather_correlation(category: Optional[str]) -> Dict:
-    """Analizza correlazione con dati meteo - PLACEHOLDER MIGLIORATO"""
-    try:
-        # Simula analisi correlazione meteo
-        await asyncio.sleep(0.1)  # Simula call API meteo
-        
-        correlation_strength = np.random.uniform(0.3, 0.8)
-        
-        return {
-            'correlation_strength': round(correlation_strength, 2),
-            'weather_factors': ['temperature', 'precipitation', 'humidity'],
-            'seasonal_impact': 'medium' if correlation_strength > 0.5 else 'low',
-            'recommendations': [
-                'Considerare dati meteo nella pianificazione inventory',
-                'Sviluppare modelli predittivi weather-aware'
-            ] if correlation_strength > 0.6 else [
-                'Correlazione meteo limitata - focus su altri fattori'
-            ],
-            'data_availability': 'good',
-            'analysis_period': '24 months',
-            'confidence': min(0.9, correlation_strength + 0.2)
-        }
-    
-    except Exception as e:
-        logger.warning(f"Weather correlation analysis failed: {e}")
-        return {
-            'error': 'Weather data unavailable',
-            'correlation_strength': 0,
-            'recommendations': ['Weather correlation analysis not available']
-        }# ================== UTILITY METHODS - CORRETTE PER PYDANTIC V2 ==================
-
-def _alert_meets_priority(alert_severity: str, required_priority: str) -> bool:
-    """Verifica se alert soddisfa priorità richiesta"""
-    severity_levels = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
-    priority_levels = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
-    
-    return severity_levels.get(alert_severity, 1) >= priority_levels.get(required_priority, 2)
-
-def _generate_ai_insights_for_area(area: str, data: Any, config: Dict) -> List[Dict]:
-    """Genera insights AI per area specifica - MIGLIORATA"""
-    insights = []
-    
-    try:
-        if area == 'sales' and isinstance(data, dict):
-            # Analisi vendite più sofisticata
-            trend_direction = data.get('trend', 'stable')
-            growth_rate = data.get('growth_rate', 0)
-            
-            if growth_rate > 10:
-                insights.append({
-                    'type': 'sales_growth',
-                    'message': f'Crescita vendite eccellente: +{growth_rate:.1f}% vs periodo precedente',
-                    'confidence': 0.90,
-                    'impact': 'high',
-                    'urgency': 'low',
-                    'action': 'Capitalizzare il momentum - aumentare investimenti marketing',
-                    'source': 'seasonal_analysis'
-                })
-            elif growth_rate < -5:
-                insights.append({
-                    'type': 'sales_decline',
-                    'message': f'Calo vendite rilevato: {growth_rate:.1f}% vs periodo precedente',
-                    'confidence': 0.85,
-                    'impact': 'high',
-                    'urgency': 'high',
-                    'action': 'Analizzare cause e implementare strategie di recovery',
-                    'source': 'seasonal_analysis'
-                })
-            else:
-                insights.append({
-                    'type': 'sales_stable',
-                    'message': 'Vendite stabili - opportunità di ottimizzazione identificate',
-                    'confidence': 0.75,
-                    'impact': 'medium',
-                    'urgency': 'medium',
-                    'action': 'Focus su miglioramento margini e customer acquisition',
-                    'source': 'seasonal_analysis'
-                })
-        
-        elif area == 'inventory' and isinstance(data, (list, dict, pd.DataFrame)):
-            insights.append({
-                'type': 'inventory_optimization',
-                'message': 'Opportunità di ottimizzazione inventory identificate',
-                'confidence': 0.78,
-                'impact': 'medium',
-                'urgency': 'high',
-                'action': 'Implementare sistema di reorder automatico per prodotti critici',
-                'source': 'inventory_analysis'
-            })
-        
-        elif area == 'customers' and isinstance(data, dict):
-            churn_risk = data.get('churn_risk_customers', 0)
-            if churn_risk > 0:
-                insights.append({
-                    'type': 'customer_retention',
-                    'message': f'{churn_risk} clienti identificati ad alto rischio churn',
-                    'confidence': 0.82,
-                    'impact': 'high',
-                    'urgency': 'urgent',
-                    'action': 'Attivare immediatamente campagna di retention personalizzata',
-                    'source': 'churn_analysis'
-                })
-        
-        elif area == 'finance' and isinstance(data, dict):
-            cashflow_health = data.get('cashflow_health', 'unknown')
-            insights.append({
-                'type': 'cash_flow_analysis',
-                'message': f'Stato cashflow: {cashflow_health}',
-                'confidence': 0.80,
-                'impact': 'high' if cashflow_health in ['poor', 'critical'] else 'medium',
