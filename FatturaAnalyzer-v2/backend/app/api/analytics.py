@@ -304,9 +304,9 @@ def cache_strategy(cache_key_prefix: str, ttl_minutes: int = 10):
 # ================== DASHBOARD ENDPOINTS ULTRA-OTTIMIZZATI ==================
 
 @router.get("/dashboard/executive")
-@limiter.limit("20/minute")
-@analytics_performance_tracked("executive_dashboard")
-@cache_strategy("executive_dashboard", ttl_minutes=5)
+@analytics_performance_tracked("executive_dashboard") # Opzionale, può stare qui
+@cache_strategy("executive_dashboard", ttl_minutes=5) # Opzionale, può stare qui
+@limiter.limit("20/minute") # Questo DEVE vedere il 'request'
 async def get_executive_dashboard_ultra(
     request: Request,
     include_predictions: bool = Query(False, description="Include AI predictions"),
