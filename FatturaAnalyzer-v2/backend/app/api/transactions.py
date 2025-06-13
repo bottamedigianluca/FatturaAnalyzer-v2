@@ -377,9 +377,9 @@ def _estimate_reconciliation_probability(transaction: Dict) -> float:
 
 # ================== ENDPOINT PRINCIPALE: LISTA TRANSAZIONI ==================
 
-@router.get("/", response_model=Union[TransactionListResponse, Dict[str, Any]])
-@limiter.limit("100/minute")
+@router.get("/")
 @transaction_performance_tracked("get_transactions_list_v4")
+@limiter.limit("100/minute")
 async def get_transactions_list_v4(
     request: Request,
     # Parametri originali mantenuti per compatibilità
@@ -884,8 +884,8 @@ async def _find_similar_transactions_v4(transaction: Dict) -> List[Dict]:
 # ================== ENDPOINT: SMART SUGGESTIONS V4.0 ==================
 
 @router.get("/{transaction_id}/smart-suggestions")
-@limiter.limit("20/minute")
 @transaction_performance_tracked("smart_suggestions_v4")
+@limiter.limit("20/minute")
 async def get_smart_reconciliation_suggestions_v4(
     request: Request,
     transaction_id: int = Path(..., gt=0, description="Transaction ID"),
@@ -1028,8 +1028,8 @@ async def get_smart_reconciliation_suggestions_v4(
 # ================== ENDPOINT: MANUAL RECONCILIATION V4.0 ==================
 
 @router.post("/{transaction_id}/reconcile-with/{invoice_id}")
-@limiter.limit("30/minute")
 @transaction_performance_tracked("manual_reconciliation_v4")
+@limiter.limit("30/minute")
 async def reconcile_transaction_with_invoice_v4(
     request: Request,
     transaction_id: int = Path(..., gt=0, description="Transaction ID"),
@@ -1139,8 +1139,8 @@ async def reconcile_transaction_with_invoice_v4(
 # ================== ENDPOINT: BATCH RECONCILIATION V4.0 ==================
 
 @router.post("/batch/reconcile")
-@limiter.limit("5/minute")
 @transaction_performance_tracked("batch_reconcile_v4")
+@limiter.limit("5/minute")
 async def batch_reconcile_transactions_v4(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -1378,8 +1378,8 @@ async def _process_batch_reconciliation_v4_background(
 # ================== ENDPOINT: BATCH STATUS UPDATE V4.0 ==================
 
 @router.post("/batch/update-status")
-@limiter.limit("10/minute")
 @transaction_performance_tracked("batch_update_status_v4")
+@limiter.limit("10/minute")
 async def batch_update_transaction_status_v4(
     background_tasks: BackgroundTasks,
     request: BatchUpdateRequest,
@@ -1608,8 +1608,8 @@ def _validate_status_change_v4(current_status: str, new_status: str, transaction
 # ================== ENDPOINT: TRANSACTION INSIGHTS V4.0 ==================
 
 @router.get("/{transaction_id}/insights")
-@limiter.limit("30/minute")
 @transaction_performance_tracked("transaction_insights_v4")
+@limiter.limit("30/minute")
 async def get_transaction_insights_v4(
     request: Request,
     transaction_id: int = Path(..., gt=0, description="Transaction ID"),
@@ -1917,8 +1917,8 @@ async def get_batch_task_status_v4(task_id: str = Path(..., description="Backgro
 # ================== ENDPOINT: SEARCH AVANZATO V4.0 ==================
 
 @router.get("/search/{query}")
-@limiter.limit("60/minute")
 @transaction_performance_tracked("search_transactions_v4")
+@limiter.limit("60/minute")
 async def search_transactions_v4(
     request: Request,
     query: str = Path(..., min_length=2, max_length=100, description="Search query"),
@@ -2137,8 +2137,8 @@ def _calculate_relevance_score_v4(result: Dict, query: str) -> float:
 # ================== ENDPOINT: STATISTICHE AVANZATE V4.0 ==================
 
 @router.get("/stats/summary")
-@limiter.limit("30/minute")
 @transaction_performance_tracked("stats_summary_v4")
+@limiter.limit("30/minute")
 async def get_transactions_stats_v4(
     request: Request,
     use_cache: bool = Query(True, description="Use cached statistics if available"),
