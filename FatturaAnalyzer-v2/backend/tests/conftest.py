@@ -45,11 +45,13 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture(scope="function")
 async def test_db():
-    """Database di test in memoria, pulito per ogni test"""
-    # Setup: crea tabelle
+    """Database di test in memoria, pulito per ogni test.
+    'autouse=True' assicura che venga eseguito per ogni test."""
+    # Forza la cancellazione di eventuali cache residue dal test precedente
+    db_adapter.clear_cache()
+    # Crea le tabelle per ogni singolo test
     await db_adapter.create_tables_async()
-    
-    yield db_adapter
+    yield
     
     # Teardown: pulizia non necessaria per in-memory DB
 
