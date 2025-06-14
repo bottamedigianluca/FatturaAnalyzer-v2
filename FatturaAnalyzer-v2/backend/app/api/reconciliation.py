@@ -68,7 +68,7 @@ async def get_adapter_v4():
 
 class UltraReconciliationRequest(BaseModel):
     """Request model per reconciliation V4.0 con tutte le opzioni avanzate"""
-    operation_type: str = Field(..., regex="^(1_to_1|n_to_m|smart_client|auto|ultra_smart)$")
+    operation_type: str = Field(..., pattern="^(1_to_1|n_to_m|smart_client|auto|ultra_smart)$")
     
     # Parametri base
     invoice_id: Optional[int] = Field(None, gt=0)
