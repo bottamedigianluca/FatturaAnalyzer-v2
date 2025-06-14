@@ -396,8 +396,8 @@ async def get_ultra_smart_suggestions_v4(
 # ================== MANUAL MATCHING V4.0 ==================
 
 @router.post("/manual-match")
+@reconciliation_performance_v4("manual_match_v4")  # Spostato su
 @limiter.limit("50/minute")
-@reconciliation_performance_v4("manual_match_v4")
 async def apply_manual_match_v4(
     request: Request,
     match_request: ManualMatchRequestV4
