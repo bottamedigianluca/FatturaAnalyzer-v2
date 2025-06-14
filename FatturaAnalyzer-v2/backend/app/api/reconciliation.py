@@ -206,7 +206,7 @@ def reconciliation_performance_v4(operation_name: str):
 
 @router.post("/ultra/smart-suggestions")
 @reconciliation_performance_v4("ultra_smart_suggestions_v4") # Spostato su
-@limiter.limit("30/minute"
+@limiter.limit("30/minute")
 async def get_ultra_smart_suggestions_v4(
     request: Request,
     recon_request: UltraReconciliationRequest
