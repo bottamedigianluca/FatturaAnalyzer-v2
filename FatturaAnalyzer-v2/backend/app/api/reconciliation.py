@@ -1282,4 +1282,3 @@ async def reconciliation_api_v4_root():
             message="Error retrieving API overview V4.0",
             data={"error": str(e)}
         )
-        '
