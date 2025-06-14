@@ -892,8 +892,8 @@ def _calculate_quality_score_v4(suggestions: List[Dict],
 # ================== CLIENT RELIABILITY V4.0 ==================
 
 @router.get("/client/reliability/{anagraphics_id}")
-@limiter.limit("20/minute")
 @reconciliation_performance_v4("client_reliability_v4")
+@limiter.limit("20/minute")
 async def get_client_payment_reliability_v4(
     request: Request,
     anagraphics_id: int = Path(..., gt=0, description="Anagraphics ID"),
@@ -1020,8 +1020,8 @@ def _generate_trend_forecast_v4(predictive_insights: Dict) -> Dict[str, Any]:
 # ================== AUTOMATIC MATCHING V4.0 ==================
 
 @router.get("/automatic/opportunities")
-@limiter.limit("15/minute")
 @reconciliation_performance_v4("automatic_opportunities_v4")
+@limiter.limit("15/minute")
 async def get_automatic_matching_opportunities_v4(
     request: Request,
     confidence_level: str = Query("High", regex="^(Exact|High|Medium|Low)$"),
