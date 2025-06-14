@@ -280,14 +280,6 @@ export default defineConfig(({ command, mode }) => {
           : '[hash:base64:8]',
       },
       
-      // V4.0 PostCSS configuration
-      postcss: {
-        plugins: [
-          require('tailwindcss'),
-          require('autoprefixer'),
-        ],
-      },
-      
       // V4.0 Preprocessor options
       preprocessorOptions: {
         scss: {
