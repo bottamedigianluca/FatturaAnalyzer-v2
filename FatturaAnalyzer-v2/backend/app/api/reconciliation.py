@@ -454,8 +454,8 @@ async def apply_manual_match_v4(
 # ================== BATCH PROCESSING V4.0 ==================
 
 @router.post("/batch/ultra-processing")
-@limiter.limit("5/minute")
 @reconciliation_performance_v4("batch_ultra_processing_v4")
+@limiter.limit("5/minute")
 async def process_batch_reconciliation_v4(
     request: Request,
     batch_request: BatchReconciliationRequestV4,
