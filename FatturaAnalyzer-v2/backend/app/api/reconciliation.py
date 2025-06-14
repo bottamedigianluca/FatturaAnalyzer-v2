@@ -94,7 +94,7 @@ class UltraReconciliationRequest(BaseModel):
     end_date: Optional[str] = Field(None)
     
     # Opzioni processing
-    priority: str = Field("normal", pattern="^(low|normal|high|urgent)$"))
+    priority: str = Field("normal", pattern="^(low|normal|high|urgent)$")
     real_time: bool = Field(False, description="Force real-time processing (bypass cache)")
 
 class UltraReconciliationResponse(BaseModel):
