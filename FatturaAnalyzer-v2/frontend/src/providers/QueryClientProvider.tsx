@@ -303,7 +303,7 @@ export function useQueryPerformanceMonitor() {
 /**
  * Utilities per gestione cache avanzata
  */
-const cacheUtilsInternal = {
+export const cacheUtils = {
   /**
    * Pulisce tutta la cache
    */
@@ -410,5 +410,4 @@ export function useNetworkStatus() {
 
 // ===== EXPORTS =====
 export { getQueryClient };
-export const cacheUtils = cacheUtilsInternal;
 export default QueryProvider;
