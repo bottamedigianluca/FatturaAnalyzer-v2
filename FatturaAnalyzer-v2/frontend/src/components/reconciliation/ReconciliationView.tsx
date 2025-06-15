@@ -1310,33 +1310,6 @@ function QuantumAISuggestionsPanel({
     </Card>
   );
 }
-}}
-              />
-              <motion.div
-                className="absolute inset-2 border border-purple-400 rounded-full"
-                animate={{
-                  scale: [1, 1.3, 1],
-                  opacity: [0.2, 0, 0.2],
-                }}
-                transition={{ duration: 3, repeat: Infinity, delay: 1 }}
-              />
-            </div>
-
-            <h3 className="text-lg font-bold text-purple-700 mb-2">
-              Neural Network Standby
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              L'AI è pronta per analizzare i tuoi dati
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Aggiungi fatture e movimenti per attivare il quantum matching
-            </p>
-          </motion.div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 // Main Quantum Reconciliation Interface
 export function ReconciliationView() {
