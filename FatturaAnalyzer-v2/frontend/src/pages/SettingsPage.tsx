@@ -1,41 +1,221 @@
-// Create backup mutation
-  const createBackupMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/import-export/backup/create', {}, {
-        responseType: 'blob',
-      });
-      
-      const url = window.URL.createObjectURL(new Blob([response]));
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      link.download = `backup_${timestamp}.zip`;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      return { success: true };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system-health'] });
+import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Settings,
+  Building,
+  Cloud,
+  Database,
+  Bell,
+  Shield,
+  Cpu,
+  HardDrive,
+  Activity,
+  Zap,
+  Save,
+  RefreshCw,
+  CheckCircle,
+  AlertTriangle,
+  Download,
+  Upload,
+  RotateCcw,
+  Eye,
+  Copy,
+} from 'lucide-react';
+
+// Components
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Button,
+  Input,
+  Label,
+  Switch,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Badge,
+  Separator,
+  Alert,
+  AlertDescription,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  Slider,
+} from '@/components/ui';
+
+// Hooks
+import { 
+  useSyncStatus, 
+  useEnableSync, 
+  useDisableSync, 
+  useManualSync, 
+  useTestGoogleDriveConnection,
+  useCreateBackup
+} from '@/hooks/useSync';
+
+// Services
+import { apiClient } from '@/services/api';
+
+// Utils
+import { formatFileSize } from '@/lib/formatters';
+import { cn } from '@/lib/utils';
+
+// Types
+interface CompanySettings {
+  ragione_sociale: string;
+  partita_iva: string;
+  codice_fiscale: string;
+  indirizzo: string;
+  cap: string;
+  citta: string;
+  provincia: string;
+  paese: string;
+  telefono: string;
+  email: string;
+  pec?: string;
+  codice_destinatario?: string;
+  regime_fiscale: string;
+  iban?: string;
+}
+
+interface NotificationSettings {
+  email_notifications: boolean;
+  invoice_reminders: boolean;
+  payment_alerts: boolean;
+  system_notifications: boolean;
+  daily_reports: boolean;
+  weekly_reports: boolean;
+}
+
+interface SystemSettings {
+  theme: 'light' | 'dark' | 'system';
+  language: string;
+  timezone: string;
+  date_format: string;
+  auto_backup: boolean;
+  backup_retention_days: number;
+  debug_mode: boolean;
+}
+
+interface SystemHealth {
+  database_size: number;
+  total_invoices: number;
+  total_transactions: number;
+  total_anagraphics: number;
+  last_backup: string | null;
+  system_version: string;
+  uptime: string;
+}
+
+export function SettingsPage() {
+  const [activeTab, setActiveTab] = useState('company');
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const queryClient = useQueryClient();
+
+  // State per le impostazioni
+  const [companySettings, setCompanySettings] = useState<CompanySettings>({
+    ragione_sociale: '',
+    partita_iva: '',
+    codice_fiscale: '',
+    indirizzo: '',
+    cap: '',
+    citta: '',
+    provincia: '',
+    paese: 'IT',
+    telefono: '',
+    email: '',
+    regime_fiscale: 'RF01',
+  });
+
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
+    email_notifications: true,
+    invoice_reminders: true,
+    payment_alerts: true,
+    system_notifications: false,
+    daily_reports: false,
+    weekly_reports: true,
+  });
+
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
+    theme: 'system',
+    language: 'it',
+    timezone: 'Europe/Rome',
+    date_format: 'DD/MM/YYYY',
+    auto_backup: true,
+    backup_retention_days: 30,
+    debug_mode: false,
+  });
+
+  // Queries
+  const { data: currentSettings, isLoading: isLoadingSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const response = await apiClient.getSetupStatus();
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.message || 'Errore nel caricamento impostazioni');
     },
   });
 
-  // Load settings on mount
+  const { data: syncStatus } = useSyncStatus();
+
+  const { data: systemHealth, isLoading: isLoadingHealth } = useQuery({
+    queryKey: ['system-health'],
+    queryFn: async () => {
+      const response = await apiClient.getSystemInfo();
+      if (response.success) {
+        return response.data.system_info as SystemHealth;
+      }
+      return null;
+    },
+  });
+
+  // Mutations
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (settings: any) => {
+      const response = await apiClient.completeSetup(settings);
+      if (!response.success) {
+        throw new Error(response.message || 'Errore nel salvataggio');
+      }
+      return response;
+    },
+    onSuccess: () => {
+      setUnsavedChanges(false);
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+
+  const enableSync = useEnableSync();
+  const disableSync = useDisableSync();
+  const manualSync = useManualSync();
+  const testConnection = useTestGoogleDriveConnection();
+  const createBackup = useCreateBackup();
+
+  // Effects
   useEffect(() => {
     if (currentSettings?.company_data) {
       setCompanySettings(currentSettings.company_data);
     }
   }, [currentSettings]);
 
-  // Mark as unsaved when settings change
   useEffect(() => {
     setUnsavedChanges(true);
   }, [companySettings, notificationSettings, systemSettings]);
 
+  // Handlers
   const handleSaveSettings = () => {
     saveSettingsMutation.mutate({
       company_data: companySettings,
@@ -358,33 +538,33 @@
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     "w-3 h-3 rounded-full",
-                    cloudSyncStatus?.enabled ? "bg-green-500" : "bg-gray-400"
+                    syncStatus?.enabled ? "bg-green-500" : "bg-gray-400"
                   )} />
                   <div>
                     <p className="font-medium">
-                      {cloudSyncStatus?.enabled ? 'Sincronizzazione Attiva' : 'Sincronizzazione Disattivata'}
+                      {syncStatus?.enabled ? 'Sincronizzazione Attiva' : 'Sincronizzazione Disattivata'}
                     </p>
-                    {cloudSyncStatus?.last_sync && (
+                    {syncStatus?.last_sync_time && (
                       <p className="text-sm text-muted-foreground">
-                        Ultimo sync: {new Date(cloudSyncStatus.last_sync).toLocaleString()}
+                        Ultimo sync: {new Date(syncStatus.last_sync_time).toLocaleString()}
                       </p>
                     )}
                   </div>
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  {cloudSyncStatus?.enabled ? (
+                  {syncStatus?.enabled ? (
                     <Button
                       variant="outline"
-                      onClick={() => disableSyncMutation.mutate()}
-                      disabled={disableSyncMutation.isPending}
+                      onClick={() => disableSync.mutate()}
+                      disabled={disableSync.isPending}
                     >
                       Disabilita
                     </Button>
                   ) : (
                     <Button
-                      onClick={() => enableSyncMutation.mutate()}
-                      disabled={enableSyncMutation.isPending}
+                      onClick={() => enableSync.mutate()}
+                      disabled={enableSync.isPending}
                     >
                       Abilita Sync
                     </Button>
@@ -393,14 +573,14 @@
               </div>
               
               {/* Sync Actions */}
-              {cloudSyncStatus?.enabled && (
+              {syncStatus?.enabled && (
                 <div className="grid gap-3 md:grid-cols-2">
                   <Button
                     variant="outline"
-                    onClick={() => manualSyncMutation.mutate()}
-                    disabled={manualSyncMutation.isPending}
+                    onClick={() => manualSync.mutate({})}
+                    disabled={manualSync.isPending}
                   >
-                    {manualSyncMutation.isPending ? (
+                    {manualSync.isPending ? (
                       <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                       <Cloud className="mr-2 h-4 w-4" />
@@ -410,10 +590,10 @@
                   
                   <Button
                     variant="outline"
-                    onClick={() => testConnectionMutation.mutate()}
-                    disabled={testConnectionMutation.isPending}
+                    onClick={() => testConnection.mutate()}
+                    disabled={testConnection.isPending}
                   >
-                    {testConnectionMutation.isPending ? (
+                    {testConnection.isPending ? (
                       <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                       <Activity className="mr-2 h-4 w-4" />
@@ -423,53 +603,8 @@
                 </div>
               )}
               
-              {/* Sync Settings */}
-              {cloudSyncStatus?.enabled && (
-                <div className="space-y-4">
-                  <Separator />
-                  <h4 className="font-medium">Impostazioni Avanzate</h4>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="auto_sync">Sincronizzazione Automatica</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Sincronizza automaticamente ogni {Math.floor((cloudSyncStatus?.sync_interval || 3600) / 60)} minuti
-                      </p>
-                    </div>
-                    <Switch
-                      id="auto_sync"
-                      checked={cloudSyncStatus?.auto_sync}
-                      onCheckedChange={(checked) => {
-                        // TODO: Update auto sync setting
-                        console.log('Auto sync:', checked);
-                      }}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Intervallo Sincronizzazione (minuti)</Label>
-                    <Slider
-                      value={[Math.floor((cloudSyncStatus?.sync_interval || 3600) / 60)]}
-                      onValueChange={(value) => {
-                        // TODO: Update sync interval
-                        console.log('Sync interval:', value[0]);
-                      }}
-                      max={1440}
-                      min={5}
-                      step={5}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>5 min</span>
-                      <span>{Math.floor((cloudSyncStatus?.sync_interval || 3600) / 60)} min</span>
-                      <span>24 ore</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
               {/* Setup Instructions */}
-              {!cloudSyncStatus?.enabled && (
+              {!syncStatus?.enabled && (
                 <Alert>
                   <Cloud className="h-4 w-4" />
                   <AlertDescription>
@@ -767,10 +902,10 @@
                 
                 <Button
                   variant="outline"
-                  onClick={() => createBackupMutation.mutate()}
-                  disabled={createBackupMutation.isPending}
+                  onClick={() => createBackup.mutate()}
+                  disabled={createBackup.isPending}
                 >
-                  {createBackupMutation.isPending ? (
+                  {createBackup.isPending ? (
                     <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Download className="mr-2 h-4 w-4" />
@@ -845,7 +980,7 @@
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Stato</span>
-                      <Badge variant="success">Operativo</Badge>
+                      <Badge variant="default" className="bg-green-100 text-green-800">Operativo</Badge>
                     </div>
                   </div>
                 </div>
@@ -1028,7 +1163,7 @@
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Versione API</Label>
-                      <Input value="v2.0.0" readOnly />
+                      <Input value="v4.0.0" readOnly />
                     </div>
                     
                     <div className="space-y-2">
@@ -1095,14 +1230,21 @@
               
               <div className="bg-black text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto">
                 <div className="space-y-1">
-                  <div>[2024-06-03 10:30:15] INFO: Sistema avviato correttamente</div>
-                  <div>[2024-06-03 10:30:16] INFO: Database connesso</div>
-                  <div>[2024-06-03 10:30:17] INFO: API server in ascolto sulla porta 8000</div>
-                  <div>[2024-06-03 10:31:22] INFO: Importazione fattura completata: invoice_123.xml</div>
-                  <div>[2024-06-03 10:32:15] WARNING: Tentativo di connessione cloud sync fallito, retry in 30s</div>
-                  <div>[2024-06-03 10:32:45] INFO: Cloud sync connesso correttamente</div>
-                  <div>[2024-06-03 10:35:10] INFO: Riconciliazione automatica: 3 match trovati</div>
-                  <div>[2024-06-03 10:37:22] INFO: Backup automatico completato</div>
+                  <div>[2024-06-15 10:30:15] INFO: Sistema FatturaAnalyzer V4.0 avviato correttamente</div>
+                  <div>[2024-06-15 10:30:16] INFO: Database connesso - PostgreSQL 14.2</div>
+                  <div>[2024-06-15 10:30:17] INFO: Analytics V3.0 Ultra-Optimized engine inizializzato</div>
+                  <div>[2024-06-15 10:30:18] INFO: Smart Reconciliation V4.0 con AI/ML abilitato</div>
+                  <div>[2024-06-15 10:30:19] INFO: Enhanced Transactions V4.0 sistema pronto</div>
+                  <div>[2024-06-15 10:30:20] INFO: API server in ascolto sulla porta 8000</div>
+                  <div>[2024-06-15 10:31:22] INFO: Importazione fattura completata: invoice_123.xml</div>
+                  <div>[2024-06-15 10:32:15] WARNING: Tentativo di connessione cloud sync fallito, retry in 30s</div>
+                  <div>[2024-06-15 10:32:45] INFO: Cloud sync Google Drive connesso correttamente</div>
+                  <div>[2024-06-15 10:35:10] INFO: AI Smart Reconciliation: 3 match trovati con confidenza >90%</div>
+                  <div>[2024-06-15 10:37:22] INFO: Backup automatico completato - 25.4MB</div>
+                  <div>[2024-06-15 10:38:01] INFO: Analytics V3.0 cache refreshed con AI insights</div>
+                  <div>[2024-06-15 10:39:45] INFO: Smart reconciliation learning model updated</div>
+                  <div>[2024-06-15 10:40:12] INFO: Enhanced transactions pattern analysis completata</div>
+                  <div>[2024-06-15 10:41:33] INFO: Client reliability scores aggiornati per 156 anagrafiche</div>
                 </div>
               </div>
             </CardContent>
@@ -1112,282 +1254,3 @@
     </div>
   );
 }
-                    import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Settings,
-  Building,
-  Cloud,
-  Database,
-  Bell,
-  Shield,
-  Palette,
-  Globe,
-  Cpu,
-  HardDrive,
-  Activity,
-  Zap,
-  Users,
-  Mail,
-  Phone,
-  MapPin,
-  CreditCard,
-  Save,
-  RefreshCw,
-  CheckCircle,
-  AlertTriangle,
-  Download,
-  Upload,
-  RotateCcw,
-  Eye,
-  EyeOff,
-} from 'lucide-react';
-
-// Components
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Button,
-  Input,
-  Label,
-  Switch,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Textarea,
-  Badge,
-  Separator,
-  Alert,
-  AlertDescription,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Progress,
-  Slider,
-} from '@/components/ui';
-
-// Services
-import { apiClient } from '@/services/api';
-
-// Utils
-import { formatFileSize } from '@/lib/formatters';
-import { cn } from '@/lib/utils';
-
-// Types
-interface CompanySettings {
-  ragione_sociale: string;
-  partita_iva: string;
-  codice_fiscale: string;
-  indirizzo: string;
-  cap: string;
-  citta: string;
-  provincia: string;
-  paese: string;
-  telefono: string;
-  email: string;
-  pec?: string;
-  codice_destinatario?: string;
-  regime_fiscale: string;
-  iban?: string;
-}
-
-interface CloudSyncSettings {
-  enabled: boolean;
-  auto_sync: boolean;
-  sync_interval: number;
-  last_sync: string | null;
-  remote_file_id: string | null;
-}
-
-interface NotificationSettings {
-  email_notifications: boolean;
-  invoice_reminders: boolean;
-  payment_alerts: boolean;
-  system_notifications: boolean;
-  daily_reports: boolean;
-  weekly_reports: boolean;
-}
-
-interface SystemSettings {
-  theme: 'light' | 'dark' | 'system';
-  language: string;
-  timezone: string;
-  date_format: string;
-  currency_format: string;
-  auto_backup: boolean;
-  backup_retention_days: number;
-  debug_mode: boolean;
-}
-
-interface SystemHealth {
-  database_size: number;
-  total_invoices: number;
-  total_transactions: number;
-  total_anagraphics: number;
-  last_backup: string | null;
-  system_version: string;
-  uptime: string;
-}
-
-export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState('company');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [unsavedChanges, setUnsavedChanges] = useState(false);
-  const queryClient = useQueryClient();
-
-  // Company settings state
-  const [companySettings, setCompanySettings] = useState<CompanySettings>({
-    ragione_sociale: '',
-    partita_iva: '',
-    codice_fiscale: '',
-    indirizzo: '',
-    cap: '',
-    citta: '',
-    provincia: '',
-    paese: 'IT',
-    telefono: '',
-    email: '',
-    regime_fiscale: 'RF01',
-  });
-
-  // Notification settings state
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
-    email_notifications: true,
-    invoice_reminders: true,
-    payment_alerts: true,
-    system_notifications: false,
-    daily_reports: false,
-    weekly_reports: true,
-  });
-
-  // System settings state
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
-    theme: 'system',
-    language: 'it',
-    timezone: 'Europe/Rome',
-    date_format: 'DD/MM/YYYY',
-    currency_format: 'EUR',
-    auto_backup: true,
-    backup_retention_days: 30,
-    debug_mode: false,
-  });
-
-  // Fetch current settings
-  const { data: currentSettings, isLoading: isLoadingSettings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: async () => {
-      const response = await apiClient.get('/setup/status');
-      if (response.success) {
-        return response.data;
-      }
-      throw new Error(response.message || 'Errore nel caricamento impostazioni');
-    },
-  });
-
-  // Fetch cloud sync status
-  const { data: cloudSyncStatus, isLoading: isLoadingSync } = useQuery({
-    queryKey: ['cloud-sync-status'],
-    queryFn: async () => {
-      const response = await apiClient.get('/sync/status');
-      if (response.success) {
-        return response.data as CloudSyncSettings;
-      }
-      return null;
-    },
-  });
-
-  // Fetch system health
-  const { data: systemHealth, isLoading: isLoadingHealth } = useQuery({
-    queryKey: ['system-health'],
-    queryFn: async () => {
-      const response = await apiClient.get('/first-run/system/info');
-      if (response.success) {
-        return response.data.system_info as SystemHealth;
-      }
-      return null;
-    },
-  });
-
-  // Save settings mutation
-  const saveSettingsMutation = useMutation({
-    mutationFn: async (settings: any) => {
-      const response = await apiClient.post('/setup/complete', settings);
-      if (!response.success) {
-        throw new Error(response.message || 'Errore nel salvataggio');
-      }
-      return response;
-    },
-    onSuccess: () => {
-      setUnsavedChanges(false);
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-    },
-  });
-
-  // Cloud sync mutations
-  const enableSyncMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/sync/enable');
-      if (!response.success) {
-        throw new Error(response.message || 'Errore abilitazione sync');
-      }
-      return response;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cloud-sync-status'] });
-    },
-  });
-
-  const disableSyncMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/sync/disable');
-      if (!response.success) {
-        throw new Error(response.message || 'Errore disabilitazione sync');
-      }
-      return response;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cloud-sync-status'] });
-    },
-  });
-
-  const manualSyncMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/sync/manual');
-      if (!response.success) {
-        throw new Error(response.message || 'Errore sincronizzazione');
-      }
-      return response;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cloud-sync-status'] });
-    },
-  });
-
-  // Test connection mutation
-  const testConnectionMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/sync/test-connection');
-      if (!response.success) {
-        throw new Error(response.message || 'Test connessione fallito');
-      }
-      return response;
-    },
-  });
-
-  // Create backup mutation
-  const createBackupMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post('/import-export/backup/create', {}, {
-        responseType: '
