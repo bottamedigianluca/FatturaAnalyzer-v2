@@ -539,3 +539,302 @@ export function useResetAuthorization() {
     onError: (error) => {
       addNotification({
         type: 'error',
+        title: 'Errore Reset Autorizzazione',
+        message: error.message,
+        duration: 5000,
+      });
+    },
+  });
+}
+
+// ===== SYNC HISTORY =====
+
+/**
+ * Get synchronization history
+ */
+export function useSyncHistory() {
+  return useQuery({
+    queryKey: ['sync-history'],
+    queryFn: async () => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/history`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to get sync history');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to get sync history');
+      }
+      
+      return result.data as SyncHistory[];
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+}
+
+/**
+ * Clear synchronization history
+ */
+export function useClearSyncHistory() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useUIStore();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/history`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to clear sync history');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to clear sync history');
+      }
+      
+      return result.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync-history'] });
+      
+      addNotification({
+        type: 'success',
+        title: 'Cronologia Cancellata',
+        message: 'La cronologia delle sincronizzazioni è stata eliminata',
+        duration: 4000,
+      });
+    },
+    onError: (error) => {
+      addNotification({
+        type: 'error',
+        title: 'Errore Cancellazione Cronologia',
+        message: error.message,
+        duration: 5000,
+      });
+    },
+  });
+}
+
+// ===== BACKUP & RESTORE =====
+
+/**
+ * Create backup before sync
+ */
+export function useCreateBackup() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useUIStore();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/backup`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create backup');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create backup');
+      }
+      
+      return result.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      
+      addNotification({
+        type: 'success',
+        title: 'Backup Creato',
+        message: `Backup salvato: ${data.backup_file}`,
+        duration: 5000,
+      });
+    },
+    onError: (error) => {
+      addNotification({
+        type: 'error',
+        title: 'Errore Backup',
+        message: error.message,
+        duration: 5000,
+      });
+    },
+  });
+}
+
+/**
+ * Get available backups
+ */
+export function useBackupsList() {
+  return useQuery({
+    queryKey: ['sync-backups'],
+    queryFn: async () => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/backups`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to get backups list');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to get backups list');
+      }
+      
+      return result.data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
+ * Restore from backup
+ */
+export function useRestoreBackup() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useUIStore();
+
+  return useMutation<any, Error, string>({
+    mutationFn: async (backupFile: string) => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/restore`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ backup_file: backupFile }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to restore backup');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to restore backup');
+      }
+      
+      return result.data;
+    },
+    onSuccess: (data, backupFile) => {
+      // Invalidate all data queries since we restored from backup
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['anagraphics'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      
+      addNotification({
+        type: 'success',
+        title: 'Backup Ripristinato',
+        message: `Database ripristinato da: ${backupFile}`,
+        duration: 6000,
+      });
+    },
+    onError: (error) => {
+      addNotification({
+        type: 'error',
+        title: 'Errore Ripristino',
+        message: error.message,
+        duration: 5000,
+      });
+    },
+  });
+}
+
+/**
+ * Delete backup file
+ */
+export function useDeleteBackup() {
+  const queryClient = useQueryClient();
+  const { addNotification } = useUIStore();
+
+  return useMutation<any, Error, string>({
+    mutationFn: async (backupFile: string) => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/backup/${encodeURIComponent(backupFile)}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete backup');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to delete backup');
+      }
+      
+      return result.data;
+    },
+    onSuccess: (data, backupFile) => {
+      queryClient.invalidateQueries({ queryKey: ['sync-backups'] });
+      
+      addNotification({
+        type: 'success',
+        title: 'Backup Eliminato',
+        message: `Backup eliminato: ${backupFile}`,
+        duration: 4000,
+      });
+    },
+    onError: (error) => {
+      addNotification({
+        type: 'error',
+        title: 'Errore Eliminazione Backup',
+        message: error.message,
+        duration: 5000,
+      });
+    },
+  });
+}
+
+// ===== UTILITY HOOKS =====
+
+/**
+ * Get sync statistics
+ */
+export function useSyncStats() {
+  return useQuery({
+    queryKey: ['sync-stats'],
+    queryFn: async () => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/stats`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to get sync stats');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to get sync stats');
+      }
+      
+      return result.data;
+    },
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Check if sync is required
+ */
+export function useSyncRequired() {
+  return useQuery({
+    queryKey: ['sync-required'],
+    queryFn: async () => {
+      const response = await fetch(`${apiClient.baseURL}/api/sync/check-required`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to check if sync is required');
+      }
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to check sync requirement');
+      }
+      
+      return result.data;
+    },
+    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: 2 * 60 * 1000, // Check every 2 minutes
+  });
+}
