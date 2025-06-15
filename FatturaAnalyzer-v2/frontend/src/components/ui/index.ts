@@ -1,6 +1,4 @@
-// shadcn/ui Components Export Index
-// Tutti i componenti UI per facile importazione
-
+// --- Componenti Base ---
 export { Button, buttonVariants } from './button';
 export type { ButtonProps } from './button';
 
@@ -16,6 +14,18 @@ export {
 export { Input } from './input';
 export type { InputProps } from './input';
 
+export { Label } from './label';
+
+export { Badge, badgeVariants } from './badge';
+export type { BadgeProps } from './badge';
+
+export { Checkbox } from './checkbox';
+
+export { Skeleton } from './skeleton';
+
+export { Toaster } from './sonner';
+
+// --- Componenti di Layout e Struttura ---
 export {
   Table,
   TableHeader,
@@ -27,6 +37,9 @@ export {
   TableCaption,
 } from './table';
 
+export { Separator } from './separator';
+
+// --- Componenti Interattivi e di Navigazione ---
 export {
   Dialog,
   DialogPortal,
@@ -39,11 +52,6 @@ export {
   DialogTitle,
   DialogDescription,
 } from './dialog';
-
-export { Badge, badgeVariants } from './badge';
-export type { BadgeProps } from './badge';
-
-export { Skeleton } from './skeleton';
 
 export {
   DropdownMenu,
@@ -83,8 +91,29 @@ export {
   SelectScrollDownButton,
 } from './select';
 
-export { Label } from './label';
+export {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from './tabs';
 
-export { Checkbox } from './checkbox';
+// --- Componenti di Input Avanzati ---
+export { Slider } from './slider';
+export { Switch } from './switch';
+// Nota: DatePicker spesso non è un singolo componente ma una composizione. 
+// Se hai un file date-picker.tsx, dovresti esportarlo qui.
 
-export { Toaster } from './sonner';
+// --- Componenti di Visualizzazione e Feedback ---
+export { Progress } from './progress';
+
+export {
+  Alert,
+  AlertTitle,
+  AlertDescription,
+} from './alert';
+
+// --- Aggiungi qui altri componenti UI che potresti creare ---
+// Esempio:
+// export * from './avatar';
+// export * from './calendar';
