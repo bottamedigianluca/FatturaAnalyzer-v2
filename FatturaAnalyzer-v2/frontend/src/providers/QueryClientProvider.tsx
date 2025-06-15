@@ -1,413 +1,214 @@
-/**
- * Query Client Provider V4.0 Ultra-Enhanced for FatturaAnalyzer
- * Provider per React Query con ottimizzazioni avanzate:
- * - Smart retry logic
- * - Performance monitoring
- * - Background refetch optimization
- * - Error handling integration
- */
+// Contenuto per frontend/src/components/analytics/ChartsLibrary.tsx
 
-import React, { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { useUIStore } from '@/store';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  ScatterChart,
+  Scatter,
+  ComposedChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ReferenceLine,
+  Brush,
+  RadialBarChart,
+  RadialBar,
+} from 'recharts';
+import {
+  TrendingUp,
+  Download,
+  Settings,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Button,
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui';
+import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
+import { cn } from '@/lib/utils';
 
-// ===== QUERY CLIENT CONFIGURATION V4.0 =====
+interface ChartDataPoint {
+  name: string;
+  value: number;
+  [key: string]: any;
+}
 
-/**
- * Crea un QueryClient ottimizzato per V4.0
- */
-const createQueryClient = () => {
-  const { addNotification, setError, setLoading } = useUIStore.getState();
+interface ChartConfig {
+  type: 'line' | 'area' | 'bar' | 'pie' | 'scatter' | 'composed' | 'radial' | 'treemap' | 'funnel';
+  data: ChartDataPoint[];
+  title: string;
+  description?: string;
+  xKey: string;
+  yKeys: string[];
+  colors?: string[];
+  showGrid?: boolean;
+  showLegend?: boolean;
+  showTooltip?: boolean;
+  showBrush?: boolean;
+  height?: number;
+  formatters?: { [key: string]: (value: any) => string };
+}
 
-  return new QueryClient({
-    queryCache: new QueryCache({
-      onError: (error: any, query) => {
-        console.error('🔥 Query Error V4.0:', error, query);
-        
-        // Gestione errori specifica per tipo
-        const errorMessage = getErrorMessage(error);
-        const queryKey = Array.isArray(query.queryKey) ? query.queryKey[0] : query.queryKey;
-        
-        // Notifica solo errori critici
-        if (isCriticalError(error)) {
-          addNotification({
-            type: 'error',
-            title: 'Errore di Caricamento',
-            message: errorMessage,
-            duration: 6000,
-          });
-        }
-        
-        // Aggiorna stato errore nel store
-        setError(String(queryKey), errorMessage);
-      },
-      onSuccess: (data, query) => {
-        const queryKey = Array.isArray(query.queryKey) ? query.queryKey[0] : query.queryKey;
-        
-        // Pulisci errori precedenti
-        setError(String(queryKey), null);
-      },
-    }),
-    
-    mutationCache: new MutationCache({
-      onError: (error: any, variables, context, mutation) => {
-        console.error('🔥 Mutation Error V4.0:', error, mutation);
-        
-        const errorMessage = getErrorMessage(error);
-        
-        // Notifica sempre gli errori delle mutazioni
-        addNotification({
-          type: 'error',
-          title: 'Errore Operazione',
-          message: errorMessage,
-          duration: 8000,
-        });
-      },
-      onSuccess: (data, variables, context, mutation) => {
-        // Le notifiche di successo sono gestite dai singoli hook
-        console.log('✅ Mutation Success V4.0:', mutation.options.mutationKey);
-      },
-    }),
-    
-    defaultOptions: {
-      queries: {
-        // Retry logic intelligente V4.0
-        retry: (failureCount, error: any) => {
-          // Non ritentare errori client (4xx)
-          if (error?.status >= 400 && error?.status < 500) {
-            return false;
-          }
-          
-          // Retry limitato per errori di rete
-          if (error?.message?.includes('Network Error') || error?.message?.includes('fetch')) {
-            return failureCount < 3;
-          }
-          
-          // Retry per errori server (5xx)
-          if (error?.status >= 500) {
-            return failureCount < 2;
-          }
-          
-          // Retry specifico per backend non raggiungibile
-          if (error?.message?.includes('Backend non raggiungibile')) {
-            return failureCount < 3;
-          }
-          
-          // Retry per timeout
-          if (error?.name === 'TimeoutError') {
-            return failureCount < 2;
-          }
-          
-          // Default: un solo retry
-          return failureCount < 1;
-        },
-        
-        // Delay progressivo per retry
-        retryDelay: (attemptIndex) => {
-          const baseDelay = 1000; // 1 secondo
-          const maxDelay = 30000; // 30 secondi max
-          const delay = Math.min(baseDelay * Math.pow(2, attemptIndex), maxDelay);
-          
-          // Aggiungi jitter per evitare thundering herd
-          const jitter = Math.random() * 0.1 * delay;
-          return delay + jitter;
-        },
-        
-        // Configurazione cache intelligente
-        staleTime: 5 * 60 * 1000, // 5 minuti - dati considerati freschi
-        gcTime: 30 * 60 * 1000, // 30 minuti - garbage collection
-        
-        // Background refetch ottimizzato
-        refetchOnWindowFocus: false, // Disabilitato per performance
-        refetchOnMount: true, // Sempre refetch al mount
-        refetchOnReconnect: 'always', // Refetch quando torna la connessione
-        
-        // Rete e performance
-        networkMode: 'online', // Solo quando online
-        
-        // Configurazione placeholder data
-        placeholderData: undefined, // Gestito dai singoli hook se necessario
-        
-        // Meta informazioni per debugging
-        meta: {
-          version: '4.0',
-          enhanced: true,
-        },
-      },
-      
-      mutations: {
-        // Retry limitato per mutazioni
-        retry: (failureCount, error: any) => {
-          // Non ritentare errori di validazione
-          if (error?.status === 400 || error?.status === 422) {
-            return false;
-          }
-          
-          // Un solo retry per errori di rete
-          if (error?.message?.includes('Network Error')) {
-            return failureCount < 1;
-          }
-          
-          return false; // Default: no retry per mutazioni
-        },
-        
-        // Timeout per mutazioni
-        networkMode: 'online',
-        
-        // Meta informazioni
-        meta: {
-          version: '4.0',
-          enhanced: true,
-        },
-      },
-    },
-  });
+interface AdvancedChartProps extends ChartConfig {
+  className?: string;
+}
+
+const DEFAULT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const GRADIENT_DEFINITIONS = (
+  <defs>
+    <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1}/>
+    </linearGradient>
+    <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+      <stop offset="95%" stopColor="#10b981" stopOpacity={0.1}/>
+    </linearGradient>
+    <linearGradient id="redGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8}/>
+      <stop offset="95%" stopColor="#ef4444" stopOpacity={0.1}/>
+    </linearGradient>
+  </defs>
+);
+
+const CustomTooltip = ({ active, payload, label, formatters = {} }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-xl p-4 min-w-[200px]"
+      >
+        <p className="font-semibold text-foreground mb-3 border-b border-border pb-2">{label}</p>
+        <div className="space-y-2">
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: entry.color || entry.fill }} />
+                <span className="text-sm text-muted-foreground capitalize">{entry.name || entry.dataKey}:</span>
+              </div>
+              <span className="font-semibold text-foreground ml-2">
+                {formatters[entry.dataKey] ? formatters[entry.dataKey](entry.value) : formatCurrency(entry.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+    );
+  }
+  return null;
 };
 
-// ===== ERROR HANDLING UTILITIES =====
-
-/**
- * Ottiene messaggio d'errore user-friendly
- */
-function getErrorMessage(error: any): string {
-  if (error?.message?.includes('Backend non raggiungibile')) {
-    return 'Backend non raggiungibile. Verificare la connessione.';
-  }
-  
-  if (error?.message?.includes('AI service unavailable')) {
-    return 'Servizio AI temporaneamente non disponibile.';
-  }
-  
-  if (error?.message?.includes('Network Error') || error?.message?.includes('fetch')) {
-    return 'Errore di connessione. Verificare la rete.';
-  }
-  
-  if (error?.status === 401) {
-    return 'Sessione scaduta. Effettuare nuovamente il login.';
-  }
-  
-  if (error?.status === 403) {
-    return 'Operazione non autorizzata.';
-  }
-  
-  if (error?.status === 404) {
-    return 'Risorsa non trovata.';
-  }
-  
-  if (error?.status === 422) {
-    return 'Dati non validi. Verificare i campi inseriti.';
-  }
-  
-  if (error?.status >= 500) {
-    return 'Errore interno del server. Riprovare più tardi.';
-  }
-  
-  return error?.message || 'Errore imprevisto';
-}
-
-/**
- * Determina se un errore è critico e richiede notifica
- */
-function isCriticalError(error: any): boolean {
-  // Errori di autenticazione
-  if (error?.status === 401) return true;
-  
-  // Errori server
-  if (error?.status >= 500) return true;
-  
-  // Backend non raggiungibile
-  if (error?.message?.includes('Backend non raggiungibile')) return true;
-  
-  // Errori di rete ripetuti
-  if (error?.message?.includes('Network Error')) return true;
-  
-  return false;
-}
-
-// ===== SINGLETON QUERY CLIENT =====
-let queryClient: QueryClient;
-
-const getQueryClient = () => {
-  if (!queryClient) {
-    queryClient = createQueryClient();
-  }
-  return queryClient;
-};
-
-// ===== PROVIDER COMPONENT =====
-interface QueryProviderProps {
-  children: ReactNode;
-  enableDevtools?: boolean;
-}
-
-export function QueryProvider({ 
-  children, 
-  enableDevtools = import.meta.env.DEV 
-}: QueryProviderProps) {
-  const client = React.useMemo(() => getQueryClient(), []);
-
+export function AnimatedLineChart({ data, title, description, xKey, yKeys, colors = DEFAULT_COLORS, showGrid = true, showLegend = true, showBrush = false, height = 300, formatters = {}, className }: AdvancedChartProps) {
   return (
-    <QueryClientProvider client={client}>
-      {children}
-      {enableDevtools && (
-        <ReactQueryDevtools
-          initialIsOpen={false}
-          position="bottom-right"
-          toggleButtonProps={{
-            style: {
-              marginRight: '20px',
-              marginBottom: '20px',
-            },
-          }}
-        />
-      )}
-    </QueryClientProvider>
+      <div className={cn("w-full", className)}>
+        <div className="mb-4"><h3 className="text-lg font-semibold text-foreground">{title}</h3>{description && <p className="text-sm text-muted-foreground">{description}</p>}</div>
+        <div style={{ height }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-30" />}
+              <XAxis dataKey={xKey} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatters.y ? formatters.y(value) : formatCurrencyCompact(value)} />
+              <Tooltip content={<CustomTooltip formatters={formatters} />} />
+              {showLegend && <Legend />}
+              {yKeys.map((key, index) => (
+                  <Line key={key} type="monotone" dataKey={key} stroke={colors[index % colors.length]} strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} animationDuration={1500} />
+              ))}
+              {showBrush && <Brush dataKey={xKey} height={30} stroke={colors[0]} />}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
   );
 }
 
-// ===== PERFORMANCE MONITORING HOOK =====
-
-/**
- * Hook per monitorare performance delle query
- */
-export function useQueryPerformanceMonitor() {
-  const queryClient = getQueryClient();
-  
-  React.useEffect(() => {
-    const cache = queryClient.getQueryCache();
-    
-    const unsubscribe = cache.subscribe((event) => {
-      if (event.type === 'updated' && event.query.state.fetchStatus === 'idle') {
-        const { dataUpdatedAt, errorUpdatedAt } = event.query.state;
-        const duration = Date.now() - (dataUpdatedAt || errorUpdatedAt);
-        
-        // Log query lente (> 3 secondi)
-        if (duration > 3000) {
-          console.warn('🐌 Slow Query Detected V4.0:', {
-            queryKey: event.query.queryKey,
-            duration: `${duration}ms`,
-            staleTime: event.query.options.staleTime,
-            gcTime: event.query.options.gcTime,
-          });
-        }
-      }
-    });
-    
-    return unsubscribe;
-  }, [queryClient]);
+export function StackedAreaChart({ data, title, description, xKey, yKeys, colors = DEFAULT_COLORS, showGrid = true, height = 300, formatters = {}, className }: AdvancedChartProps) {
+  return (
+    <div className={cn("w-full", className)}>
+      <div className="mb-4"><h3 className="text-lg font-semibold">{title}</h3>{description && <p className="text-sm text-muted-foreground">{description}</p>}</div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            {GRADIENT_DEFINITIONS}
+            {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-30" />}
+            <XAxis dataKey={xKey} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatters.y ? formatters.y(value) : formatCurrencyCompact(value)} />
+            <Tooltip content={<CustomTooltip formatters={formatters} />} />
+            {yKeys.map((key, index) => (
+              <Area key={key} type="monotone" dataKey={key} stackId="1" stroke={colors[index % colors.length]} fill={`url(#${['blue', 'green', 'red', 'purple'][index % 4]}Gradient)`} strokeWidth={2} animationDuration={2000} animationEasing="ease-out" />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
 
-// ===== CACHE MANAGEMENT UTILITIES =====
-
-/**
- * Utilities per gestione cache avanzata
- */
-export const cacheUtils = {
-  /**
-   * Pulisce tutta la cache
-   */
-  clearAll: () => {
-    const client = getQueryClient();
-    client.clear();
-  },
-  
-  /**
-   * Invalida query per pattern
-   */
-  invalidatePattern: (pattern: string) => {
-    const client = getQueryClient();
-    client.invalidateQueries({
-      predicate: (query) => {
-        const key = Array.isArray(query.queryKey) ? query.queryKey[0] : query.queryKey;
-        return String(key).includes(pattern);
-      },
-    });
-  },
-  
-  /**
-   * Rimuove query obsolete
-   */
-  removeStale: () => {
-    const client = getQueryClient();
-    const cache = client.getQueryCache();
-    
-    cache.getAll().forEach((query) => {
-      if (query.isStale()) {
-        cache.remove(query);
-      }
-    });
-  },
-  
-  /**
-   * Ottiene statistiche cache
-   */
-  getStats: () => {
-    const client = getQueryClient();
-    const cache = client.getQueryCache();
-    const queries = cache.getAll();
-    
-    return {
-      total: queries.length,
-      active: queries.filter(q => q.getObserversCount() > 0).length,
-      stale: queries.filter(q => q.isStale()).length,
-      fetching: queries.filter(q => q.state.fetchStatus === 'fetching').length,
-      errors: queries.filter(q => q.state.status === 'error').length,
-    };
-  },
-  
-  /**
-   * Prefetch intelligente
-   */
-  smartPrefetch: async (queryKey: any[], queryFn: () => Promise<any>) => {
-    const client = getQueryClient();
-    const existing = client.getQueryData(queryKey);
-    
-    if (!existing) {
-      await client.prefetchQuery({
-        queryKey,
-        queryFn,
-        staleTime: 10 * 60 * 1000, // 10 minuti per prefetch
-      });
-    }
-  },
-};
-
-// ===== NETWORK STATUS INTEGRATION =====
-
-/**
- * Hook per gestire stato di rete
- */
-export function useNetworkStatus() {
-  const [isOnline, setIsOnline] = React.useState(navigator.onLine);
-  const queryClient = getQueryClient();
-  
-  React.useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      
-      // Riprova query fallite quando torna la connessione
-      queryClient.invalidateQueries({
-        predicate: (query) => query.state.status === 'error',
-      });
-    };
-    
-    const handleOffline = () => {
-      setIsOnline(false);
-    };
-    
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [queryClient]);
-  
-  return isOnline;
+export function InteractiveBarChart({ data, title, description, xKey, yKeys, colors = DEFAULT_COLORS, showGrid = true, height = 300, formatters = {}, className, layout = "vertical" }: AdvancedChartProps & { layout?: "horizontal" | "vertical" }) {
+  return (
+    <div className={cn("w-full", className)}>
+      <div className="mb-4"><h3 className="text-lg font-semibold">{title}</h3>{description && <p className="text-sm text-muted-foreground">{description}</p>}</div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} layout={layout} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-30" />}
+            <XAxis type={layout === "vertical" ? "category" : "number"} dataKey={layout === "vertical" ? xKey : undefined} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis type={layout === "vertical" ? "number" : "category"} dataKey={layout === "horizontal" ? xKey : undefined} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatters.y ? formatters.y(value) : formatCurrencyCompact(value)} />
+            <Tooltip content={<CustomTooltip formatters={formatters} />} />
+            {yKeys.map((key, index) => (
+              <Bar key={key} dataKey={key} fill={colors[index % colors.length]} radius={[4, 4, 0, 0]} animationDuration={1000} animationEasing="ease-out" />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
 
-// ===== EXPORTS =====
-export { getQueryClient };
-export default QueryProvider;
+export function EnhancedPieChart({ data, title, description, colors = DEFAULT_COLORS, height = 300, formatters = {}, className, innerRadius = 0, showLabels = true, showPercentages = true }: AdvancedChartProps & { innerRadius?: number; showLabels?: boolean; showPercentages?: boolean; }) {
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
+    if (!showLabels) return null;
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    return (<text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight="bold">{showPercentages ? `${(percent * 100).toFixed(0)}%` : name}</text>);
+  };
+  return (
+    <div className={cn("w-full", className)}>
+      <div className="mb-4"><h3 className="text-lg font-semibold">{title}</h3>{description && <p className="text-sm text-muted-foreground">{description}</p>}</div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" labelLine={false} label={renderCustomLabel} outerRadius={Math.min(height * 0.35, 120)} innerRadius={innerRadius} dataKey="value" animationBegin={0} animationDuration={1500}>
+              {data.map((entry, index) => (<Cell key={`cell-${index}`} fill={colors[index % colors.length]} />))}
+            </Pie>
+            <Tooltip content={<CustomTooltip formatters={formatters} />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
