@@ -1228,7 +1228,7 @@ export function SettingsPage() {
                 </Button>
               </div>
               
-              <div className="bg-black text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto">
+<div className="bg-black text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto">
                 <div className="space-y-1">
                   <div>[2024-06-15 10:30:15] INFO: Sistema FatturaAnalyzer V4.0 avviato correttamente</div>
                   <div>[2024-06-15 10:30:16] INFO: Database connesso - PostgreSQL 14.2</div>
@@ -1239,7 +1239,7 @@ export function SettingsPage() {
                   <div>[2024-06-15 10:31:22] INFO: Importazione fattura completata: invoice_123.xml</div>
                   <div>[2024-06-15 10:32:15] WARNING: Tentativo di connessione cloud sync fallito, retry in 30s</div>
                   <div>[2024-06-15 10:32:45] INFO: Cloud sync Google Drive connesso correttamente</div>
-                  <div>[2024-06-15 10:35:10] INFO: AI Smart Reconciliation: 3 match trovati con confidenza >90%</div>
+                  <div>[2024-06-15 10:35:10] INFO: AI Smart Reconciliation: 3 match trovati con confidenza &gt;90%</div>
                   <div>[2024-06-15 10:37:22] INFO: Backup automatico completato - 25.4MB</div>
                   <div>[2024-06-15 10:38:01] INFO: Analytics V3.0 cache refreshed con AI insights</div>
                   <div>[2024-06-15 10:39:45] INFO: Smart reconciliation learning model updated</div>
