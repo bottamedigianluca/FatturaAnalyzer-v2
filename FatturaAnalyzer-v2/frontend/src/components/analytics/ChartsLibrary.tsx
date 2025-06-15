@@ -115,7 +115,7 @@ interface AdvancedChartProps extends ChartConfig {
   customizable?: boolean;
 }
 
-const DEFAULT_COLORS = [
+export const DEFAULT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
   '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1',
   '#14b8a6', '#f97316', '#8b5cf6', '#06b6d4', '#84cc16'
@@ -143,7 +143,7 @@ const GRADIENT_DEFINITIONS = (
 );
 
 // Custom Tooltip Component
-const CustomTooltip = ({ 
+export const CustomTooltip = ({ 
   active, 
   payload, 
   label, 
@@ -554,13 +554,3 @@ export function EnhancedPieChart({
     </div>
   );
 }
-
-// Export all chart components
-export {
-  AnimatedLineChart,
-  StackedAreaChart,
-  InteractiveBarChart,
-  EnhancedPieChart,
-  CustomTooltip,
-  DEFAULT_COLORS,
-};
