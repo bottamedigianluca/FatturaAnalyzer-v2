@@ -473,12 +473,7 @@ export const highlightSearchTerm = (
     return text;
   }
 
-  const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\// Document number formatting
-export const formatDocumentNumber = (
-  docNumber: string | null | undefined,
-  docType?: string
-): string => {
-  if (!docNumber')})`, 'gi');
+  const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
   const parts = text.split(regex);
 
   return parts.map((part, index) =>
