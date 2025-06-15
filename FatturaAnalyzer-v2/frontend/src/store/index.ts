@@ -72,7 +72,7 @@ export interface FirstRunState {
   wizard_state?: any;
 }
 
-// UI Store V4.0 - Enhanced con nuove funzionalità
+// ===== UI STORE V4.0 =====
 interface UIStateV4 {
   // Theme e impostazioni
   theme: Theme;
@@ -303,7 +303,7 @@ export const useUIStore = create<UIStateV4>()(
   )
 );
 
-// Data Store V4.0 - Enhanced con caching intelligente e AI
+// ===== DATA STORE V4.0 =====
 interface DataStateV4 {
   // Dashboard data V4.0
   dashboardData: DashboardData | null;
@@ -694,7 +694,7 @@ export const useDataStore = create<DataStateV4>()(
   )
 );
 
-// Reconciliation Store V4.0 - Enhanced con Smart Features
+// ===== RECONCILIATION STORE V4.0 =====
 interface ReconciliationStateV4 {
   // Current reconciliation session V4.0
   selectedInvoices: Invoice[];
@@ -1254,10 +1254,7 @@ export const useSyncStore = create<SyncStateV4>()(
   )
 );
 
-// Export stores and selectors V4.0
-export { useUIStore, useDataStore, useReconciliationStore, useImportExportStore, useSyncStore };
-
-// Utility selectors V4.0
+// ===== UTILITY SELECTORS V4.0 =====
 export const useTheme = () => useUIStore(state => state.theme);
 export const useLoading = (key?: string) => useUIStore(state => 
   key ? state.loading[key] || false : Object.keys(state.loading).length > 0
