@@ -133,7 +133,6 @@ enableTimeAnalysis: boolean;
 maxSuggestions: number;
 learningMode: boolean;
 }
-
 // Quantum-inspired sortable item component
 function QuantumSortableItem({
 children,
@@ -226,7 +225,6 @@ transition={{ duration: 2, repeat: Infinity }}
 
 );
 }
-
 // Holographic match indicator with AI insights
 function HolographicMatchIndicator({
 match,
@@ -707,16 +705,22 @@ transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
               transaction.reconciliation_status === 'Riconciliato Tot.' ? 'default' :
               transaction.reconciliation_status === 'Riconciliato Parz.' ? 'secondary' :
               'outline'
-            }
-            className="text-xs"
-          >
-            {transaction.reconciliation_status === 'Da Riconciliare' ? 'Nuovo' :
-             transaction.reconciliation_status === 'Riconciliato Parz.' ? 'Parziale' :
-             'Completo'}
-          </Badge>
-        </div>
-        
-        {transaction.causale_abi && (
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+IGNORE_WHEN_COPYING_END
+
+}
+className="text-xs"
+>
+{transaction.reconciliation_status === 'Da Riconciliare' ? 'Nuovo' :
+transaction.reconciliation_status === 'Riconciliato Parz.' ? 'Parziale' :
+'Completo'}
+</Badge>
+</div>
+
+{transaction.causale_abi && (
           <div className="flex justify-between items-center">
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Database className="w-3 h-3" />
@@ -952,30 +956,35 @@ Deep learning riconciliazioni con {suggestions.length} suggerimenti
         </Badge>
       </div>
     </div>
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+IGNORE_WHEN_COPYING_END
 
-    {/* AI Configuration Panel */}
-    {showAdvancedMetrics && (
-      <motion.div
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: "auto" }}
-        exit={{ opacity: 0, height: 0 }}
-        className="mt-4 p-4 bg-white/70 rounded-lg border border-purple-200/50"
-      >
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-purple-700">Confidence Threshold</label>
-            <Slider
-              value={[aiConfig.confidenceThreshold]}
-              onValueChange={([value]) => onConfigChange({ ...aiConfig, confidenceThreshold: value })}
-              max={1}
-              min={0}
-              step={0.1}
-              className="w-full"
-            />
-            <div className="text-xs text-purple-600">{(aiConfig.confidenceThreshold * 100).toFixed(0)}%</div>
-          </div>
-          
-          <div className="space-y-2">
+{/* AI Configuration Panel */}
+{showAdvancedMetrics && (
+<motion.div
+initial={{ opacity: 0, height: 0 }}
+animate={{ opacity: 1, height: "auto" }}
+exit={{ opacity: 0, height: 0 }}
+className="mt-4 p-4 bg-white/70 rounded-lg border border-purple-200/50"
+>
+<div className="grid grid-cols-2 gap-4 text-sm">
+<div className="space-y-2">
+<label className="text-xs font-medium text-purple-700">Confidence Threshold</label>
+<Slider
+value={[aiConfig.confidenceThreshold]}
+onValueChange={([value]) => onConfigChange({ ...aiConfig, confidenceThreshold: value })}
+max={1}
+min={0}
+step={0.1}
+className="w-full"
+/>
+<div className="text-xs text-purple-600">{(aiConfig.confidenceThreshold * 100).toFixed(0)}%</div>
+</div>
+
+<div className="space-y-2">
             <label className="text-xs font-medium text-purple-700">Max Suggestions</label>
             <Slider
               value={[aiConfig.maxSuggestions]}
@@ -1152,40 +1161,45 @@ IGNORE_WHEN_COPYING_END
                 </div>
               </div>
             </div>
-            
-            {/* Advanced metrics panel */}
-            <AnimatePresence>
-              {expandedSuggestion === suggestion.id && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="border-t border-gray-200/50 pt-3 mt-3"
-                >
-                  {/* ML Prediction details */}
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="space-y-2">
-                      <h5 className="text-xs font-bold text-purple-700 flex items-center gap-1">
-                        <Beaker className="h-3 w-3" />
-                        ML Metrics
-                      </h5>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span>Semantic:</span>
-                          <span className="font-mono">{(suggestion.matchEngine.semanticSimilarity * 100).toFixed(1)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Date Proximity:</span>
-                          <span className="font-mono">{(suggestion.matchEngine.dateProximity * 100).toFixed(1)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Amount Match:</span>
-                          <span className="font-mono">{(suggestion.matchEngine.amountMatch * 100).toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+IGNORE_WHEN_COPYING_END
+
+{/* Advanced metrics panel /}
+<AnimatePresence>
+{expandedSuggestion === suggestion.id && (
+<motion.div
+initial={{ opacity: 0, height: 0 }}
+animate={{ opacity: 1, height: "auto" }}
+exit={{ opacity: 0, height: 0 }}
+className="border-t border-gray-200/50 pt-3 mt-3"
+>
+{/ ML Prediction details */}
+<div className="grid grid-cols-2 gap-4 mb-4">
+<div className="space-y-2">
+<h5 className="text-xs font-bold text-purple-700 flex items-center gap-1">
+<Beaker className="h-3 w-3" />
+ML Metrics
+</h5>
+<div className="space-y-1 text-xs">
+<div className="flex justify-between">
+<span>Semantic:</span>
+<span className="font-mono">{(suggestion.matchEngine.semanticSimilarity * 100).toFixed(1)}%</span>
+</div>
+<div className="flex justify-between">
+<span>Date Proximity:</span>
+<span className="font-mono">{(suggestion.matchEngine.dateProximity * 100).toFixed(1)}%</span>
+</div>
+<div className="flex justify-between">
+<span>Amount Match:</span>
+<span className="font-mono">{(suggestion.matchEngine.amountMatch * 100).toFixed(1)}%</span>
+</div>
+</div>
+</div>
+
+<div className="space-y-2">
                       <h5 className="text-xs font-bold text-indigo-700 flex items-center gap-1">
                         <Network className="h-3 w-3" />
                         Neural Score
@@ -1319,6 +1333,39 @@ scale: [1, 1.2, 1],
 opacity: [0.3, 0.1, 0.3],
 }}
 transition={{ duration: 3, repeat: Infinity }}
+/>
+<motion.div
+className="absolute inset-2 border border-purple-400 rounded-full"
+animate={{
+scale: [1, 1.3, 1],
+opacity: [0.2, 0, 0.2],
+}}
+transition={{ duration: 3, repeat: Infinity, delay: 1 }}
+/>
+</div>
+
+<h3 className="text-lg font-bold text-purple-700 mb-2">
+          Neural Network Standby
+        </h3>
+        <p className="text-muted-foreground mb-4">
+          L'AI è pronta per analizzare i tuoi dati
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Aggiungi fatture e movimenti per attivare il quantum matching
+        </p>
+      </motion.div>
+    )}
+  </CardContent>
+</Card>
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+IGNORE_WHEN_COPYING_END
+
+);
+}
+}}
 />
 <motion.div
 className="absolute inset-2 border border-purple-400 rounded-full"
@@ -1488,7 +1535,6 @@ const generatedMatches = generateQuantumMatches(invoices.items, transactions.ite
 setMatches(generatedMatches);
 }
 }, [invoices, transactions, generateQuantumMatches]);
-
 // Enhanced drag handlers with quantum effects
 const handleDragStart = useCallback((event: DragStartEvent) => {
 setDraggedItem(event.active);
@@ -1745,62 +1791,63 @@ delay: Math.random() * 2,
       </motion.div>
     )}
   </motion.div>
-  
-  {/* Advanced Quantum Tabs Interface */}
-  <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-    <TabsList className="grid w-full grid-cols-4 h-14 bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-gray-800 p-1 rounded-xl">
-      <TabsTrigger value="quantum-ai" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-indigo-500 data-[state=active]:text-white">
-        <Brain className="h-4 w-4" />
-        Quantum AI
-      </TabsTrigger>
-      <TabsTrigger value="neural-drag" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-500 data-[state=active]:text-white">
-        <Workflow className="h-4 w-4" />
-        Neural Drag & Drop
-      </TabsTrigger>
-      <TabsTrigger value="deep-analytics" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-500 data-[state=active]:text-white">
-        <Radar className="h-4 w-4" />
-        Deep Analytics
-      </TabsTrigger>
-      <TabsTrigger value="quantum-history" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-red-500 data-[state=active]:text-white">
-        <Database className="h-4 w-4" />
-        Quantum History
-      </TabsTrigger>
-    </TabsList>
 IGNORE_WHEN_COPYING_START
 content_copy
 download
 Use code with caution.
 IGNORE_WHEN_COPYING_END
-<TabsContent value="quantum-ai" className="space-y-6">
-          {/* Advanced Filters Panel */}
-          <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50/30 to-indigo-50/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5 text-purple-600" />
-                Quantum Filters & AI Configuration
-              </CardTitle>
-              <CardDescription>
-                Fine-tune the neural network parameters for optimal matching
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Confidence Level</label>
-                  <Select value={filters.confidence} onValueChange={(value) => setFilters(prev => ({...prev, confidence: value}))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Levels</SelectItem>
-                      <SelectItem value="high">High (80%+)</SelectItem>
-                      <SelectItem value="medium">Medium (60-79%)</SelectItem>
-                      <SelectItem value="low">Low (<60%)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
-<div className="space-y-2">
+{/* Advanced Quantum Tabs Interface */}
+<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+<TabsList className="grid w-full grid-cols-4 h-14 bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-gray-800 p-1 rounded-xl">
+<TabsTrigger value="quantum-ai" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-indigo-500 data-[state=active]:text-white">
+<Brain className="h-4 w-4" />
+Quantum AI
+</TabsTrigger>
+<TabsTrigger value="neural-drag" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-cyan-500 data-[state=active]:text-white">
+<Workflow className="h-4 w-4" />
+Neural Drag & Drop
+</TabsTrigger>
+<TabsTrigger value="deep-analytics" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-500 data-[state=active]:text-white">
+<Radar className="h-4 w-4" />
+Deep Analytics
+</TabsTrigger>
+<TabsTrigger value="quantum-history" className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-red-500 data-[state=active]:text-white">
+<Database className="h-4 w-4" />
+Quantum History
+</TabsTrigger>
+</TabsList>
+
+<TabsContent value="quantum-ai" className="space-y-6">
+      {/* Advanced Filters Panel */}
+      <Card className="border-2 border-purple-200/50 bg-gradient-to-br from-purple-50/30 to-indigo-50/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-purple-600" />
+            Quantum Filters & AI Configuration
+          </CardTitle>
+          <CardDescription>
+            Fine-tune the neural network parameters for optimal matching
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Confidence Level</label>
+              <Select value={filters.confidence} onValueChange={(value) => setFilters(prev => ({...prev, confidence: value}))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Levels</SelectItem>
+                  <SelectItem value="high">High (80%+)</SelectItem>
+                  <SelectItem value="medium">Medium (60-79%)</SelectItem>
+                  <SelectItem value="low">Low (<60%)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium">Risk Level</label>
               <Select value={filters.riskLevel} onValueChange={(value) => setFilters(prev => ({...prev, riskLevel: value}))}>
                 <SelectTrigger>
@@ -1867,56 +1914,60 @@ IGNORE_WHEN_COPYING_END
         onConfigChange={setAiConfig}
       />
     </TabsContent>
-    
-    <TabsContent value="neural-drag" className="space-y-6">
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Enhanced Invoices Panel */}
-          <Card className="border-2 border-blue-200/50 bg-gradient-to-br from-blue-50/30 to-indigo-50/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg text-white">
-                  <FileText className="h-4 w-4" />
-                </div>
-                Neural Invoice Pool
-                <Badge className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white">
-                  {invoices?.items?.length || 0}
-                </Badge>
-              </CardTitle>
-              <CardDescription>
-                Drag invoices to create quantum entanglement with transactions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-                <SortableContext items={invoices?.items?.map(i => `invoice-${i.id}`) || []} strategy={verticalListSortingStrategy}>
-                  {invoices?.items?.slice(0, 8).map((invoice) => {
-                    const match = matches.find(m => m.invoice.id === invoice.id);
-                    return (
-                      <QuantumSortableItem 
-                        key={invoice.id} 
-                        id={`invoice-${invoice.id}`} 
-                        type="invoice"
-                        confidence={match?.matchEngine.confidence}
-                      >
-                        <BiotechInvoiceCard 
-                          invoice={invoice}
-                          potentialMatches={matches.filter(m => m.invoice.id === invoice.id).length}
-                          confidence={match?.matchEngine.confidence}
-                        />
-                      </QuantumSortableItem>
-                    );
-                  })}
-                </SortableContext>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Enhanced Transactions Panel */}
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+IGNORE_WHEN_COPYING_END
+<TabsContent value="neural-drag" className="space-y-6">
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Enhanced Invoices Panel */}
+              <Card className="border-2 border-blue-200/50 bg-gradient-to-br from-blue-50/30 to-indigo-50/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg text-white">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                    Neural Invoice Pool
+                    <Badge className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white">
+                      {invoices?.items?.length || 0}
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    Drag invoices to create quantum entanglement with transactions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
+                    <SortableContext items={invoices?.items?.map(i => `invoice-${i.id}`) || []} strategy={verticalListSortingStrategy}>
+                      {invoices?.items?.slice(0, 8).map((invoice) => {
+                        const match = matches.find(m => m.invoice.id === invoice.id);
+                        return (
+                          <QuantumSortableItem 
+                            key={invoice.id} 
+                            id={`invoice-${invoice.id}`} 
+                            type="invoice"
+                            confidence={match?.matchEngine.confidence}
+                          >
+                            <BiotechInvoiceCard 
+                              invoice={invoice}
+                              potentialMatches={matches.filter(m => m.invoice.id === invoice.id).length}
+                              confidence={match?.matchEngine.confidence}
+                            />
+                          </QuantumSortableItem>
+                        );
+                      })}
+                    </SortableContext>
+                  </div>
+                </CardContent>
+              </Card>
+
+{/* Enhanced Transactions Panel */}
           <Card className="border-2 border-emerald-200/50 bg-gradient-to-br from-emerald-50/30 to-green-50/30">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -2007,31 +2058,62 @@ content_copy
 download
 Use code with caution.
 IGNORE_WHEN_COPYING_END
-<TabsContent value="deep-analytics" className="space-y-6">
-          <div className="text-center py-20">
-            <motion.div
-              animate={{
-                scale: [1, 1.1, 1],
-                rotate: [0, 180, 360],
-              }}
-              transition={{ duration: 4, repeat: Infinity }}
-              className="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center"
-            >
-              <BarChart3 className="h-12 w-12 text-white" />
-            </motion.div>
-            <h3 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-4">
-              Deep Analytics Engine
-            </h3>
-            <p className="text-muted-foreground mb-6">
-              Advanced analytics and pattern recognition coming in next quantum update
-            </p>
-            <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white">
-              Neural Networks v3.0 - In Development
-            </Badge>
-          </div>
-        </TabsContent>
 
-<TabsContent value="quantum-history" className="space-y-6">
+-3 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-xl">
+<Atom className="h-6 w-6 text-white" />
+</div>
+<div>
+<div className="text-lg font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+Quantum Entanglement
+</div>
+<div className="text-sm text-muted-foreground">
+Neural field active
+</div>
+</div>
+</div>
+</CardContent>
+</Card>
+
+{/* Quantum field visualization */}
+              <motion.div
+                className="absolute -inset-4 border-2 border-purple-400/50 rounded-xl"
+                animate={{
+                  scale: [1, 1.1, 1],
+                  opacity: [0.3, 0.6, 0.3],
+                }}
+                transition={{ duration: 1, repeat: Infinity }}
+              />
+            </motion.div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </TabsContent>
+
+    <TabsContent value="deep-analytics" className="space-y-6">
+      <div className="text-center py-20">
+        <motion.div
+          animate={{
+            scale: [1, 1.1, 1],
+            rotate: [0, 180, 360],
+          }}
+          transition={{ duration: 4, repeat: Infinity }}
+          className="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center"
+        >
+          <BarChart3 className="h-12 w-12 text-white" />
+        </motion.div>
+        <h3 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-4">
+          Deep Analytics Engine
+        </h3>
+        <p className="text-muted-foreground mb-6">
+          Advanced analytics and pattern recognition coming in next quantum update
+        </p>
+        <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white">
+          Neural Networks v3.0 - In Development
+        </Badge>
+      </div>
+    </TabsContent>
+
+    <TabsContent value="quantum-history" className="space-y-6">
       <div className="text-center py-20">
         <motion.div
           animate={{
