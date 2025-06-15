@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain,
@@ -61,28 +61,18 @@ import {
 
 import { ReconciliationView } from '@/components/reconciliation/ReconciliationView';
 
-// Hooks
+// Hooks - CORRETTI per usare API reali
 import {
-  useReconciliation,
   useReconciliationAnalytics,
-  useReconciliationStatus,
-  useMLModelTraining,
-  useAutoReconciliation
+  useReconciliationSystemStatus,
+  useAutoReconciliation,
+  useMLModelTraining
 } from '@/hooks/useReconciliation';
 import { useUIStore } from '@/store';
 
 // Utils
 import { formatCurrency, formatPercentage } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
-
-interface QuantumSystemMetrics {
-  neural_load: number;
-  quantum_coherence: number;
-  pattern_recognition: number;
-  semantic_processing: number;
-  ml_accuracy: number;
-  processing_speed: number;
-}
 
 interface AIModelConfig {
   confidence_threshold: number;
@@ -100,14 +90,6 @@ export function ReconciliationPage() {
   const [activeMode, setActiveMode] = useState<'manual' | 'assisted' | 'auto'>('assisted');
   const [isQuantumMode, setIsQuantumMode] = useState(true);
   const [showSystemMetrics, setShowSystemMetrics] = useState(false);
-  const [systemMetrics, setSystemMetrics] = useState<QuantumSystemMetrics>({
-    neural_load: 0.42,
-    quantum_coherence: 0.87,
-    pattern_recognition: 0.93,
-    semantic_processing: 0.78,
-    ml_accuracy: 0.95,
-    processing_speed: 0.89,
-  });
   
   const [aiConfig, setAiConfig] = useState<AIModelConfig>({
     confidence_threshold: 0.8,
@@ -120,28 +102,12 @@ export function ReconciliationPage() {
     real_time_learning: true,
   });
 
-  // Hooks
-  const { data: analytics } = useReconciliationAnalytics();
-  const { data: status } = useReconciliationStatus();
+  // Hooks con API reali
+  const { data: analytics, isLoading: analyticsLoading, error: analyticsError } = useReconciliationAnalytics();
+  const { data: status, isLoading: statusLoading } = useReconciliationSystemStatus();
   const autoReconcileMutation = useAutoReconciliation();
   const mlTrainingMutation = useMLModelTraining();
   const { addNotification } = useUIStore();
-
-  // Simulate real-time metrics updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSystemMetrics(prev => ({
-        neural_load: Math.max(0.1, Math.min(0.9, prev.neural_load + (Math.random() - 0.5) * 0.1)),
-        quantum_coherence: Math.max(0.7, Math.min(0.98, prev.quantum_coherence + (Math.random() - 0.5) * 0.05)),
-        pattern_recognition: Math.max(0.8, Math.min(0.99, prev.pattern_recognition + (Math.random() - 0.5) * 0.03)),
-        semantic_processing: Math.max(0.6, Math.min(0.95, prev.semantic_processing + (Math.random() - 0.5) * 0.08)),
-        ml_accuracy: Math.max(0.85, Math.min(0.99, prev.ml_accuracy + (Math.random() - 0.5) * 0.02)),
-        processing_speed: Math.max(0.7, Math.min(0.98, prev.processing_speed + (Math.random() - 0.5) * 0.06)),
-      }));
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, []);
 
   const handleAutoReconcile = async () => {
     try {
@@ -196,7 +162,7 @@ export function ReconciliationPage() {
 
   return (
     <div className="space-y-6">
-      {/* Quantum Header with System Status */}
+      {/* Quantum Header con Status Sistema */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -245,10 +211,13 @@ export function ReconciliationPage() {
               </div>
               
               <div className="flex items-center gap-3">
-                {/* System Status Indicator */}
+                {/* System Status Indicator con dati reali */}
                 <div className="flex items-center gap-2 px-3 py-2 bg-white/60 rounded-lg border border-green-200/50">
                   <motion.div
-                    className="w-3 h-3 bg-green-500 rounded-full"
+                    className={cn(
+                      "w-3 h-3 rounded-full",
+                      status?.system_healthy ? "bg-green-500" : "bg-red-500"
+                    )}
                     animate={{
                       scale: [1, 1.2, 1],
                       opacity: [0.7, 1, 0.7],
@@ -256,7 +225,7 @@ export function ReconciliationPage() {
                     transition={{ duration: 2, repeat: Infinity }}
                   />
                   <span className="text-sm font-medium text-green-700">
-                    Sistema Attivo
+                    {statusLoading ? 'Verificando...' : status?.system_healthy ? 'Sistema Attivo' : 'Sistema Offline'}
                   </span>
                 </div>
                 
@@ -295,7 +264,7 @@ export function ReconciliationPage() {
               </div>
             </div>
             
-            {/* System Metrics Panel */}
+            {/* System Metrics Panel con dati reali */}
             <AnimatePresence>
               {showSystemMetrics && (
                 <motion.div
@@ -305,34 +274,22 @@ export function ReconciliationPage() {
                   className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-200/50"
                 >
                   <SystemStatusIndicator
-                    label="Quantum Coherence"
-                    value={systemMetrics.quantum_coherence}
+                    label="System Health"
+                    value={status?.overall_health || 0}
                     color="text-purple-600"
                     icon={Atom}
                   />
                   <SystemStatusIndicator
-                    label="Pattern Recognition"
-                    value={systemMetrics.pattern_recognition}
+                    label="API Response"
+                    value={status?.api_health || 0}
                     color="text-green-600"
                     icon={Network}
                   />
                   <SystemStatusIndicator
-                    label="Semantic Processing"
-                    value={systemMetrics.semantic_processing}
+                    label="AI Processing"
+                    value={status?.ai_health || 0}
                     color="text-orange-600"
                     icon={Brain}
-                  />
-                  <SystemStatusIndicator
-                    label="ML Accuracy"
-                    value={systemMetrics.ml_accuracy}
-                    color="text-emerald-600"
-                    icon={Target}
-                  />
-                  <SystemStatusIndicator
-                    label="Processing Speed"
-                    value={systemMetrics.processing_speed}
-                    color="text-cyan-600"
-                    icon={Zap}
                   />
                 </motion.div>
               )}
@@ -423,7 +380,7 @@ export function ReconciliationPage() {
           </CardContent>
         </Card>
 
-        {/* Quick Actions */}
+        {/* Quick Actions con API reali */}
         <Card className="border-2 border-green-200/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -481,8 +438,8 @@ export function ReconciliationPage() {
         </Card>
       </div>
 
-      {/* Analytics Dashboard */}
-      {analytics && (
+      {/* Analytics Dashboard con dati reali */}
+      {analytics && !analyticsLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
             <CardContent className="p-4">
@@ -490,7 +447,7 @@ export function ReconciliationPage() {
                 <div>
                   <p className="text-sm text-green-600 font-medium">Successo</p>
                   <p className="text-2xl font-bold text-green-700">
-                    {formatPercentage(analytics.success_rate)}
+                    {formatPercentage(analytics.success_rate || 0)}
                   </p>
                 </div>
                 <CheckCircle className="h-8 w-8 text-green-500" />
@@ -504,7 +461,7 @@ export function ReconciliationPage() {
                 <div>
                   <p className="text-sm text-blue-600 font-medium">Processati</p>
                   <p className="text-2xl font-bold text-blue-700">
-                    {analytics.total_processed.toLocaleString()}
+                    {(analytics.total_processed || 0).toLocaleString()}
                   </p>
                 </div>
                 <Activity className="h-8 w-8 text-blue-500" />
@@ -518,7 +475,7 @@ export function ReconciliationPage() {
                 <div>
                   <p className="text-sm text-purple-600 font-medium">Accuratezza AI</p>
                   <p className="text-2xl font-bold text-purple-700">
-                    {formatPercentage(analytics.ml_accuracy)}
+                    {formatPercentage(analytics.ml_accuracy || 0)}
                   </p>
                 </div>
                 <Brain className="h-8 w-8 text-purple-500" />
@@ -532,7 +489,7 @@ export function ReconciliationPage() {
                 <div>
                   <p className="text-sm text-orange-600 font-medium">Ore Risparmiate</p>
                   <p className="text-2xl font-bold text-orange-700">
-                    {analytics.time_saved_hours.toFixed(1)}h
+                    {(analytics.time_saved_hours || 0).toFixed(1)}h
                   </p>
                 </div>
                 <Clock className="h-8 w-8 text-orange-500" />
@@ -648,10 +605,10 @@ export function ReconciliationPage() {
         </CardContent>
       </Card>
 
-      {/* Main Reconciliation Interface */}
+      {/* Main Reconciliation Interface - USA IL COMPONENT CORRETTO */}
       <ReconciliationView />
 
-      {/* Quantum Processing Status */}
+      {/* Processing Status con dati reali */}
       {(autoReconcileMutation.isPending || mlTrainingMutation.isPending) && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
@@ -679,12 +636,26 @@ export function ReconciliationPage() {
               <div className="space-y-2">
                 <Progress value={65} className="w-full" />
                 <p className="text-xs text-purple-500">
-                  Processamento quantistico attivo
+                  Processamento AI attivo
                 </p>
               </div>
             </CardContent>
           </Card>
         </motion.div>
+      )}
+
+      {/* Error Display */}
+      {analyticsError && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="text-sm">
+                Errore nel caricamento delle analytics: {analyticsError.message}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
