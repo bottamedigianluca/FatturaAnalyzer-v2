@@ -10,7 +10,8 @@ import type { BankTransaction, TransactionFilters } from '@/types';
 import { 
   useDataStore,
   useUIStore,
-  useAIFeaturesEnabled 
+  useAIFeaturesEnabled,
+  useSmartReconciliationEnabled 
 } from '@/store';
 import { useSmartCache, useSmartErrorHandling } from './useUtils';
 
@@ -53,7 +54,108 @@ export const useTransactions = (filters: TransactionFilters = {}) => {
     },
     staleTime: 180000, // 3 minutes (più frequente per transazioni)
     enabled: shouldRefetch(transactionsCache.lastFetch, 'transactions'),
-    onError: (error) => handleError(error, 'transaction-stats'),
+    onError: (error) => handleError(error, 'transactions'),
+  });
+};
+
+/**
+ * Hook per singola transazione con enhanced details
+ */
+export const useTransaction = (
+  id: number, 
+  options: {
+    enhanced?: boolean;
+    includeSuggestions?: boolean;
+    includeSimilar?: boolean;
+  } = {}
+) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    enhanced = true,
+    includeSuggestions = aiEnabled,
+    includeSimilar = false
+  } = options;
+  
+  return useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.TRANSACTION, id, { enhanced, includeSuggestions, includeSimilar }],
+    queryFn: () => apiClient.getTransactionById(id, enhanced, includeSuggestions, includeSimilar),
+    enabled: !!id,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-detail'),
+  });
+};
+
+/**
+ * Hook per smart suggestions V4.0 con AI
+ */
+export const useSmartReconciliationSuggestions = (
+  transactionId: number,
+  options: {
+    anagraphicsHint?: number;
+    enableAI?: boolean;
+    maxSuggestions?: number;
+  } = {}
+) => {
+  const setSmartSuggestionsCache = useDataStore(state => state.setSmartSuggestionsCache);
+  const smartEnabled = useSmartReconciliationEnabled();
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    anagraphicsHint,
+    enableAI = aiEnabled,
+    maxSuggestions = 10,
+  } = options;
+  
+  return useQuery({
+    queryKey: [
+      ...TRANSACTIONS_QUERY_KEYS.SMART_SUGGESTIONS, 
+      transactionId, 
+      { anagraphicsHint, enableAI, maxSuggestions }
+    ],
+    queryFn: async () => {
+      const suggestions = await apiClient.getSmartReconciliationSuggestions(
+        transactionId,
+        anagraphicsHint,
+        enableAI,
+        true, // enableSmartPatterns
+        true, // enablePredictive
+        maxSuggestions,
+        0.6 // confidenceThreshold
+      );
+      
+      // Cache suggestions localmente
+      setSmartSuggestionsCache(transactionId, suggestions.suggestions || []);
+      
+      return suggestions;
+    },
+    enabled: !!transactionId && smartEnabled,
+    staleTime: 120000, // 2 minutes
+    onError: (error) => handleError(error, 'smart-suggestions'),
+  });
+};
+
+/**
+ * Hook per transaction insights V4.0 con AI analysis
+ */
+export const useTransactionInsights = (transactionId: number) => {
+  const aiEnabled = useAIFeaturesEnabled();
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEYS.INSIGHTS, transactionId],
+    queryFn: () => apiClient.getTransactionInsights(
+      transactionId,
+      aiEnabled, // includeAIAnalysis
+      true, // includePatternMatching
+      true, // includeClientAnalysis
+      false // includeSmartSuggestions (caricato separatamente)
+    ),
+    enabled: !!transactionId && aiEnabled,
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'transaction-insights'),
   });
 };
 
@@ -221,185 +323,6 @@ export const useTransactionMutation = () => {
     delete: deleteMutation,
     reconcileWithInvoice: reconcileWithInvoiceMutation,
   };
-};
-
-/**
- * Hook per export transazioni avanzato
- */
-export const useTransactionsExport = () => {
-  const { handleError } = useSmartErrorHandling();
-  
-  return useMutation({
-    mutationFn: async (options: {
-      format: 'excel' | 'csv' | 'json';
-      filters?: TransactionFilters;
-      include_reconciliation?: boolean;
-    }) => {
-      const result = await apiClient.exportTransactions(
-        options.format,
-        options.filters?.status_filter,
-        options.filters?.start_date,
-        options.filters?.end_date,
-        options.include_reconciliation || false
-      );
-      
-      if (options.format === 'json') {
-        const url = 'data:application/json;charset=utf-8,' + 
-          encodeURIComponent(JSON.stringify(result, null, 2));
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `transazioni_export.${options.format}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } else {
-        const url = window.URL.createObjectURL(result as Blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `transazioni_export.${options.format}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      }
-      
-      return result;
-    },
-    onSuccess: () => {
-      toast.success('Export transazioni completato');
-    },
-    onError: (error) => {
-      handleError(error, 'export-transactions');
-      toast.error('Errore nell\'export transazioni');
-    },
-  });
-};
-
-// ===== ADDITIONAL EXPORTS & ALIASES =====
-
-/**
- * Export per backward compatibility
- */
-export { useTransactionBatchOperations as useBatchTransactionOperations };
-
-/**
- * Hook alias per legacy code
- */
-export const useTransactionsList = useTransactions;
-export const useTransactionDetails = useTransaction;
-export const useTransactionOperations = useTransactionMutation;
-
-/**
- * Utility exports
- */
-export { TRANSACTIONS_QUERY_KEYS };
-
-/**
- * Default hook exports per facilità di utilizzo
- */
-export default useTransactions;s'),
-  });
-};
-
-/**
- * Hook per singola transazione con enhanced details
- */
-export const useTransaction = (
-  id: number, 
-  options: {
-    enhanced?: boolean;
-    includeSuggestions?: boolean;
-    includeSimilar?: boolean;
-  } = {}
-) => {
-  const aiEnabled = useAIFeaturesEnabled();
-  const { handleError } = useSmartErrorHandling();
-  
-  const {
-    enhanced = true,
-    includeSuggestions = aiEnabled,
-    includeSimilar = false
-  } = options;
-  
-  return useQuery({
-    queryKey: [...TRANSACTIONS_QUERY_KEYS.TRANSACTION, id, { enhanced, includeSuggestions, includeSimilar }],
-    queryFn: () => apiClient.getTransactionById(id, enhanced, includeSuggestions, includeSimilar),
-    enabled: !!id,
-    staleTime: 300000,
-    onError: (error) => handleError(error, 'transaction-detail'),
-  });
-};
-
-/**
- * Hook per smart suggestions V4.0 con AI
- */
-export const useSmartReconciliationSuggestions = (
-  transactionId: number,
-  options: {
-    anagraphicsHint?: number;
-    enableAI?: boolean;
-    maxSuggestions?: number;
-  } = {}
-) => {
-  const setSmartSuggestionsCache = useDataStore(state => state.setSmartSuggestionsCache);
-  const smartEnabled = useSmartReconciliationEnabled();
-  const aiEnabled = useAIFeaturesEnabled();
-  const { handleError } = useSmartErrorHandling();
-  
-  const {
-    anagraphicsHint,
-    enableAI = aiEnabled,
-    maxSuggestions = 10,
-  } = options;
-  
-  return useQuery({
-    queryKey: [
-      ...TRANSACTIONS_QUERY_KEYS.SMART_SUGGESTIONS, 
-      transactionId, 
-      { anagraphicsHint, enableAI, maxSuggestions }
-    ],
-    queryFn: async () => {
-      const suggestions = await apiClient.getSmartReconciliationSuggestions(
-        transactionId,
-        anagraphicsHint,
-        enableAI,
-        true, // enableSmartPatterns
-        true, // enablePredictive
-        maxSuggestions,
-        0.6 // confidenceThreshold
-      );
-      
-      // Cache suggestions localmente
-      setSmartSuggestionsCache(transactionId, suggestions.suggestions || []);
-      
-      return suggestions;
-    },
-    enabled: !!transactionId && smartEnabled,
-    staleTime: 120000, // 2 minutes
-    onError: (error) => handleError(error, 'smart-suggestions'),
-  });
-};
-
-/**
- * Hook per transaction insights V4.0 con AI analysis
- */
-export const useTransactionInsights = (transactionId: number) => {
-  const aiEnabled = useAIFeaturesEnabled();
-  const { handleError } = useSmartErrorHandling();
-  
-  return useQuery({
-    queryKey: [...TRANSACTIONS_QUERY_KEYS.INSIGHTS, transactionId],
-    queryFn: () => apiClient.getTransactionInsights(
-      transactionId,
-      aiEnabled, // includeAIAnalysis
-      true, // includePatternMatching
-      true, // includeClientAnalysis
-      false // includeSmartSuggestions (caricato separatamente)
-    ),
-    enabled: !!transactionId && aiEnabled,
-    staleTime: 300000,
-    onError: (error) => handleError(error, 'transaction-insights'),
-  });
 };
 
 /**
@@ -621,4 +544,82 @@ export const useTransactionStats = (options: {
       periodMonths
     ),
     staleTime: 300000,
-    onError: (error) => handleError(error, 'transaction
+    onError: (error) => handleError(error, 'transaction-stats'),
+  });
+};
+
+/**
+ * Hook per export transazioni avanzato
+ */
+export const useTransactionsExport = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useMutation({
+    mutationFn: async (options: {
+      format: 'excel' | 'csv' | 'json';
+      filters?: TransactionFilters;
+      include_reconciliation?: boolean;
+    }) => {
+      const result = await apiClient.exportTransactions(
+        options.format,
+        options.filters?.status_filter,
+        options.filters?.start_date,
+        options.filters?.end_date,
+        options.include_reconciliation || false
+      );
+      
+      if (options.format === 'json') {
+        const url = 'data:application/json;charset=utf-8,' + 
+          encodeURIComponent(JSON.stringify(result, null, 2));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transazioni_export.${options.format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const url = window.URL.createObjectURL(result as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transazioni_export.${options.format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
+      
+      return result;
+    },
+    onSuccess: () => {
+      toast.success('Export transazioni completato');
+    },
+    onError: (error) => {
+      handleError(error, 'export-transactions');
+      toast.error('Errore nell\'export transazioni');
+    },
+  });
+};
+
+// ===== ADDITIONAL EXPORTS & ALIASES =====
+
+/**
+ * Export per backward compatibility
+ */
+export { useTransactionBatchOperations as useBatchTransactionOperations };
+
+/**
+ * Hook alias per legacy code
+ */
+export const useTransactionsList = useTransactions;
+export const useTransactionDetails = useTransaction;
+export const useTransactionOperations = useTransactionMutation;
+
+/**
+ * Utility exports
+ */
+export { TRANSACTIONS_QUERY_KEYS };
+
+/**
+ * Default hook exports per facilità di utilizzo
+ */
+export default useTransactions;
