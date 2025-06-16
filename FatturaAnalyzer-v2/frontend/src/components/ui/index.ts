@@ -1,45 +1,22 @@
-// --- Componenti Base ---
-export { Button, buttonVariants } from './button';
-export type { ButtonProps } from './button';
+// frontend/src/components/ui/index.ts
 
-export { 
-  Card, 
-  CardHeader, 
-  CardFooter, 
-  CardTitle, 
-  CardDescription, 
-  CardContent 
-} from './card';
+// Questo è il barrel file completo per i componenti UI.
+// Include tutti i componenti necessari all'applicazione.
 
-export { Input } from './input';
-export type { InputProps } from './input';
-
-export { Label } from './label';
-
-export { Badge, badgeVariants } from './badge';
-export type { BadgeProps } from './badge';
-
-export { Checkbox } from './checkbox';
-
-export { Skeleton } from './skeleton';
-
-export { Toaster } from './sonner';
-
-// --- Componenti di Layout e Struttura ---
+export { Alert, AlertTitle, AlertDescription } from "./alert";
+export { Badge, badgeVariants } from "./badge";
+export type { BadgeProps } from "./badge";
+export { Button, buttonVariants } from "./button";
+export type { ButtonProps } from "./button";
 export {
-  Table,
-  TableHeader,
-  TableBody,
-  TableFooter,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableCaption,
-} from './table';
-
-export { Separator } from './separator';
-
-// --- Componenti Interattivi e di Navigazione ---
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "./card";
+export { Checkbox } from "./checkbox";
 export {
   Dialog,
   DialogPortal,
@@ -51,8 +28,7 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
-} from './dialog';
-
+} from "./dialog";
 export {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -69,15 +45,11 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuRadioGroup,
-} from './dropdown-menu';
-
-export { 
-  Tooltip, 
-  TooltipTrigger, 
-  TooltipContent, 
-  TooltipProvider 
-} from './tooltip';
-
+} from "./dropdown-menu";
+export { Input } from "./input";
+export type { InputProps } from "./input";
+export { Label } from "./label";
+export { Progress } from "./progress";
 export {
   Select,
   SelectGroup,
@@ -89,31 +61,26 @@ export {
   SelectSeparator,
   SelectScrollUpButton,
   SelectScrollDownButton,
-} from './select';
-
+} from "./select";
+export { Separator } from "./separator";
+export { Skeleton } from "./skeleton";
+export { Slider } from "./slider"; // <- Aggiunto
+export { Toaster } from "./sonner";
+export { Switch } from "./switch"; // <- Aggiunto
 export {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from './tabs';
-
-// --- Componenti di Input Avanzati ---
-export { Slider } from './slider';
-export { Switch } from './switch';
-// Nota: DatePicker spesso non è un singolo componente ma una composizione. 
-// Se hai un file date-picker.tsx, dovresti esportarlo qui.
-
-// --- Componenti di Visualizzazione e Feedback ---
-export { Progress } from './progress';
-
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from "./table";
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 export {
-  Alert,
-  AlertTitle,
-  AlertDescription,
-} from './alert';
-
-// --- Aggiungi qui altri componenti UI che potresti creare ---
-// Esempio:
-// export * from './avatar';
-// export * from './calendar';
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "./tooltip";
