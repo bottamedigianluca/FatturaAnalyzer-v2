@@ -11,7 +11,11 @@ import type {
   ManualMatchRequest,
   BatchReconciliationRequest 
 } from '@/types';
-import { useUIStore } from '@/store'; 
+import { 
+  useReconciliationStore,
+  useUIStore,
+  useAIFeaturesEnabled,
+  useSmartReconciliationEnabled 
 } from '@/store';
 import { useSmartErrorHandling } from './useUtils';
 
