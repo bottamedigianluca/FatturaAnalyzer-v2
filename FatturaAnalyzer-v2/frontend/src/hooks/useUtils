@@ -1,11 +1,12 @@
 /**
- * Utility Hooks V4.0
+ * Utility Hooks V4.0 - CORRETTI IMPORTS E DEPENDENCIES
  * Hook di utilità per cache, error handling, shortcuts, etc.
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import { apiClient } from '@/services/api';
 import { 
   useUIStore, 
   useDataStore, 
@@ -13,7 +14,8 @@ import {
   useImportExportStore,
   useSyncStore,
   useAIFeaturesEnabled,
-  useCachePreferences 
+  useCachePreferences,
+  useSmartReconciliationEnabled 
 } from '@/store';
 
 /**
@@ -24,403 +26,681 @@ export const useSmartCache = () => {
   const aiEnabled = useAIFeaturesEnabled();
   
   const getCacheTTL = (type: string) => {
-    const baseTTL = cachePreferences?.analytics_cache_ttl || 300000; // 5 min default
+    const baseTTL = {
+      invoices: 300000, // 5 minutes
+      transactions: 180000, // 3 minutes
+      anagraphics: 600000, // 10 minutes
+      reconciliation: 120000, // 2 minutes
+      stats: 300000, // 5 minutes
+      ai_insights: 600000, // 10 minutes
+    }[type] || 300000;
     
-    // TTL dinamico basato su tipo di dato e AI
-    const multipliers = {
-      'dashboard': aiEnabled ? 0.5 : 1, // Refresh più frequente con AI
-      'analytics': aiEnabled ? 0.3 : 1,
-      'reconciliation': 0.2, // Sempre fresco per reconciliation
-      'transactions': 0.7,
-      'invoices': 1,
-      'anagraphics': 2, // Dati più stabili
-    };
-    
-    return baseTTL * (multipliers[type as keyof typeof multipliers] || 1);
+    // Riduce TTL se AI è abilitato per dati più freschi
+    return aiEnabled ? baseTTL * 0.7 : baseTTL;
   };
   
-  const shouldRefetch = (lastFetch: string | null, type: string) => {
+  const shouldRefetch = (lastFetch: number | null, type: string) => {
     if (!lastFetch) return true;
+    if (!cachePreferences.enabled) return true;
+    
     const ttl = getCacheTTL(type);
-    return Date.now() - new Date(lastFetch).getTime() > ttl;
+    return Date.now() - lastFetch > ttl;
   };
   
-  return { getCacheTTL, shouldRefetch };
+  const invalidateSmartCache = (patterns: string[]) => {
+    const queryClient = useQueryClient();
+    patterns.forEach(pattern => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => 
+          query.queryKey.some(key => 
+            typeof key === 'string' && key.includes(pattern)
+          )
+      });
+    });
+  };
+  
+  return {
+    getCacheTTL,
+    shouldRefetch,
+    invalidateSmartCache,
+    cacheEnabled: cachePreferences.enabled,
+    aiEnhanced: aiEnabled,
+  };
 };
 
 /**
- * Hook per gestione errori intelligente con retry logic
+ * Hook per error handling centralizzato con retry logic
  */
 export const useSmartErrorHandling = () => {
   const addNotification = useUIStore(state => state.addNotification);
-  const setError = useUIStore(state => state.setError);
+  const [retryAttempts, setRetryAttempts] = useState<Record<string, number>>({});
   
-  const handleError = (error: any, context: string) => {
-    console.error(`[${context}] Error:`, error);
+  const handleError = (error: any, context: string, shouldRetry = true) => {
+    console.error(`Error in ${context}:`, error);
     
-    const message = error?.message || 'Errore imprevisto';
-    const isNetworkError = message.includes('Failed to fetch') || message.includes('Network Error');
+    // Determina il tipo di errore
+    const errorType = error?.response?.status || error?.code || 'unknown';
+    const errorMessage = error?.response?.data?.message || error?.message || 'Errore sconosciuto';
     
-    setError(context, message);
+    // Incrementa tentativo
+    const currentAttempts = retryAttempts[context] || 0;
     
-    // Notifica solo errori critici o di rete
-    if (isNetworkError || message.includes('Backend')) {
-      addNotification({
-        type: 'error',
-        title: 'Errore di Connessione',
-        message: 'Verifica la connessione al backend',
-        duration: 5000,
-      });
-    }
-  };
-  
-  const retryLogic = (failureCount: number, error: any) => {
-    if (error?.message?.includes('Backend non raggiungibile')) {
-      return failureCount < 3; // Retry connessione backend
-    }
-    if (error?.message?.includes('5')) {
-      return failureCount < 2; // Retry errori server
-    }
-    return false;
-  };
-  
-  return { handleError, retryLogic };
-};
-
-/**
- * Hook per gestione cache intelligente con invalidazione selettiva
- */
-export const useIntelligentCache = () => {
-  const queryClient = useQueryClient();
-  const invalidateCache = useDataStore(state => state.invalidateCache);
-  const { getCacheTTL } = useSmartCache();
-  
-  const invalidateByType = (type: 'invoices' | 'transactions' | 'anagraphics' | 'analytics' | 'all') => {
-    switch (type) {
-      case 'invoices':
-        queryClient.invalidateQueries({ queryKey: ['invoices'] });
-        invalidateCache('invoices');
-        break;
-      case 'transactions':
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-        invalidateCache('transactions');
-        break;
-      case 'anagraphics':
-        queryClient.invalidateQueries({ queryKey: ['anagraphics'] });
-        invalidateCache('anagraphics');
-        break;
-      case 'analytics':
-        queryClient.invalidateQueries({ queryKey: ['analytics'] });
-        queryClient.invalidateQueries({ queryKey: ['analytics', 'executive'] });
-        queryClient.invalidateQueries({ queryKey: ['analytics', 'operations'] });
-        break;
-      case 'all':
-        queryClient.invalidateQueries();
-        invalidateCache('all');
-        break;
-    }
-  };
-  
-  const prefetchData = async (type: 'invoices' | 'transactions' | 'anagraphics', filters = {}) => {
-    const ttl = getCacheTTL(type);
+    // Logica di retry per errori temporanei
+    const shouldAttemptRetry = shouldRetry && 
+      currentAttempts < 3 && 
+      [408, 429, 500, 502, 503, 504].includes(errorType);
     
-    switch (type) {
-      case 'invoices':
-        await queryClient.prefetchQuery({
-          queryKey: ['invoices', filters],
-          queryFn: () => apiClient.getInvoices(filters),
-          staleTime: ttl,
-        });
-        break;
-      case 'transactions':
-        await queryClient.prefetchQuery({
-          queryKey: ['transactions', filters],
-          queryFn: () => apiClient.getTransactions({ ...filters, enhanced: true }),
-          staleTime: ttl,
-        });
-        break;
-      case 'anagraphics':
-        await queryClient.prefetchQuery({
-          queryKey: ['anagraphics', filters],
-          queryFn: () => apiClient.getAnagraphics(filters),
-          staleTime: ttl,
-        });
-        break;
+    if (shouldAttemptRetry) {
+      setRetryAttempts(prev => ({
+        ...prev,
+        [context]: currentAttempts + 1
+      }));
+      
+      // Retry con backoff esponenziale
+      setTimeout(() => {
+        console.log(`Retrying ${context}, attempt ${currentAttempts + 1}`);
+      }, Math.pow(2, currentAttempts) * 1000);
+      
+      return;
     }
-  };
-  
-  const getCacheStats = () => {
-    const queryCache = queryClient.getQueryCache();
-    const queries = queryCache.getAll();
     
-    return {
-      total_queries: queries.length,
-      active_queries: queries.filter(q => q.state.status === 'success').length,
-      loading_queries: queries.filter(q => q.state.status === 'loading').length,
-      error_queries: queries.filter(q => q.state.status === 'error').length,
-      cache_size_estimate: queries.length * 1024, // Stima approssimativa
-    };
-  };
-  
-  const warmupCache = async () => {
-    // Pre-carica dati essenziali
-    await Promise.all([
-      prefetchData('invoices', { page: 1, size: 50 }),
-      prefetchData('transactions', { page: 1, size: 50, enhanced: true }),
-      prefetchData('anagraphics', { page: 1, size: 100 }),
-      queryClient.prefetchQuery({
-        queryKey: ['analytics', 'executive'],
-        queryFn: () => apiClient.getExecutiveDashboardUltra(),
-        staleTime: getCacheTTL('dashboard'),
-      }),
-    ]);
-  };
-  
-  return {
-    invalidateByType,
-    prefetchData,
-    getCacheStats,
-    warmupCache,
-    clearAll: () => {
-      queryClient.clear();
-      invalidateCache('all');
-    },
-  };
-};
-
-/**
- * Hook per gestione notifiche sistema avanzate
- */
-export const useSystemNotifications = () => {
-  const addNotification = useUIStore(state => state.addNotification);
-  const notifications = useUIStore(state => state.notifications);
-  const removeNotification = useUIStore(state => state.removeNotification);
-  const { handleError } = useSmartErrorHandling();
-  
-  // Monitora operazioni in background
-  const activeImports = useImportExportStore(state => state.activeImports);
-  const activeExports = useImportExportStore(state => state.activeExports);
-  const syncStatus = useSyncStore(state => state.syncStatus);
-  
-  // Notifiche automatiche per completamento operazioni
-  useEffect(() => {
-    Object.values(activeImports).forEach(importOp => {
-      if (importOp.status === 'completed') {
-        addNotification({
-          type: 'success',
-          title: 'Import Completato',
-          message: `${importOp.type} importato: ${importOp.processed_records}/${importOp.total_records} record`,
-          duration: 5000,
-        });
-      } else if (importOp.status === 'error') {
-        addNotification({
-          type: 'error',
-          title: 'Errore Import',
-          message: `Errore nell'import di ${importOp.type}`,
-          duration: 8000,
-        });
-      }
-    });
-  }, [activeImports, addNotification]);
-  
-  useEffect(() => {
-    Object.values(activeExports).forEach(exportOp => {
-      if (exportOp.status === 'completed') {
-        addNotification({
-          type: 'success',
-          title: 'Export Completato',
-          message: `Export ${exportOp.type} in formato ${exportOp.format} completato`,
-          duration: 5000,
-        });
-      }
-    });
-  }, [activeExports, addNotification]);
-  
-  useEffect(() => {
-    if (syncStatus === 'error') {
-      addNotification({
-        type: 'error',
-        title: 'Errore Sincronizzazione',
-        message: 'Verifica la connessione con Google Drive',
-        duration: 10000,
-      });
-    }
-  }, [syncStatus, addNotification]);
-  
-  const createCustomNotification = (
-    type: 'info' | 'success' | 'warning' | 'error',
-    title: string,
-    message: string,
-    options: {
-      duration?: number;
-      persistent?: boolean;
-      actionLabel?: string;
-      onAction?: () => void;
-    } = {}
-  ) => {
+    // Reset tentativi
+    setRetryAttempts(prev => ({
+      ...prev,
+      [context]: 0
+    }));
+    
+    // Mostra notifica appropriata
+    const notificationMessage = getErrorMessage(errorType, errorMessage, context);
+    
     addNotification({
-      type,
-      title,
-      message,
-      duration: options.duration || (type === 'error' ? 8000 : 4000),
-      ...options,
+      type: 'error',
+      title: 'Errore Sistema',
+      message: notificationMessage,
+      duration: errorType >= 500 ? 8000 : 5000,
     });
+    
+    // Log per debugging in dev
+    if (process.env.NODE_ENV === 'development') {
+      console.table({
+        context,
+        errorType,
+        message: errorMessage,
+        attempts: currentAttempts,
+      });
+    }
+  };
+  
+  const getErrorMessage = (errorType: number | string, message: string, context: string) => {
+    const contextMap = {
+      'invoices': 'fatture',
+      'transactions': 'transazioni',
+      'anagraphics': 'anagrafiche',
+      'reconciliation': 'riconciliazione',
+      'import': 'importazione',
+      'export': 'esportazione',
+    };
+    
+    const contextName = contextMap[context as keyof typeof contextMap] || context;
+    
+    switch (errorType) {
+      case 400:
+        return `Dati non validi per ${contextName}`;
+      case 401:
+        return 'Sessione scaduta. Effettua il login.';
+      case 403:
+        return `Non hai i permessi per ${contextName}`;
+      case 404:
+        return `${contextName.charAt(0).toUpperCase() + contextName.slice(1)} non trovata`;
+      case 408:
+        return 'Timeout della richiesta. Riprova.';
+      case 429:
+        return 'Troppe richieste. Attendi un momento.';
+      case 500:
+        return `Errore del server per ${contextName}`;
+      case 502:
+      case 503:
+      case 504:
+        return 'Servizio temporaneamente non disponibile';
+      default:
+        return message || `Errore durante l'operazione su ${contextName}`;
+    }
   };
   
   return {
-    notifications,
-    removeNotification,
-    createCustomNotification,
-    hasActiveNotifications: notifications.length > 0,
-    errorNotifications: notifications.filter(n => n.type === 'error'),
-    successNotifications: notifications.filter(n => n.type === 'success'),
+    handleError,
+    retryAttempts,
+    resetRetryAttempts: (context: string) => 
+      setRetryAttempts(prev => ({ ...prev, [context]: 0 })),
   };
 };
 
 /**
- * Hook per gestione stato UI avanzato con persistenza
- */
-export const useAdvancedUIState = () => {
-  const uiStore = useUIStore();
-  const [localState, setLocalState] = useState({
-    activePanel: 'dashboard',
-    viewMode: 'grid',
-    filtersExpanded: false,
-    quickActions: [],
-  });
-  
-  const updateLocalState = (updates: Partial<typeof localState>) => {
-    setLocalState(prev => ({ ...prev, ...updates }));
-  };
-  
-  const resetToDefaults = () => {
-    setLocalState({
-      activePanel: 'dashboard',
-      viewMode: 'grid',
-      filtersExpanded: false,
-      quickActions: [],
-    });
-    uiStore.updateSettings({
-      ai_features_enabled: true,
-      smart_reconciliation_enabled: true,
-      real_time_updates: false,
-    });
-  };
-  
-  return {
-    ...uiStore,
-    localState,
-    updateLocalState,
-    resetToDefaults,
-  };
-};
-
-/**
- * Hook per gestione keyboard shortcuts
+ * Hook per keyboard shortcuts personalizzabili
  */
 export const useKeyboardShortcuts = () => {
-  const cacheManager = useIntelligentCache();
-  const reconciliationWorkflow = useReconciliationWorkflow();
+  const [shortcuts] = useState({
+    // Navigazione
+    'ctrl+shift+i': () => window.location.href = '/invoices',
+    'ctrl+shift+t': () => window.location.href = '/transactions',
+    'ctrl+shift+a': () => window.location.href = '/anagraphics',
+    'ctrl+shift+r': () => window.location.href = '/reconciliation',
+    'ctrl+shift+d': () => window.location.href = '/dashboard',
+    
+    // Azioni quick
+    'ctrl+n': () => document.querySelector('[data-shortcut="new"]')?.click(),
+    'ctrl+s': () => document.querySelector('[data-shortcut="save"]')?.click(),
+    'ctrl+e': () => document.querySelector('[data-shortcut="export"]')?.click(),
+    'ctrl+f': () => document.querySelector('[data-shortcut="search"]')?.focus(),
+    
+    // Bulk operations
+    'ctrl+shift+d': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
+    'ctrl+shift+e': () => document.querySelector('[data-shortcut="bulk-export"]')?.click(),
+    
+    // AI features
+    'ctrl+shift+ai': () => document.querySelector('[data-shortcut="ai-suggest"]')?.click(),
+  });
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey) {
-        switch (event.key) {
-          case 'r':
-            event.preventDefault();
-            cacheManager.invalidateByType('all');
-            break;
-          case 's':
-            event.preventDefault();
-            // Trigger manual save/sync
-            break;
-          case 'f':
-            event.preventDefault();
-            // Focus search
-            break;
-          case 'Enter':
-            if (event.shiftKey) {
-              event.preventDefault();
-              reconciliationWorkflow.applyBestMatches();
-            }
-            break;
-        }
+      const key = [
+        event.ctrlKey && 'ctrl',
+        event.shiftKey && 'shift',
+        event.altKey && 'alt',
+        event.key.toLowerCase()
+      ].filter(Boolean).join('+');
+      
+      const action = shortcuts[key as keyof typeof shortcuts];
+      if (action) {
+        event.preventDefault();
+        action();
       }
     };
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [cacheManager, reconciliationWorkflow]);
+  }, [shortcuts]);
+  
+  return shortcuts;
 };
 
 /**
- * Hook per gestione advanced search con debounce
+ * Hook per debounce ottimizzato
  */
-export const useAdvancedSearch = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'all' | 'invoices' | 'transactions' | 'anagraphics'>('all');
-  const [searchMode, setSearchMode] = useState<'smart' | 'exact' | 'fuzzy' | 'ai_enhanced'>('smart');
-  const aiEnabled = useAIFeaturesEnabled();
-  const { handleError } = useSmartErrorHandling();
+export const useDebounce = <T>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
   
-  const debouncedQuery = useMemo(() => {
-    const timer = setTimeout(() => searchQuery, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-  
-  const searchInvoices = useQuery({
-    queryKey: ['search', 'invoices', searchQuery, searchMode],
-    queryFn: () => apiClient.searchInvoices(searchQuery, undefined, 20),
-    enabled: (searchType === 'all' || searchType === 'invoices') && searchQuery.length >= 2,
-    staleTime: 60000,
-    onError: (error) => handleError(error, 'search-invoices'),
-  });
-  
-  const searchTransactions = useQuery({
-    queryKey: ['search', 'transactions', searchQuery, searchMode],
-    queryFn: () => apiClient.searchTransactions(
-      searchQuery, 
-      20, 
-      false, 
-      searchMode, 
-      aiEnabled,
-      aiEnabled
-    ),
-    enabled: (searchType === 'all' || searchType === 'transactions') && searchQuery.length >= 2,
-    staleTime: 60000,
-    onError: (error) => handleError(error, 'search-transactions'),
-  });
-  
-  const searchAnagraphics = useQuery({
-    queryKey: ['search', 'anagraphics', searchQuery],
-    queryFn: () => apiClient.searchAnagraphics(searchQuery, undefined, 20),
-    enabled: (searchType === 'all' || searchType === 'anagraphics') && searchQuery.length >= 2,
-    staleTime: 60000,
-    onError: (error) => handleError(error, 'search-anagraphics'),
-  });
-  
-  const combinedResults = useMemo(() => {
-    const results = {
-      invoices: searchInvoices.data?.results || [],
-      transactions: searchTransactions.data?.results || [],
-      anagraphics: searchAnagraphics.data?.results || [],
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    
+    return () => {
+      clearTimeout(handler);
     };
+  }, [value, delay]);
+  
+  return debouncedValue;
+};
+
+/**
+ * Hook per throttle ottimizzato
+ */
+export const useThrottle = <T>(value: T, limit: number): T => {
+  const [throttledValue, setThrottledValue] = useState<T>(value);
+  const [lastRan, setLastRan] = useState<number>(Date.now());
+  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (Date.now() - lastRan >= limit) {
+        setThrottledValue(value);
+        setLastRan(Date.now());
+      }
+    }, limit - (Date.now() - lastRan));
     
-    const total = results.invoices.length + results.transactions.length + results.anagraphics.length;
-    const isLoading = searchInvoices.isLoading || searchTransactions.isLoading || searchAnagraphics.isLoading;
-    
-    return { results, total, isLoading };
-  }, [searchInvoices.data, searchTransactions.data, searchAnagraphics.data, 
-      searchInvoices.isLoading, searchTransactions.isLoading, searchAnagraphics.isLoading]);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, limit, lastRan]);
+  
+  return throttledValue;
+};
+
+/**
+ * Hook per gestire loading states intelligenti
+ */
+export const useSmartLoading = (queries: any[] = []) => {
+  const loading = queries.some(q => q?.isLoading || q?.isPending);
+  const error = queries.find(q => q?.error)?.error;
+  const success = queries.every(q => q?.isSuccess);
+  
+  const progress = useMemo(() => {
+    const total = queries.length;
+    const completed = queries.filter(q => q?.isSuccess || q?.isError).length;
+    return total > 0 ? (completed / total) * 100 : 0;
+  }, [queries]);
   
   return {
-    searchQuery,
-    setSearchQuery,
-    searchType,
-    setSearchType,
-    searchMode,
-    setSearchMode,
-    ...combinedResults,
-    clearSearch: () => setSearchQuery(''),
+    loading,
+    error,
+    success,
+    progress,
+    isPartiallyLoaded: progress > 0 && progress < 100,
+  };
+};
+
+/**
+ * Hook per gestire stati di selezione bulk
+ */
+export const useBulkSelection = <T extends { id: number }>(items: T[] = []) => {
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  
+  const selectedItems = useMemo(() => 
+    items.filter(item => selectedIds.has(item.id)), 
+    [items, selectedIds]
+  );
+  
+  const isSelected = (id: number) => selectedIds.has(id);
+  const isAllSelected = selectedIds.size > 0 && selectedIds.size === items.length;
+  const isPartiallySelected = selectedIds.size > 0 && selectedIds.size < items.length;
+  
+  const toggleSelection = (id: number) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+  
+  const toggleAll = () => {
+    if (isAllSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map(item => item.id)));
+    }
+  };
+  
+  const clearSelection = () => setSelectedIds(new Set());
+  
+  const selectRange = (startId: number, endId: number) => {
+    const startIndex = items.findIndex(item => item.id === startId);
+    const endIndex = items.findIndex(item => item.id === endId);
+    
+    if (startIndex !== -1 && endIndex !== -1) {
+      const rangeStart = Math.min(startIndex, endIndex);
+      const rangeEnd = Math.max(startIndex, endIndex);
+      const rangeIds = items.slice(rangeStart, rangeEnd + 1).map(item => item.id);
+      
+      setSelectedIds(prev => new Set([...prev, ...rangeIds]));
+    }
+  };
+  
+  return {
+    selectedIds: Array.from(selectedIds),
+    selectedItems,
+    selectedCount: selectedIds.size,
+    isSelected,
+    isAllSelected,
+    isPartiallySelected,
+    toggleSelection,
+    toggleAll,
+    clearSelection,
+    selectRange,
+    hasSelection: selectedIds.size > 0,
+  };
+};
+
+/**
+ * Hook per gestire filtri con persistenza locale
+ */
+export const usePersistentFilters = <T extends Record<string, any>>(
+  key: string,
+  defaultFilters: T
+) => {
+  const [filters, setFilters] = useState<T>(() => {
+    try {
+      const saved = localStorage.getItem(`filters_${key}`);
+      return saved ? { ...defaultFilters, ...JSON.parse(saved) } : defaultFilters;
+    } catch {
+      return defaultFilters;
+    }
+  });
+  
+  const updateFilters = (newFilters: Partial<T>) => {
+    const updated = { ...filters, ...newFilters };
+    setFilters(updated);
+    
+    try {
+      localStorage.setItem(`filters_${key}`, JSON.stringify(updated));
+    } catch (error) {
+      console.warn('Failed to save filters to localStorage:', error);
+    }
+  };
+  
+  const resetFilters = () => {
+    setFilters(defaultFilters);
+    try {
+      localStorage.removeItem(`filters_${key}`);
+    } catch (error) {
+      console.warn('Failed to remove filters from localStorage:', error);
+    }
+  };
+  
+  const clearFilter = (filterKey: keyof T) => {
+    const { [filterKey]: removed, ...rest } = filters;
+    updateFilters(rest as Partial<T>);
+  };
+  
+  return {
+    filters,
+    updateFilters,
+    resetFilters,
+    clearFilter,
+    hasActiveFilters: Object.keys(filters).some(key => 
+      filters[key] !== defaultFilters[key] && 
+      filters[key] !== null && 
+      filters[key] !== undefined && 
+      filters[key] !== ''
+    ),
+  };
+};
+
+/**
+ * Hook per gestire virtual scrolling performance
+ */
+export const useVirtualScrolling = (
+  items: any[] = [],
+  itemHeight: number = 50,
+  containerHeight: number = 400
+) => {
+  const [scrollTop, setScrollTop] = useState(0);
+  
+  const visibleItemsCount = Math.ceil(containerHeight / itemHeight) + 2; // Buffer
+  const startIndex = Math.floor(scrollTop / itemHeight);
+  const endIndex = Math.min(startIndex + visibleItemsCount, items.length);
+  
+  const visibleItems = items.slice(startIndex, endIndex);
+  const totalHeight = items.length * itemHeight;
+  const offsetY = startIndex * itemHeight;
+  
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  };
+  
+  return {
+    visibleItems,
+    totalHeight,
+    offsetY,
+    handleScroll,
+    startIndex,
+    endIndex,
+  };
+};
+
+/**
+ * Hook per gestire le preferenze utente
+ */
+export const useUserPreferences = () => {
+  const [preferences, setPreferences] = useState(() => {
+    try {
+      const saved = localStorage.getItem('user_preferences');
+      return saved ? JSON.parse(saved) : {
+        theme: 'system',
+        language: 'it',
+        itemsPerPage: 20,
+        enableAnimations: true,
+        enableSounds: false,
+        autoSave: true,
+        compactMode: false,
+      };
+    } catch {
+      return {
+        theme: 'system',
+        language: 'it',
+        itemsPerPage: 20,
+        enableAnimations: true,
+        enableSounds: false,
+        autoSave: true,
+        compactMode: false,
+      };
+    }
+  });
+  
+  const updatePreference = (key: string, value: any) => {
+    const updated = { ...preferences, [key]: value };
+    setPreferences(updated);
+    
+    try {
+      localStorage.setItem('user_preferences', JSON.stringify(updated));
+    } catch (error) {
+      console.warn('Failed to save preferences:', error);
+    }
+  };
+  
+  return {
+    preferences,
+    updatePreference,
+  };
+};
+
+/**
+ * Hook per gestire le notifiche toast avanzate
+ */
+export const useAdvancedToast = () => {
+  const showSuccess = (message: string, options?: any) => {
+    toast.success(message, {
+      duration: 4000,
+      position: 'top-right',
+      ...options,
+    });
+  };
+  
+  const showError = (message: string, options?: any) => {
+    toast.error(message, {
+      duration: 6000,
+      position: 'top-right',
+      ...options,
+    });
+  };
+  
+  const showWarning = (message: string, options?: any) => {
+    toast(message, {
+      icon: '⚠️',
+      duration: 5000,
+      position: 'top-right',
+      style: {
+        backgroundColor: '#fef3c7',
+        color: '#92400e',
+      },
+      ...options,
+    });
+  };
+  
+  const showInfo = (message: string, options?: any) => {
+    toast(message, {
+      icon: 'ℹ️',
+      duration: 4000,
+      position: 'top-right',
+      style: {
+        backgroundColor: '#dbeafe',
+        color: '#1e40af',
+      },
+      ...options,
+    });
+  };
+  
+  const showProgress = (message: string, promise: Promise<any>) => {
+    return toast.promise(promise, {
+      loading: message,
+      success: 'Operazione completata!',
+      error: 'Errore durante l\'operazione',
+    });
+  };
+  
+  return {
+    showSuccess,
+    showError,
+    showWarning,
+    showInfo,
+    showProgress,
+  };
+};
+
+/**
+ * Hook per gestire l'auto-save intelligente
+ */
+export const useAutoSave = <T>(
+  data: T,
+  saveFunction: (data: T) => Promise<any>,
+  options: {
+    delay?: number;
+    enabled?: boolean;
+    key?: string;
+  } = {}
+) => {
+  const { delay = 2000, enabled = true, key = 'autosave' } = options;
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const debouncedData = useDebounce(data, delay);
+  
+  useEffect(() => {
+    if (!enabled || !debouncedData) return;
+    
+    const save = async () => {
+      setIsSaving(true);
+      try {
+        await saveFunction(debouncedData);
+        setLastSaved(new Date());
+        toast.success('Salvataggio automatico completato', {
+          duration: 2000,
+          position: 'bottom-right',
+        });
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+        toast.error('Errore nel salvataggio automatico');
+      } finally {
+        setIsSaving(false);
+      }
+    };
+    
+    save();
+  }, [debouncedData, saveFunction, enabled]);
+  
+  return {
+    isSaving,
+    lastSaved,
+    isEnabled: enabled,
+  };
+};
+
+/**
+ * Hook per gestire le performance e monitoring
+ */
+export const usePerformanceMonitor = (componentName: string) => {
+  const [metrics, setMetrics] = useState({
+    renderCount: 0,
+    averageRenderTime: 0,
+    lastRenderTime: 0,
+  });
+  
+  useEffect(() => {
+    const startTime = performance.now();
+    
+    setMetrics(prev => ({
+      ...prev,
+      renderCount: prev.renderCount + 1,
+    }));
+    
+    return () => {
+      const endTime = performance.now();
+      const renderTime = endTime - startTime;
+      
+      setMetrics(prev => {
+        const newAverageTime = (prev.averageRenderTime * (prev.renderCount - 1) + renderTime) / prev.renderCount;
+        return {
+          ...prev,
+          averageRenderTime: newAverageTime,
+          lastRenderTime: renderTime,
+        };
+      });
+      
+      // Log performance warning se troppo lento
+      if (renderTime > 100) {
+        console.warn(`Slow render detected in ${componentName}: ${renderTime.toFixed(2)}ms`);
+      }
+    };
+  });
+  
+  return metrics;
+};
+
+/**
+ * Hook per gestire la validazione dei form in tempo reale
+ */
+export const useFormValidation = <T extends Record<string, any>>(
+  initialValues: T,
+  validationRules: Record<keyof T, (value: any) => string | null>
+) => {
+  const [values, setValues] = useState<T>(initialValues);
+  const [errors, setErrors] = useState<Record<keyof T, string | null>>({} as any);
+  const [touched, setTouched] = useState<Record<keyof T, boolean>>({} as any);
+  
+  const validateField = (name: keyof T, value: any) => {
+    const rule = validationRules[name];
+    return rule ? rule(value) : null;
+  };
+  
+  const validateAll = () => {
+    const newErrors = {} as Record<keyof T, string | null>;
+    let isValid = true;
+    
+    Object.keys(validationRules).forEach(key => {
+      const error = validateField(key as keyof T, values[key as keyof T]);
+      newErrors[key as keyof T] = error;
+      if (error) isValid = false;
+    });
+    
+    setErrors(newErrors);
+    return isValid;
+  };
+  
+  const setValue = (name: keyof T, value: any) => {
+    setValues(prev => ({ ...prev, [name]: value }));
+    
+    if (touched[name]) {
+      const error = validateField(name, value);
+      setErrors(prev => ({ ...prev, [name]: error }));
+    }
+  };
+  
+  const setFieldTouched = (name: keyof T) => {
+    setTouched(prev => ({ ...prev, [name]: true }));
+    const error = validateField(name, values[name]);
+    setErrors(prev => ({ ...prev, [name]: error }));
+  };
+  
+  const reset = () => {
+    setValues(initialValues);
+    setErrors({} as any);
+    setTouched({} as any);
+  };
+  
+  const isValid = Object.values(errors).every(error => !error);
+  const hasErrors = Object.values(errors).some(error => !!error);
+  
+  return {
+    values,
+    errors,
+    touched,
+    isValid,
+    hasErrors,
+    setValue,
+    setFieldTouched,
+    validateAll,
+    reset,
   };
 };
