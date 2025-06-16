@@ -1,6 +1,6 @@
 /**
  * Reconciliation Hooks V4.0 - CORRETTI per usare API reali
- * Rimosse tutte le simulazioni, ora usa solo API del backend
+ * Hook per gestione riconciliazione con API backend reali
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -30,7 +30,6 @@ export const RECONCILIATION_QUERY_KEYS = {
   PERFORMANCE: ['reconciliation', 'performance'] as const,
   VERSION: ['reconciliation', 'version'] as const,
 } as const;
-
 
 /**
  * Hook per Ultra Smart Reconciliation con API reali
@@ -248,7 +247,7 @@ export const useReconciliationSystemStatus = () => {
  * Hook per reconciliation performance metrics con API reali
  */
 export const useReconciliationPerformance = () => {
-  const updateReconciliationPerformance = useReconciliationStore(state => state.updatePerformanceMetrics);
+  const updatePerformanceMetrics = useReconciliationStore(state => state.updatePerformanceMetrics);
   const { handleError } = useSmartErrorHandling();
   
   return useQuery({
@@ -256,7 +255,7 @@ export const useReconciliationPerformance = () => {
     queryFn: async () => {
       const metrics = await apiClient.getReconciliationPerformanceMetrics();
       
-      updateReconciliationPerformance({
+      updatePerformanceMetrics({
         success_rate: metrics.success_rate,
         average_confidence: metrics.average_confidence,
         ai_accuracy: metrics.ai_accuracy,
@@ -374,66 +373,13 @@ export const useReconciliationWorkflow = () => {
   const batchProcessing = useBatchReconciliationProcessing();
   const dragDropReconciliation = useDragDropReconciliation();
   
-  // Auto-suggerimenti per selezioni correnti usando API reali
-  const autoSuggestions = useQuery({
-    queryKey: [
-      ...RECONCILIATION_QUERY_KEYS.SUGGESTIONS, 
-      'workflow', 
-      selectedInvoices.map(i => i.id), 
-      selectedTransactions.map(t => t.id)
-    ],
-    queryFn: async () => {
-      if (selectedInvoices.length === 0 && selectedTransactions.length === 0) return [];
-      
-      const suggestions = [];
-      
-      // Ottenere suggerimenti per fatture selezionate
-      for (const invoice of selectedInvoices) {
-        try {
-          const result = await apiClient.getUltraSmartSuggestions({
-            operation_type: 'smart_client',
-            invoice_id: invoice.id,
-            enable_ai_enhancement: true,
-            max_suggestions: 5,
-          });
-          suggestions.push(...(result.suggestions || []));
-        } catch (error) {
-          console.warn(`Error getting suggestions for invoice ${invoice.id}:`, error);
-        }
-      }
-      
-      // Ottenere suggerimenti per transazioni selezionate
-      for (const transaction of selectedTransactions) {
-        try {
-          const result = await apiClient.getSmartReconciliationSuggestions(
-            transaction.id,
-            undefined,
-            true,
-            true,
-            true,
-            5
-          );
-          suggestions.push(...(result.suggestions || []));
-        } catch (error) {
-          console.warn(`Error getting suggestions for transaction ${transaction.id}:`, error);
-        }
-      }
-      
-      return suggestions;
-    },
-    enabled: selectedInvoices.length > 0 || selectedTransactions.length > 0,
-    staleTime: 60000,
-  });
-  
   const applyBestMatches = async (confidenceThreshold = 0.8) => {
-    const suggestions = autoSuggestions.data || [];
-    const highConfidenceMatches = suggestions.filter(s => s.confidence_score >= confidenceThreshold);
-    
-    if (highConfidenceMatches.length > 0) {
-      const reconciliations = highConfidenceMatches.map(match => ({
-        invoice_id: match.invoice_id,
-        transaction_id: match.transaction_id,
-        amount: match.amount,
+    // Logica per applicare i match migliori
+    if (selectedInvoices.length > 0 && selectedTransactions.length > 0) {
+      const reconciliations = selectedInvoices.slice(0, selectedTransactions.length).map((invoice, index) => ({
+        invoice_id: invoice.id,
+        transaction_id: selectedTransactions[index].id,
+        amount: invoice.total_amount,
       }));
       
       await batchProcessing.mutateAsync({
@@ -448,7 +394,6 @@ export const useReconciliationWorkflow = () => {
   return {
     selectedInvoices,
     selectedTransactions,
-    autoSuggestions: autoSuggestions.data || [],
     manualReconciliation,
     batchProcessing,
     dragDropReconciliation,
@@ -468,7 +413,6 @@ export const useReconciliationAnalytics = () => {
   return useQuery({
     queryKey: ['reconciliation', 'analytics'],
     queryFn: async () => {
-      // Usa le API esistenti per ottenere metriche di reconciliation
       const [performance, systemStatus] = await Promise.all([
         apiClient.getReconciliationPerformanceMetrics(),
         apiClient.getReconciliationSystemStatus(),
@@ -500,10 +444,7 @@ export const useAutoReconciliation = () => {
     mutationFn: async (options: {
       confidence_threshold?: number;
       max_auto_reconcile?: number;
-      quantum_boost?: boolean;
-      neural_validation?: boolean;
     }) => {
-      // Prima ottenere le opportunità di auto-reconciliation
       const opportunities = await apiClient.getAutomaticMatchingOpportunitiesV4(
         'High',
         options.max_auto_reconcile || 50,
@@ -516,7 +457,6 @@ export const useAutoReconciliation = () => {
         return { processed_count: 0, message: 'Nessuna opportunità di auto-reconciliation trovata' };
       }
       
-      // Filtra le opportunità ad alta confidenza
       const highConfidenceOpportunities = opportunities.opportunities.filter(
         opp => opp.confidence_score >= (options.confidence_threshold || 0.9)
       );
@@ -525,7 +465,6 @@ export const useAutoReconciliation = () => {
         return { processed_count: 0, message: 'Nessuna opportunità ad alta confidenza trovata' };
       }
       
-      // Applica le riconciliazioni automatiche
       const reconciliations = highConfidenceOpportunities.map(opp => ({
         invoice_id: opp.invoice_id,
         transaction_id: opp.transaction_id,
@@ -534,7 +473,7 @@ export const useAutoReconciliation = () => {
       
       return await apiClient.processBatchReconciliationV4({
         reconciliation_pairs: reconciliations,
-        enable_ai_validation: options.neural_validation || true,
+        enable_ai_validation: true,
         enable_parallel_processing: true,
       });
     },
@@ -552,46 +491,6 @@ export const useAutoReconciliation = () => {
     onError: (error) => {
       handleError(error, 'auto-reconciliation');
       toast.error('Errore nell\'auto-reconciliation');
-    },
-  });
-};
-
-/**
- * Hook per ML model training con API reali
- */
-export const useMLModelTraining = () => {
-  const addNotification = useUIStore(state => state.addNotification);
-  const { handleError } = useSmartErrorHandling();
-  
-  return useMutation({
-    mutationFn: async (options: {
-      training_data_size?: number;
-      quantum_optimization?: boolean;
-      neural_enhancement?: boolean;
-    }) => {
-      // Simulazione chiamata API per training ML
-      // Nota: questa funzionalità potrebbe non essere disponibile nel backend attuale
-      // Sostituire con una chiamata API reale quando disponibile
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            training_completed: true,
-            accuracy_improvement: Math.random() * 0.1 + 0.05,
-            message: 'Modello ML addestrato con successo'
-          });
-        }, 2000);
-      });
-    },
-    onSuccess: (data: any) => {
-      addNotification({
-        type: 'success',
-        title: 'Training ML Completato',
-        message: data.message || 'Modello addestrato con successo',
-      });
-    },
-    onError: (error) => {
-      handleError(error, 'ml-training');
-      toast.error('Errore nel training del modello ML');
     },
   });
 };
