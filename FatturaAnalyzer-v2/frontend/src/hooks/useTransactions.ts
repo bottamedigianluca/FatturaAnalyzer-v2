@@ -615,11 +615,6 @@ export const useTransactionDetails = useTransaction;
 export const useTransactionOperations = useTransactionMutation;
 
 /**
- * Utility exports
- */
-export { TRANSACTIONS_QUERY_KEYS };
-
-/**
  * Default hook exports per facilità di utilizzo
  */
 export default useTransactions;
