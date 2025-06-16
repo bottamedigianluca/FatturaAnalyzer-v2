@@ -669,6 +669,58 @@ export const enableAllV4Features = () => {
   console.log('🚀 All V4.0 features enabled!');
 };
 
+// ===== HOOK MANCANTI RICHIESTI DA APP.TSX =====
+
+/**
+ * Hook per ottenere lo stato di salute del sistema
+ */
+export const useSystemHealth = () => {
+  return useUIStore(state => state.systemStatus);
+};
+
+/**
+ * Hook per sapere se gli aggiornamenti real-time sono attivi
+ */
+export const useRealTimeUpdates = () => {
+  return useUIStore(state => state.settings.real_time_updates);
+};
+
+/**
+ * Hook per verificare se è il primo avvio
+ */
+export const useIsFirstRun = () => {
+  return useUIStore(state => state.firstRunState.is_first_run);
+};
+
+/**
+ * Hook per verificare se ci sono operazioni attive in background
+ */
+export const useHasActiveOperations = () => {
+  const loadingStates = useUIStore(state => state.loadingStates);
+  const anyActive = Object.values(loadingStates).some(v => v === true);
+  return {
+    any_active: anyActive,
+    importing: loadingStates['import'] || false,
+    exporting: loadingStates['export'] || false,
+    syncing: loadingStates['sync'] || false,
+    loading: loadingStates['fetch'] || false,
+  };
+};
+
+/**
+ * Hook per verificare le feature "smart" abilitate
+ */
+export const useSmartFeaturesEnabled = () => {
+  const settings = useUIStore(state => state.settings);
+  const aiFeatures = settings.ai_features_enabled ?? true;
+  const smartReconciliation = settings.smart_reconciliation_enabled ?? true;
+  return {
+    ai_features: aiFeatures,
+    smart_reconciliation: smartReconciliation,
+    all_enabled: aiFeatures && smartReconciliation,
+  };
+};
+
 // ===== ADDITIONAL UTILITY HOOKS =====
 
 /**
