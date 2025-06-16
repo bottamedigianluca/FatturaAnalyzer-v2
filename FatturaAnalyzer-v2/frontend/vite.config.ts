@@ -17,7 +17,6 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react({
         // Configurazione per usare Emotion.js (libreria di stile)
-        jsxImportSource: '@emotion/react',
         // Plugin per SWC (il compilatore veloce usato da Vite)
         plugins: [
           [
