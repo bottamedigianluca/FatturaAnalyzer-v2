@@ -75,6 +75,12 @@ import {
   useTransactionStats
 } from '@/hooks/useTransactions';
 
+import {
+  useImportTransactionsCSV,
+  useExportData as useExportTransactions,
+  useDownloadTransactionTemplate
+} from '@/hooks/useImportExport';
+
 // Utils
 import { 
   formatCurrency, 
