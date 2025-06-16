@@ -12,15 +12,16 @@ import {
   useUIStore 
 } from '@/store';
 import { useSmartCache, useSmartErrorHandling } from './useUtils';
+import { useState } from 'react';
 
 // ✅ FIX: Hook per AI features (semplificato)
-export const useAIFeaturesEnabled = () => {
+const useAIFeaturesEnabled = () => {
   // Restituisce sempre true per ora, può essere configurato tramite store in futuro
   return true;
 };
 
 // ===== QUERY KEYS =====
-export const ANALYTICS_QUERY_KEYS = {
+const ANALYTICS_QUERY_KEYS = {
   ANALYTICS: ['analytics'] as const,
   EXECUTIVE_DASHBOARD: ['analytics', 'executive'] as const,
   OPERATIONS_DASHBOARD: ['analytics', 'operations'] as const,
@@ -32,7 +33,7 @@ export const ANALYTICS_QUERY_KEYS = {
 /**
  * Hook per Executive Dashboard Ultra con AI insights
  */
-export const useExecutiveDashboard = () => {
+const useExecutiveDashboard = () => {
   const setDashboardData = useDataStore(state => state.setDashboardData);
   const updateAnalyticsV3 = useDataStore(state => state.updateAnalyticsV3 || (() => {}));
   const aiEnabled = useAIFeaturesEnabled();
@@ -60,166 +61,10 @@ export const useExecutiveDashboard = () => {
   });
 };
 
-// ===== LEGACY COMPATIBILITY HOOKS =====
-
-/**
- * Hook legacy per KPIs (compatibilità)
- */
-export const useKPIs = () => {
-  return useExecutiveDashboard();
-};
-
-/**
- * Hook legacy per Dashboard Data (compatibilità)
- */
-export const useDashboardData = () => {
-  return useExecutiveDashboard();
-};
-
-/**
- * Hook legacy per Detailed KPIs (compatibilità)
- */
-export const useDetailedKPIs = () => {
-  return useExecutiveDashboard();
-};
-
-/**
- * Hook per Analytics Health (compatibilità)
- */
-export const useAnalyticsHealth = () => {
-  const { handleError } = useSmartErrorHandling();
-  
-  return useQuery({
-    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'health'],
-    queryFn: () => apiClient.getUltraSystemHealth(),
-    staleTime: 300000,
-    onError: (error) => handleError(error, 'analytics-health'),
-  });
-};
-
-/**
- * Hook per Analytics Features (compatibilità)
- */
-export const useAnalyticsFeatures = () => {
-  const { handleError } = useSmartErrorHandling();
-  
-  return useQuery({
-    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'features'],
-    queryFn: () => apiClient.getUltraAnalyticsFeatures(),
-    staleTime: Infinity, // Dati stabili
-    onError: (error) => handleError(error, 'analytics-features'),
-  });
-};
-
-// ===== COMBINED ANALYTICS HOOKS =====
-
-/**
- * Hook composito per Dashboard completo
- */
-export const useCompleteDashboard = () => {
-  const executiveDashboard = useExecutiveDashboard();
-  const operationsDashboard = useOperationsDashboard();
-  const aiInsights = useAIBusinessInsights();
-  const realTimeMetrics = useRealTimeMetrics(true);
-  
-  return {
-    executive: executiveDashboard,
-    operations: operationsDashboard,
-    aiInsights,
-    realTime: realTimeMetrics,
-    isLoading: executiveDashboard.isLoading || operationsDashboard.isLoading,
-    hasError: executiveDashboard.error || operationsDashboard.error,
-    refetchAll: () => {
-      executiveDashboard.refetch();
-      operationsDashboard.refetch();
-      aiInsights.refetch();
-      realTimeMetrics.refetch();
-    },
-  };
-};
-
-/**
- * Hook per Analytics completo con tutte le features
- */
-export const useFullAnalytics = (options = {}) => {
-  const dashboard = useCompleteDashboard();
-  const predictions = useUltraPredictions(options);
-  const seasonality = useSeasonalityAnalysis(options);
-  const competitive = useCompetitiveAnalysis(options);
-  const customer = useCustomerIntelligence(options);
-  
-  return {
-    dashboard: dashboard.executive.data,
-    operations: dashboard.operations.data,
-    predictions: predictions.data,
-    seasonality: seasonality.data,
-    competitive: competitive.data,
-    customer: customer.data,
-    aiInsights: dashboard.aiInsights.data,
-    isLoading: dashboard.isLoading || predictions.isLoading || seasonality.isLoading,
-    hasError: dashboard.hasError || predictions.error || seasonality.error,
-    refetchAll: () => {
-      dashboard.refetchAll();
-      predictions.refetch();
-      seasonality.refetch();
-      competitive.refetch();
-      customer.refetch();
-    },
-  };
-};
-
-// ===== EXPORT ALL HOOKS =====
-export {
-  // Main hooks
-  useExecutiveDashboard,
-  useOperationsDashboard,
-  useAIBusinessInsights,
-  useCustomAnalytics,
-  useRealTimeMetrics,
-  useUltraPredictions,
-  
-  // Analysis hooks
-  useSeasonalityAnalysis,
-  useCustomerIntelligence,
-  useCompetitiveAnalysis,
-  useTrendAnalysis,
-  useCohortAnalysis,
-  useBenchmarkAnalysis,
-  
-  // Utility hooks
-  useBatchAnalytics,
-  useAnalyticsExport,
-  useAnalyticsPerformance,
-  useCustomReportBuilder,
-  useRealTimeDashboard,
-  useAdvancedAnalyticsFilters,
-  
-  // Monitoring hooks
-  useAnalyticsAlerts,
-  useAnomalyDetection,
-  useDataQualityAssessment,
-  useScheduledReports,
-  useAPIPerformanceMonitoring,
-  
-  // Legacy compatibility
-  useKPIs,
-  useDashboardData,
-  useDetailedKPIs,
-  useAnalyticsHealth,
-  useAnalyticsFeatures,
-  
-  // Combined hooks
-  useCompleteDashboard,
-  useFullAnalytics,
-  
-  // AI Features hook
-  useAIFeaturesEnabled,
-};
-
 /**
  * Hook per Operations Dashboard Live con metriche real-time
  */
-export const useOperationsDashboard = () => {
+const useOperationsDashboard = () => {
   const updateAnalyticsV3 = useDataStore(state => state.updateAnalyticsV3 || (() => {}));
   const realTimeEnabled = useUIStore(state => state.settings?.real_time_updates || false);
   const { handleError } = useSmartErrorHandling();
@@ -245,7 +90,7 @@ export const useOperationsDashboard = () => {
 /**
  * Hook per AI Business Insights con analisi predittiva
  */
-export const useAIBusinessInsights = (options = {}) => {
+const useAIBusinessInsights = (options = {}) => {
   const updateAIInsights = useDataStore(state => state.updateAIInsights || (() => {}));
   const aiEnabled = useAIFeaturesEnabled();
   const { handleError } = useSmartErrorHandling();
@@ -287,7 +132,7 @@ export const useAIBusinessInsights = (options = {}) => {
 /**
  * Hook per Custom Analytics con configurazione flessibile
  */
-export const useCustomAnalytics = (request: AnalyticsRequest) => {
+const useCustomAnalytics = (request: AnalyticsRequest) => {
   const queryClient = useQueryClient();
   const { handleError } = useSmartErrorHandling();
   
@@ -309,7 +154,7 @@ export const useCustomAnalytics = (request: AnalyticsRequest) => {
 /**
  * Hook per real-time metrics con WebSocket simulation
  */
-export const useRealTimeMetrics = (enabled = false) => {
+const useRealTimeMetrics = (enabled = false) => {
   const updateAnalyticsV3 = useDataStore(state => state.updateAnalyticsV3 || (() => {}));
   const realTimeEnabled = useUIStore(state => state.settings?.real_time_updates || false);
   const { handleError } = useSmartErrorHandling();
@@ -336,7 +181,7 @@ export const useRealTimeMetrics = (enabled = false) => {
 /**
  * Hook per Ultra Predictions
  */
-export const useUltraPredictions = (options = {}) => {
+const useUltraPredictions = (options = {}) => {
   const updateAnalyticsV3 = useDataStore(state => state.updateAnalyticsV3 || (() => {}));
   const aiEnabled = useAIFeaturesEnabled();
   const { handleError } = useSmartErrorHandling();
@@ -372,7 +217,7 @@ export const useUltraPredictions = (options = {}) => {
 /**
  * Hook per Seasonality Analysis
  */
-export const useSeasonalityAnalysis = (options = {}) => {
+const useSeasonalityAnalysis = (options = {}) => {
   const { handleError } = useSmartErrorHandling();
   
   const {
@@ -400,7 +245,7 @@ export const useSeasonalityAnalysis = (options = {}) => {
 /**
  * Hook per Customer Intelligence Ultra
  */
-export const useCustomerIntelligence = (options = {}) => {
+const useCustomerIntelligence = (options = {}) => {
   const { handleError } = useSmartErrorHandling();
   
   const {
@@ -428,7 +273,7 @@ export const useCustomerIntelligence = (options = {}) => {
 /**
  * Hook per Competitive Market Position
  */
-export const useCompetitiveAnalysis = (options = {}) => {
+const useCompetitiveAnalysis = (options = {}) => {
   const { handleError } = useSmartErrorHandling();
   
   const {
@@ -454,7 +299,7 @@ export const useCompetitiveAnalysis = (options = {}) => {
 /**
  * Hook per Batch Analytics Processing
  */
-export const useBatchAnalytics = () => {
+const useBatchAnalytics = () => {
   const queryClient = useQueryClient();
   const { handleError } = useSmartErrorHandling();
   
@@ -478,7 +323,7 @@ export const useBatchAnalytics = () => {
 /**
  * Hook per Export Analytics Report
  */
-export const useAnalyticsExport = () => {
+const useAnalyticsExport = () => {
   const { handleError } = useSmartErrorHandling();
   
   return useMutation({
@@ -541,4 +386,471 @@ export const useAnalyticsExport = () => {
       toast.error('Errore nell\'export del report');
     },
   });
+};
+
+/**
+ * Hook per Performance Monitoring Analytics
+ */
+const useAnalyticsPerformance = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'performance'],
+    queryFn: () => apiClient.getUltraSystemHealth(),
+    staleTime: 300000, // 5 minutes
+    onError: (error) => handleError(error, 'analytics-performance'),
+  });
+};
+
+/**
+ * Hook per Custom Report Builder
+ */
+const useCustomReportBuilder = () => {
+  const queryClient = useQueryClient();
+  const { handleError } = useSmartErrorHandling();
+  
+  return useMutation({
+    mutationFn: (reportConfig: {
+      title: string;
+      sections: string[];
+      dateRange: { start: string; end: string };
+      includeCharts: boolean;
+      includeTables: boolean;
+      format: 'pdf' | 'excel' | 'html';
+    }) => apiClient.runCustomAIAnalysis({
+      analysis_type: 'custom_report',
+      parameters: reportConfig,
+      output_format: reportConfig.format,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ANALYTICS_QUERY_KEYS.ANALYTICS });
+      toast.success('Report personalizzato generato');
+    },
+    onError: (error) => {
+      handleError(error, 'custom-report-builder');
+      toast.error('Errore nella generazione del report');
+    },
+  });
+};
+
+/**
+ * Hook per Real-time Dashboard Updates
+ */
+const useRealTimeDashboard = () => {
+  const updateAnalyticsV3 = useDataStore(state => state.updateAnalyticsV3 || (() => {}));
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.REAL_TIME_METRICS, 'dashboard'],
+    queryFn: async () => {
+      const metrics = await apiClient.getRealtimeLiveMetrics('dashboard', 5, true);
+      updateAnalyticsV3({ real_time_dashboard: metrics });
+      return metrics;
+    },
+    staleTime: 5000, // 5 seconds
+    refetchInterval: 30000, // 30 seconds
+    onError: (error) => handleError(error, 'realtime-dashboard'),
+  });
+};
+
+/**
+ * Hook per Advanced Filtering & Segmentation
+ */
+const useAdvancedAnalyticsFilters = () => {
+  const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
+  const { handleError } = useSmartErrorHandling();
+  
+  const applyFilters = useMutation({
+    mutationFn: (filters: Record<string, any>) => apiClient.runCustomAIAnalysis({
+      analysis_type: 'filtered_analytics',
+      parameters: { filters },
+    }),
+    onSuccess: (data) => {
+      setActiveFilters(data.applied_filters || {});
+      toast.success('Filtri applicati');
+    },
+    onError: (error) => {
+      handleError(error, 'advanced-filters');
+      toast.error('Errore nell\'applicazione dei filtri');
+    },
+  });
+  
+  const clearFilters = () => {
+    setActiveFilters({});
+  };
+  
+  return {
+    activeFilters,
+    applyFilters,
+    clearFilters,
+    hasActiveFilters: Object.keys(activeFilters).length > 0,
+  };
+};
+
+/**
+ * Hook per Trend Analysis & Forecasting
+ */
+const useTrendAnalysis = (options = {}) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    timeframe = '12m',
+    includeSeasonality = true,
+    includeForecasting = true,
+    confidenceLevel = 0.95
+  } = options;
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'trends', options],
+    queryFn: () => apiClient.getUltraSeasonalityAnalysis(
+      timeframe === '12m' ? 1 : timeframe === '24m' ? 2 : 3,
+      includeSeasonality,
+      includeForecasting ? 6 : 0,
+      confidenceLevel
+    ),
+    staleTime: 1800000, // 30 minutes
+    onError: (error) => handleError(error, 'trend-analysis'),
+  });
+};
+
+/**
+ * Hook per Benchmark Analysis
+ */
+const useBenchmarkAnalysis = (options = {}) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    benchmarkType = 'industry',
+    includePerformanceMetrics = true,
+    includeSuggestions = true
+  } = options;
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'benchmark', options],
+    queryFn: () => apiClient.getCompetitiveMarketPosition(
+      benchmarkType as any,
+      true, // includePriceAnalysis
+      includePerformanceMetrics,
+      'regional'
+    ),
+    staleTime: 3600000, // 1 hour
+    onError: (error) => handleError(error, 'benchmark-analysis'),
+  });
+};
+
+/**
+ * Hook per Cohort Analysis
+ */
+const useCohortAnalysis = (options = {}) => {
+  const { handleError } = useSmartErrorHandling();
+  
+  const {
+    cohortType = 'monthly',
+    retentionPeriods = 12,
+    includeValueAnalysis = true
+  } = options;
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'cohorts', options],
+    queryFn: () => apiClient.getUltraCustomerIntelligence(
+      'comprehensive',
+      includeValueAnalysis, // includePredictiveLTV
+      true, // includeChurnPrediction
+      true, // includeNextBestAction
+      'detailed'
+    ),
+    staleTime: 1800000, // 30 minutes
+    onError: (error) => handleError(error, 'cohort-analysis'),
+  });
+};
+
+/**
+ * Hook per Alert Management
+ */
+const useAnalyticsAlerts = () => {
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const { handleError } = useSmartErrorHandling();
+  
+  const alertsQuery = useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'alerts'],
+    queryFn: async () => {
+      const result = await apiClient.getRealtimeLiveMetrics('alerts', 60, true);
+      setAlerts(result.alerts || []);
+      return result;
+    },
+    staleTime: 60000, // 1 minute
+    refetchInterval: 300000, // 5 minutes
+    onError: (error) => handleError(error, 'analytics-alerts'),
+  });
+  
+  const dismissAlert = (alertId: string) => {
+    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+  };
+  
+  const acknowledgeAlert = (alertId: string) => {
+    setAlerts(prev => 
+      prev.map(alert => 
+        alert.id === alertId 
+          ? { ...alert, acknowledged: true }
+          : alert
+      )
+    );
+  };
+  
+  return {
+    alerts,
+    dismissAlert,
+    acknowledgeAlert,
+    hasAlerts: alerts.length > 0,
+    criticalAlerts: alerts.filter(a => a.severity === 'critical').length,
+  };
+};
+
+/**
+ * Hook per Anomaly Detection
+ */
+const useAnomalyDetection = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.AI_INSIGHTS, 'anomalies'],
+    queryFn: () => apiClient.getAIBusinessInsights(
+      'deep',
+      'anomaly_detection',
+      false,
+      'it'
+    ),
+    staleTime: 600000, // 10 minutes
+    onError: (error) => handleError(error, 'anomaly-detection'),
+  });
+};
+
+/**
+ * Hook per Data Quality Assessment
+ */
+const useDataQualityAssessment = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'data-quality'],
+    queryFn: () => apiClient.getUltraSystemHealth(),
+    staleTime: 1800000, // 30 minutes
+    onError: (error) => handleError(error, 'data-quality-assessment'),
+  });
+};
+
+/**
+ * Hook per Scheduled Reports
+ */
+const useScheduledReports = () => {
+  const queryClient = useQueryClient();
+  const { handleError } = useSmartErrorHandling();
+  
+  const [scheduledReports, setScheduledReports] = useState([]);
+  
+  const createSchedule = useMutation({
+    mutationFn: (schedule: {
+      name: string;
+      reportType: string;
+      frequency: 'daily' | 'weekly' | 'monthly';
+      recipients: string[];
+      format: 'pdf' | 'excel';
+    }) => apiClient.runCustomAIAnalysis({
+      analysis_type: 'scheduled_report',
+      parameters: schedule,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'scheduled'] });
+      toast.success('Report programmato creato');
+    },
+    onError: (error) => {
+      handleError(error, 'create-scheduled-report');
+      toast.error('Errore nella creazione del report programmato');
+    },
+  });
+  
+  return {
+    scheduledReports,
+    createSchedule,
+    isCreating: createSchedule.isPending,
+  };
+};
+
+/**
+ * Hook per API Performance Monitoring
+ */
+const useAPIPerformanceMonitoring = () => {
+  const updatePerformanceMetrics = useDataStore(state => state.updatePerformanceMetrics || (() => {}));
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'api-performance'],
+    queryFn: async () => {
+      const metrics = await apiClient.getUltraSystemHealth();
+      updatePerformanceMetrics({
+        api_response_times: metrics.api_response_times,
+        cache_hit_rates: metrics.cache_hit_rates,
+      });
+      return metrics;
+    },
+    staleTime: 120000, // 2 minutes
+    refetchInterval: 300000, // 5 minutes
+    onError: (error) => handleError(error, 'api-performance-monitoring'),
+  });
+};
+
+// ===== LEGACY COMPATIBILITY HOOKS =====
+
+/**
+ * Hook legacy per KPIs (compatibilità)
+ */
+const useKPIs = () => {
+  return useExecutiveDashboard();
+};
+
+/**
+ * Hook legacy per Dashboard Data (compatibilità)
+ */
+const useDashboardData = () => {
+  return useExecutiveDashboard();
+};
+
+/**
+ * Hook legacy per Detailed KPIs (compatibilità)
+ */
+const useDetailedKPIs = () => {
+  return useExecutiveDashboard();
+};
+
+/**
+ * Hook per Analytics Health (compatibilità)
+ */
+const useAnalyticsHealth = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'health'],
+    queryFn: () => apiClient.getUltraSystemHealth(),
+    staleTime: 300000,
+    onError: (error) => handleError(error, 'analytics-health'),
+  });
+};
+
+/**
+ * Hook per Analytics Features (compatibilità)
+ */
+const useAnalyticsFeatures = () => {
+  const { handleError } = useSmartErrorHandling();
+  
+  return useQuery({
+    queryKey: [...ANALYTICS_QUERY_KEYS.ANALYTICS, 'features'],
+    queryFn: () => apiClient.getUltraAnalyticsFeatures(),
+    staleTime: Infinity, // Dati stabili
+    onError: (error) => handleError(error, 'analytics-features'),
+  });
+};
+
+// ===== COMBINED ANALYTICS HOOKS =====
+
+/**
+ * Hook composito per Dashboard completo
+ */
+const useCompleteDashboard = () => {
+  const executiveDashboard = useExecutiveDashboard();
+  const operationsDashboard = useOperationsDashboard();
+  const aiInsights = useAIBusinessInsights();
+  const realTimeMetrics = useRealTimeMetrics(true);
+  
+  return {
+    executive: executiveDashboard,
+    operations: operationsDashboard,
+    aiInsights,
+    realTime: realTimeMetrics,
+    isLoading: executiveDashboard.isLoading || operationsDashboard.isLoading,
+    hasError: executiveDashboard.error || operationsDashboard.error,
+    refetchAll: () => {
+      executiveDashboard.refetch();
+      operationsDashboard.refetch();
+      aiInsights.refetch();
+      realTimeMetrics.refetch();
+    },
+  };
+};
+
+/**
+ * Hook per Analytics completo con tutte le features
+ */
+const useFullAnalytics = (options = {}) => {
+  const dashboard = useCompleteDashboard();
+  const predictions = useUltraPredictions(options);
+  const seasonality = useSeasonalityAnalysis(options);
+  const competitive = useCompetitiveAnalysis(options);
+  const customer = useCustomerIntelligence(options);
+  
+  return {
+    dashboard: dashboard.executive.data,
+    operations: dashboard.operations.data,
+    predictions: predictions.data,
+    seasonality: seasonality.data,
+    competitive: competitive.data,
+    customer: customer.data,
+    aiInsights: dashboard.aiInsights.data,
+    isLoading: dashboard.isLoading || predictions.isLoading || seasonality.isLoading,
+    hasError: dashboard.hasError || predictions.error || seasonality.error,
+    refetchAll: () => {
+      dashboard.refetchAll();
+      predictions.refetch();
+      seasonality.refetch();
+      competitive.refetch();
+      customer.refetch();
+    },
+  };
+};
+
+// ===== EXPORT ALL HOOKS (UNICO EXPORT ALLA FINE) =====
+export {
+  // Main hooks
+  useExecutiveDashboard,
+  useOperationsDashboard,
+  useAIBusinessInsights,
+  useCustomAnalytics,
+  useRealTimeMetrics,
+  useUltraPredictions,
+  
+  // Analysis hooks
+  useSeasonalityAnalysis,
+  useCustomerIntelligence,
+  useCompetitiveAnalysis,
+  useTrendAnalysis,
+  useCohortAnalysis,
+  useBenchmarkAnalysis,
+  
+  // Utility hooks
+  useBatchAnalytics,
+  useAnalyticsExport,
+  useAnalyticsPerformance,
+  useCustomReportBuilder,
+  useRealTimeDashboard,
+  useAdvancedAnalyticsFilters,
+  
+  // Monitoring hooks
+  useAnalyticsAlerts,
+  useAnomalyDetection,
+  useDataQualityAssessment,
+  useScheduledReports,
+  useAPIPerformanceMonitoring,
+  
+  // Legacy compatibility
+  useKPIs,
+  useDashboardData,
+  useDetailedKPIs,
+  useAnalyticsHealth,
+  useAnalyticsFeatures,
+  
+  // Combined hooks
+  useCompleteDashboard,
+  useFullAnalytics,
+  
+  // AI Features hook
+  useAIFeaturesEnabled,
 };
