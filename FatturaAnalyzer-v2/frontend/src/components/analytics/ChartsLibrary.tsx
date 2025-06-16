@@ -115,6 +115,22 @@ interface AdvancedChartProps extends ChartConfig {
   customizable?: boolean;
 }
 
+// ✅ COMPONENTE MANCANTE: ComposedAnalyticsChart Interface
+interface ComposedAnalyticsChartProps extends AdvancedChartProps {
+  lineKeys?: string[];
+  barKeys?: string[];
+  areaKeys?: string[];
+}
+
+// ✅ COMPONENTE MANCANTE: AdvancedChartContainer Interface
+interface AdvancedChartContainerProps {
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}
+
 export const DEFAULT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
   '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1',
@@ -193,6 +209,129 @@ export const CustomTooltip = ({
   return null;
 };
 
+// ✅ COMPONENTE MANCANTE: AdvancedChartContainer
+export function AdvancedChartContainer({
+  title,
+  description,
+  actions,
+  children,
+  className,
+}: AdvancedChartContainerProps) {
+  return (
+    <Card className={cn("transition-all hover:shadow-md", className)}>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle>{title}</CardTitle>
+            {description && <CardDescription className="mt-1">{description}</CardDescription>}
+          </div>
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ✅ COMPONENTE MANCANTE: ComposedAnalyticsChart
+export function ComposedAnalyticsChart({
+  data,
+  title,
+  description,
+  xKey,
+  yKeys,
+  lineKeys = [],
+  barKeys = [],
+  areaKeys = [],
+  colors = DEFAULT_COLORS,
+  showGrid = true,
+  showLegend = true,
+  height = 300,
+  formatters = {},
+  className,
+}: ComposedAnalyticsChartProps) {
+  // Se non sono specificati lineKeys/barKeys/areaKeys, usa yKeys per le linee
+  const actualLineKeys = lineKeys.length > 0 ? lineKeys : yKeys;
+  const actualBarKeys = barKeys;
+  const actualAreaKeys = areaKeys;
+
+  return (
+    <div className={cn("w-full", className)}>
+      {(title || description) && (
+        <div className="mb-4">
+          {title && <h3 className="text-lg font-semibold text-gray-900">{title}</h3>}
+          {description && <p className="text-sm text-gray-600">{description}</p>}
+        </div>
+      )}
+      
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            {GRADIENT_DEFINITIONS}
+            {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-30" />}
+            <XAxis 
+              dataKey={xKey} 
+              tick={{ fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis 
+              tick={{ fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(value) => 
+                formatters.y ? formatters.y(value) : 
+                typeof value === 'number' && value > 1000 ? 
+                formatCurrency(value).replace(',00', 'K') : value
+              }
+            />
+            <Tooltip content={<CustomTooltip formatters={formatters} />} />
+            {showLegend && <Legend />}
+            
+            {/* Areas */}
+            {actualAreaKeys.map((key, index) => (
+              <Area
+                key={`area-${key}`}
+                type="monotone"
+                dataKey={key}
+                fill={`url(#${['blue', 'green', 'red', 'purple'][index % 4]}Gradient)`}
+                stroke={colors[index % colors.length]}
+                strokeWidth={2}
+                fillOpacity={0.6}
+              />
+            ))}
+            
+            {/* Bars */}
+            {actualBarKeys.map((key, index) => (
+              <Bar
+                key={`bar-${key}`}
+                dataKey={key}
+                fill={colors[(actualAreaKeys.length + index) % colors.length]}
+                radius={[4, 4, 0, 0]}
+              />
+            ))}
+            
+            {/* Lines */}
+            {actualLineKeys.map((key, index) => (
+              <Line
+                key={`line-${key}`}
+                type="monotone"
+                dataKey={key}
+                stroke={colors[(actualAreaKeys.length + actualBarKeys.length + index) % colors.length]}
+                strokeWidth={3}
+                dot={{ r: 4, strokeWidth: 2 }}
+                activeDot={{ r: 6, strokeWidth: 0 }}
+              />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 // Advanced Line Chart with Animations
 export function AnimatedLineChart({
   data,
@@ -214,12 +353,12 @@ export function AnimatedLineChart({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        {description && (
-          <p className="text-sm text-gray-600">{description}</p>
-        )}
-      </div>
+      {(title || description) && (
+        <div className="mb-4">
+          {title && <h3 className="text-lg font-semibold text-gray-900">{title}</h3>}
+          {description && <p className="text-sm text-gray-600">{description}</p>}
+        </div>
+      )}
       
       {showLegend && (
         <div className="flex flex-wrap gap-3 mb-4">
@@ -316,12 +455,12 @@ export function StackedAreaChart({
 }: AdvancedChartProps & { stackOffset?: "expand" | "none" | "wiggle" | "silhouette" }) {
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        {description && (
-          <p className="text-sm text-gray-600">{description}</p>
-        )}
-      </div>
+      {(title || description) && (
+        <div className="mb-4">
+          {title && <h3 className="text-lg font-semibold text-gray-900">{title}</h3>}
+          {description && <p className="text-sm text-gray-600">{description}</p>}
+        </div>
+      )}
 
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -384,12 +523,12 @@ export function InteractiveBarChart({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        {description && (
-          <p className="text-sm text-gray-600">{description}</p>
-        )}
-      </div>
+      {(title || description) && (
+        <div className="mb-4">
+          {title && <h3 className="text-lg font-semibold text-gray-900">{title}</h3>}
+          {description && <p className="text-sm text-gray-600">{description}</p>}
+        </div>
+      )}
 
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -451,6 +590,7 @@ export function EnhancedPieChart({
   innerRadius = 0,
   showLabels = true,
   showPercentages = true,
+  yKeys, // Aggiunto per compatibilità
 }: AdvancedChartProps & { 
   innerRadius?: number; 
   showLabels?: boolean; 
@@ -483,12 +623,12 @@ export function EnhancedPieChart({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        {description && (
-          <p className="text-sm text-gray-600">{description}</p>
-        )}
-      </div>
+      {(title || description) && (
+        <div className="mb-4">
+          {title && <h3 className="text-lg font-semibold text-gray-900">{title}</h3>}
+          {description && <p className="text-sm text-gray-600">{description}</p>}
+        </div>
+      )}
 
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -551,6 +691,75 @@ export function EnhancedPieChart({
           </motion.div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Legacy components mantenuti per compatibilità
+export function RevenueLineChart({ 
+  data, 
+  height = 300, 
+  colors = DEFAULT_COLORS,
+  className
+}: { data: any[], height?: number, colors?: string[], className?: string }) {
+  return (
+    <div className={cn("w-full", className)} style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend />
+          <Line type="monotone" dataKey="revenue" stroke={colors[0]} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function CashFlowBarChart({ 
+  data, 
+  height = 300, 
+  colors = DEFAULT_COLORS,
+  className
+}: { data: any[], height?: number, colors?: string[], className?: string }) {
+  return (
+    <div className={cn("w-full", className)} style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend />
+          <Bar dataKey="inflows" fill={colors[0]} name="Entrate" />
+          <Bar dataKey="outflows" fill={colors[1]} name="Uscite" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function ClientPieChart({ 
+  data, 
+  height = 300, 
+  colors = DEFAULT_COLORS,
+  className
+}: { data: any[], height?: number, colors?: string[], className?: string }) {
+  return (
+    <div className={cn("w-full", className)} style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8">
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+            ))}
+          </Pie>
+          <Tooltip content={<CustomTooltip />} />
+          <Legend />
+        </PieChart>
+      </ResponsiveContainer>
     </div>
   );
 }
