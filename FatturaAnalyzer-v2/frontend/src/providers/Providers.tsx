@@ -5,6 +5,7 @@
  * - Error boundaries integrate
  * - Performance monitoring
  * - Hot reload support
+ * - System health monitoring
  */
 
 import React, { ReactNode, Suspense } from 'react';
@@ -15,11 +16,11 @@ import { ErrorBoundary, CriticalErrorBoundary } from './ErrorBoundary';
 import { AuthProvider } from './AuthProvider';
 import { ThemeProvider } from './ThemeProvider';
 import { SystemHealthProvider } from './SystemHealthProvider';
+import { SystemHealthMonitor } from './SystemHealthMonitor';
 import QueryProvider from './QueryClientProvider';
 
 // Component imports
 import { PerformanceMonitor } from './PerformanceMonitor';
-import { SystemHealthMonitor } from './SystemHealthMonitor';
 import {
   LoadingSpinner,
   QueryLoadingFallback,
@@ -28,12 +29,18 @@ import {
 } from './LoadingComponents';
 
 // Types
-import { ProvidersWrapperProps } from './types';
+interface ProvidersWrapperProps {
+  children: ReactNode;
+  enableDevtools?: boolean;
+  enablePerformanceMonitoring?: boolean;
+}
 
 // ===== DEVELOPMENT TOOLS =====
 const DevTools = React.lazy(() => 
   import('@tanstack/react-query-devtools').then(module => ({
     default: module.ReactQueryDevtools
+  })).catch(() => ({
+    default: () => null // Fallback se non disponibile
   }))
 );
 
@@ -44,8 +51,8 @@ const HotReloadDetector: React.FC<{ children: ReactNode }> = ({ children }) => {
       console.log('🔥 FatturaAnalyzer V4.0 - Hot Reload Active');
       
       // Reset stores on hot reload per evitare stati inconsistenti
-      if (module.hot) {
-        module.hot.accept();
+      if (typeof module !== 'undefined' && (module as any).hot) {
+        (module as any).hot.accept();
       }
     }
   }, []);
@@ -71,14 +78,14 @@ export const ProvidersWrapper: React.FC<ProvidersWrapperProps> = ({
             <Suspense fallback={<QueryLoadingFallback />}>
               <QueryProvider>
                 
-                {/* 3. Auth Provider - Gestisce autenticazione */}
-                <ErrorBoundary fallback={<AuthLoadingFallback />}>
-                  <Suspense fallback={<AuthLoadingFallback />}>
-                    <AuthProvider>
-                      
-                      {/* 4. System Health Provider - Monitora stato sistema */}
-                      <ErrorBoundary fallback={<LoadingSpinner />}>
-                        <SystemHealthProvider>
+                {/* 3. System Health Provider - Monitora stato sistema PRIMA dell'auth */}
+                <ErrorBoundary fallback={<LoadingSpinner />}>
+                  <SystemHealthProvider>
+                    
+                    {/* 4. Auth Provider - Gestisce autenticazione */}
+                    <ErrorBoundary fallback={<AuthLoadingFallback />}>
+                      <Suspense fallback={<AuthLoadingFallback />}>
+                        <AuthProvider>
                           
                           {/* 5. Performance Monitor - Se abilitato */}
                           {enablePerformanceMonitoring ? (
@@ -95,18 +102,20 @@ export const ProvidersWrapper: React.FC<ProvidersWrapperProps> = ({
                               </SystemHealthMonitor>
                             </PerformanceMonitor>
                           ) : (
-                            <ErrorBoundary>
-                              <Suspense fallback={<FullPageLoading message="Caricamento applicazione..." />}>
-                                {children}
-                              </Suspense>
-                            </ErrorBoundary>
+                            <SystemHealthMonitor>
+                              <ErrorBoundary>
+                                <Suspense fallback={<FullPageLoading message="Caricamento applicazione..." />}>
+                                  {children}
+                                </Suspense>
+                              </ErrorBoundary>
+                            </SystemHealthMonitor>
                           )}
                           
-                        </SystemHealthProvider>
-                      </ErrorBoundary>
-                      
-                    </AuthProvider>
-                  </Suspense>
+                        </AuthProvider>
+                      </Suspense>
+                    </ErrorBoundary>
+                    
+                  </SystemHealthProvider>
                 </ErrorBoundary>
                 
                 {/* Dev Tools - Solo in development */}
@@ -142,7 +151,7 @@ export default ProvidersWrapper;
 // ===== ADDITIONAL EXPORTS =====
 export { useAuth } from './AuthProvider';
 export { useTheme } from './ThemeProvider';
-export { useSystemHealthContext } from './SystemHealthProvider';
+export { useSystemHealthContext, useSystemHealth } from './SystemHealthProvider';
 export { useNetworkStatus, useQueryPerformanceMonitor } from './PerformanceMonitor';
 
 // ===== PROVIDER UTILITIES =====
@@ -157,6 +166,21 @@ export const withProviders = <P extends object>(
       <Component {...(props as P)} />
     </ProvidersWrapper>
   );
+};
+
+// ===== PROVIDER HEALTH CHECK HOOK =====
+export const useProvidersHealth = () => {
+  const { isSystemHealthy, status } = useSystemHealthContext();
+  const { isAuthenticated } = useAuth();
+  const { theme } = useTheme();
+  
+  return {
+    allHealthy: isSystemHealthy && isAuthenticated,
+    systemHealth: status,
+    authStatus: isAuthenticated ? 'authenticated' : 'unauthenticated',
+    themeStatus: theme,
+    providersReady: true,
+  };
 };
 
 // ===== DEBUG UTILITIES =====
@@ -174,9 +198,30 @@ if (process.env.NODE_ENV === 'development') {
       hotReload: true,
       devtools: true,
       performanceMonitoring: true,
+      healthMonitoring: true,
+    },
+    utils: {
+      checkHealth: () => {
+        const healthContext = document.querySelector('[data-provider="health"]');
+        console.log('Health Provider Status:', healthContext);
+      },
+      resetProviders: () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.reload();
+      },
+      getProviderState: () => ({
+        theme: localStorage.getItem('fattura-analyzer-theme-v4'),
+        auth: {
+          token: localStorage.getItem('authToken'),
+          user: localStorage.getItem('userData'),
+        },
+        version: '4.0',
+      }),
     }
   };
   
   console.log('🚀 FatturaAnalyzer V4.0 Providers Initialized');
   console.log('📊 Debug info available at window.__FATTURA_ANALYZER_DEBUG__');
+  console.log('🔧 Available debug commands:', Object.keys((window as any).__FATTURA_ANALYZER_DEBUG__.utils));
 }
