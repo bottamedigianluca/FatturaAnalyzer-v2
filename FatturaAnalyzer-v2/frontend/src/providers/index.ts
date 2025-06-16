@@ -545,11 +545,7 @@ export default {
   checkProvidersHealth,
   PROVIDER_VERSION,
   PROVIDER_CONFIG,
-};String(),
-    };
-    
-    console.table(state);
-    return state;
+};
   },
   
   // Enable all features
