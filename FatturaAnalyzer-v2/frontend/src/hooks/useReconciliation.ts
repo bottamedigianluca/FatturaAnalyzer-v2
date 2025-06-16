@@ -31,8 +31,6 @@ export const RECONCILIATION_QUERY_KEYS = {
   VERSION: ['reconciliation', 'version'] as const,
 } as const;
 
-const useAIFeaturesEnabled = () => true;
-const useSmartReconciliationEnabled = () => true;
 
 /**
  * Hook per Ultra Smart Reconciliation con API reali
