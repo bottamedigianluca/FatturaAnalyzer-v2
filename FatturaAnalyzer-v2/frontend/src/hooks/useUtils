@@ -1,24 +1,23 @@
 /**
- * Utility Hooks V4.0 - CORRETTI IMPORTS E DEPENDENCIES
+ * Utility Hooks V4.0 - VERSIONE CORRETTA
  * Hook di utilità per cache, error handling, shortcuts, etc.
+ * 
+ * FIXED: Rimossi import duplicati e dipendenze circolari
  */
-import { useUIStore } from '@/store';
+
 import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { apiClient } from '@/services/api';
-import { 
-  useUIStore,
-  useCachePreferences,
-  useAIFeaturesEnabled,
-} from '@/store';
+import { useUIStore } from '@/store';
 
+// ===== SMART CACHE HOOK =====
 /**
  * Hook per gestire il caching intelligente con TTL dinamico
  */
 export const useSmartCache = () => {
-  const cachePreferences = useCachePreferences();
-  const aiEnabled = useAIFeaturesEnabled();
+  // Ottieni preferenze cache dallo store se disponibili
+  const cacheEnabled = true; // Default enabled
+  const aiEnabled = true; // Default per ora, può essere collegato allo store
   
   const getCacheTTL = (type: string) => {
     const baseTTL = {
@@ -37,7 +36,7 @@ export const useSmartCache = () => {
   
   const shouldRefetch = (lastFetch: number | null, type: string) => {
     if (!lastFetch) return true;
-    if (!cachePreferences.enabled) return true;
+    if (!cacheEnabled) return true;
     
     const ttl = getCacheTTL(type);
     return Date.now() - lastFetch > ttl;
@@ -59,11 +58,12 @@ export const useSmartCache = () => {
     getCacheTTL,
     shouldRefetch,
     invalidateSmartCache,
-    cacheEnabled: cachePreferences.enabled,
+    cacheEnabled,
     aiEnhanced: aiEnabled,
   };
 };
 
+// ===== SMART ERROR HANDLING HOOK =====
 /**
  * Hook per error handling centralizzato con retry logic
  */
@@ -130,7 +130,7 @@ export const useSmartErrorHandling = () => {
   const getErrorMessage = (errorType: number | string, message: string, context: string) => {
     const contextMap = {
       'invoices': 'fatture',
-      'transactions': 'transazioni',
+      'transactions': 'transazioni', 
       'anagraphics': 'anagrafiche',
       'reconciliation': 'riconciliazione',
       'import': 'importazione',
@@ -176,6 +176,7 @@ export const useSmartErrorHandling = () => {
   };
 };
 
+// ===== KEYBOARD SHORTCUTS HOOK =====
 /**
  * Hook per keyboard shortcuts personalizzabili
  */
@@ -192,7 +193,7 @@ export const useKeyboardShortcuts = () => {
     'ctrl+n': () => document.querySelector('[data-shortcut="new"]')?.click(),
     'ctrl+s': () => document.querySelector('[data-shortcut="save"]')?.click(),
     'ctrl+e': () => document.querySelector('[data-shortcut="export"]')?.click(),
-    'ctrl+f': () => document.querySelector('[data-shortcut="search"]')?.focus(),
+    'ctrl+f': () => (document.querySelector('[data-shortcut="search"]') as HTMLElement)?.focus(),
     
     // Bulk operations
     'ctrl+shift+delete': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
@@ -225,6 +226,7 @@ export const useKeyboardShortcuts = () => {
   return shortcuts;
 };
 
+// ===== DEBOUNCE HOOK =====
 /**
  * Hook per debounce ottimizzato
  */
@@ -244,6 +246,7 @@ export const useDebounce = <T>(value: T, delay: number): T => {
   return debouncedValue;
 };
 
+// ===== THROTTLE HOOK =====
 /**
  * Hook per throttle ottimizzato
  */
@@ -267,6 +270,7 @@ export const useThrottle = <T>(value: T, limit: number): T => {
   return throttledValue;
 };
 
+// ===== SMART LOADING HOOK =====
 /**
  * Hook per gestire loading states intelligenti
  */
@@ -290,6 +294,7 @@ export const useSmartLoading = (queries: any[] = []) => {
   };
 };
 
+// ===== BULK SELECTION HOOK =====
 /**
  * Hook per gestire stati di selezione bulk
  */
@@ -355,6 +360,7 @@ export const useBulkSelection = <T extends { id: number }>(items: T[] = []) => {
   };
 };
 
+// ===== PERSISTENT FILTERS HOOK =====
 /**
  * Hook per gestire filtri con persistenza locale
  */
@@ -410,6 +416,7 @@ export const usePersistentFilters = <T extends Record<string, any>>(
   };
 };
 
+// ===== VIRTUAL SCROLLING HOOK =====
 /**
  * Hook per gestire virtual scrolling performance
  */
@@ -442,6 +449,7 @@ export const useVirtualScrolling = (
   };
 };
 
+// ===== USER PREFERENCES HOOK =====
 /**
  * Hook per gestire le preferenze utente
  */
@@ -488,6 +496,7 @@ export const useUserPreferences = () => {
   };
 };
 
+// ===== ADVANCED TOAST HOOK =====
 /**
  * Hook per gestire le notifiche toast avanzate
  */
@@ -551,6 +560,7 @@ export const useAdvancedToast = () => {
   };
 };
 
+// ===== AUTO-SAVE HOOK =====
 /**
  * Hook per gestire l'auto-save intelligente
  */
@@ -598,6 +608,7 @@ export const useAutoSave = <T>(
   };
 };
 
+// ===== PERFORMANCE MONITOR HOOK =====
 /**
  * Hook per gestire le performance e monitoring
  */
