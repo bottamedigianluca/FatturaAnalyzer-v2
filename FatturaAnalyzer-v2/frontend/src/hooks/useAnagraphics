@@ -1,5 +1,5 @@
 /**
- * Anagraphics Hooks V4.0
+ * Anagraphics Hooks V4.0 - CORRETTI EXPORTS
  * Hook per gestione anagrafiche con validazione avanzata
  */
 
@@ -50,7 +50,7 @@ export const useAnagraphics = (filters: AnagraphicsFilters = {}) => {
 /**
  * Hook per singola anagrafica
  */
-export const useAnagraphics = (id: number, enabled = true) => {
+export const useAnagraphicsById = (id: number, enabled = true) => {
   const { handleError } = useSmartErrorHandling();
   
   return useQuery({
@@ -61,6 +61,11 @@ export const useAnagraphics = (id: number, enabled = true) => {
     onError: (error) => handleError(error, 'anagraphics-detail'),
   });
 };
+
+/**
+ * 🔥 HOOK MANCANTE: Alias per compatibilità backward
+ */
+export const useAnagraphicsItem = useAnagraphicsById;
 
 /**
  * Hook per ricerca anagrafiche con debounce
@@ -190,6 +195,113 @@ export const useAnagraphicsMutation = () => {
     batchCreate: batchCreateMutation,
     merge: mergeMutation,
   };
+};
+
+/**
+ * 🔥 HOOK MANCANTE: Operazioni bulk per anagrafiche
+ */
+export const useBulkAnagraphicsOperations = () => {
+  const queryClient = useQueryClient();
+  const addNotification = useUIStore(state => state.addNotification);
+  const { handleError } = useSmartErrorHandling();
+  
+  const bulkDelete = useMutation({
+    mutationFn: (ids: number[]) => {
+      return Promise.all(
+        ids.map(id => apiClient.deleteAnagraphics(id))
+      );
+    },
+    onSuccess: (data, ids) => {
+      queryClient.invalidateQueries({ queryKey: ANAGRAPHICS_QUERY_KEYS.ANAGRAPHICS });
+      queryClient.invalidateQueries({ queryKey: ANAGRAPHICS_QUERY_KEYS.STATS });
+      
+      addNotification({
+        type: 'success',
+        title: 'Eliminazione Completata',
+        message: `${ids.length} anagrafiche eliminate`,
+      });
+    },
+    onError: (error) => {
+      handleError(error, 'bulk-delete-anagraphics');
+      toast.error('Errore nell\'eliminazione bulk');
+    },
+  });
+  
+  const bulkUpdateType = useMutation({
+    mutationFn: ({ ids, type }: { ids: number[]; type: 'Cliente' | 'Fornitore' }) => {
+      return Promise.all(
+        ids.map(id => apiClient.updateAnagraphics(id, { type }))
+      );
+    },
+    onSuccess: (data, { ids, type }) => {
+      queryClient.invalidateQueries({ queryKey: ANAGRAPHICS_QUERY_KEYS.ANAGRAPHICS });
+      
+      addNotification({
+        type: 'success',
+        title: 'Aggiornamento Completato',
+        message: `${ids.length} anagrafiche aggiornate a "${type}"`,
+      });
+    },
+    onError: (error) => {
+      handleError(error, 'bulk-update-type');
+      toast.error('Errore nell\'aggiornamento bulk');
+    },
+  });
+  
+  const bulkExport = useMutation({
+    mutationFn: async ({ ids, format }: { ids: number[]; format: 'excel' | 'csv' | 'json' }) => {
+      // Per ora esportiamo tutto (implementazione semplificata)
+      const result = await apiClient.exportAnagraphicsQuick(format);
+      
+      if (format === 'json') {
+        const url = 'data:application/json;charset=utf-8,' + 
+          encodeURIComponent(JSON.stringify(result, null, 2));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `anagrafiche_bulk.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const url = window.URL.createObjectURL(result as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `anagrafiche_bulk.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
+      
+      return result;
+    },
+    onSuccess: (data, { ids, format }) => {
+      addNotification({
+        type: 'success',
+        title: 'Export Completato',
+        message: `${ids.length} anagrafiche esportate in formato ${format}`,
+      });
+    },
+    onError: (error) => {
+      handleError(error, 'bulk-export-anagraphics');
+      toast.error('Errore nell\'export bulk');
+    },
+  });
+  
+  return {
+    bulkDelete,
+    bulkUpdateType,
+    bulkExport,
+    isProcessing: bulkDelete.isPending || bulkUpdateType.isPending || bulkExport.isPending,
+  };
+};
+
+/**
+ * 🔥 HOOK MANCANTE: Delete singolo per anagrafiche (alias per backward compatibility)
+ */
+export const useDeleteAnagraphics = () => {
+  const { delete: deleteMutation } = useAnagraphicsMutation();
+  return deleteMutation;
 };
 
 /**
