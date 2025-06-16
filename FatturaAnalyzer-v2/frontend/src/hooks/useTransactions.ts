@@ -273,7 +273,31 @@ export const useTransactionsExport = () => {
       toast.error('Errore nell\'export transazioni');
     },
   });
-};s'),
+};
+
+// ===== ADDITIONAL EXPORTS & ALIASES =====
+
+/**
+ * Export per backward compatibility
+ */
+export { useTransactionBatchOperations as useBatchTransactionOperations };
+
+/**
+ * Hook alias per legacy code
+ */
+export const useTransactionsList = useTransactions;
+export const useTransactionDetails = useTransaction;
+export const useTransactionOperations = useTransactionMutation;
+
+/**
+ * Utility exports
+ */
+export { TRANSACTIONS_QUERY_KEYS };
+
+/**
+ * Default hook exports per facilità di utilizzo
+ */
+export default useTransactions;s'),
   });
 };
 
