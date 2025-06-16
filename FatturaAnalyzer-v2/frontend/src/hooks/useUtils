@@ -14,6 +14,7 @@ import { toast } from 'react-hot-toast';
  * Hook per gestire il caching intelligente con TTL dinamico
  */
 export const useSmartCache = () => {
+  const queryClient = useQueryClient();
   // Ottieni preferenze cache con valori di default
   const cacheEnabled = true; // Default enabled
   const aiEnabled = true; // Default per ora
@@ -42,7 +43,6 @@ export const useSmartCache = () => {
   };
   
   const invalidateSmartCache = (patterns: string[]) => {
-    const queryClient = useQueryClient();
     patterns.forEach(pattern => {
       queryClient.invalidateQueries({ 
         predicate: (query) => 
