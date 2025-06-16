@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './globals.css';
+import './styles/globals.css'; 
 
 if (import.meta.env.PROD) {
   document.addEventListener('contextmenu', (e) => e.preventDefault());
