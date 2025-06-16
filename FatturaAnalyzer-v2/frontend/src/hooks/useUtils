@@ -8,14 +8,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { apiClient } from '@/services/api';
 import { 
-  useUIStore, 
-  useDataStore, 
-  useReconciliationStore,
-  useImportExportStore,
-  useSyncStore,
-  useAIFeaturesEnabled,
+  useUIStore,
   useCachePreferences,
-  useSmartReconciliationEnabled 
+  useAIFeaturesEnabled,
 } from '@/store';
 
 /**
@@ -33,6 +28,7 @@ export const useSmartCache = () => {
       reconciliation: 120000, // 2 minutes
       stats: 300000, // 5 minutes
       ai_insights: 600000, // 10 minutes
+      dashboard: 300000, // 5 minutes
     }[type] || 300000;
     
     // Riduce TTL se AI è abilitato per dati più freschi
@@ -139,6 +135,11 @@ export const useSmartErrorHandling = () => {
       'reconciliation': 'riconciliazione',
       'import': 'importazione',
       'export': 'esportazione',
+      'executive-dashboard': 'dashboard executive',
+      'operations-dashboard': 'dashboard operativo',
+      'ai-insights': 'insights AI',
+      'analytics-export': 'export analytics',
+      'ultra-predictions': 'previsioni ultra',
     };
     
     const contextName = contextMap[context as keyof typeof contextMap] || context;
@@ -194,7 +195,7 @@ export const useKeyboardShortcuts = () => {
     'ctrl+f': () => document.querySelector('[data-shortcut="search"]')?.focus(),
     
     // Bulk operations
-    'ctrl+shift+d': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
+    'ctrl+shift+delete': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
     'ctrl+shift+e': () => document.querySelector('[data-shortcut="bulk-export"]')?.click(),
     
     // AI features
@@ -636,71 +637,4 @@ export const usePerformanceMonitor = (componentName: string) => {
   });
   
   return metrics;
-};
-
-/**
- * Hook per gestire la validazione dei form in tempo reale
- */
-export const useFormValidation = <T extends Record<string, any>>(
-  initialValues: T,
-  validationRules: Record<keyof T, (value: any) => string | null>
-) => {
-  const [values, setValues] = useState<T>(initialValues);
-  const [errors, setErrors] = useState<Record<keyof T, string | null>>({} as any);
-  const [touched, setTouched] = useState<Record<keyof T, boolean>>({} as any);
-  
-  const validateField = (name: keyof T, value: any) => {
-    const rule = validationRules[name];
-    return rule ? rule(value) : null;
-  };
-  
-  const validateAll = () => {
-    const newErrors = {} as Record<keyof T, string | null>;
-    let isValid = true;
-    
-    Object.keys(validationRules).forEach(key => {
-      const error = validateField(key as keyof T, values[key as keyof T]);
-      newErrors[key as keyof T] = error;
-      if (error) isValid = false;
-    });
-    
-    setErrors(newErrors);
-    return isValid;
-  };
-  
-  const setValue = (name: keyof T, value: any) => {
-    setValues(prev => ({ ...prev, [name]: value }));
-    
-    if (touched[name]) {
-      const error = validateField(name, value);
-      setErrors(prev => ({ ...prev, [name]: error }));
-    }
-  };
-  
-  const setFieldTouched = (name: keyof T) => {
-    setTouched(prev => ({ ...prev, [name]: true }));
-    const error = validateField(name, values[name]);
-    setErrors(prev => ({ ...prev, [name]: error }));
-  };
-  
-  const reset = () => {
-    setValues(initialValues);
-    setErrors({} as any);
-    setTouched({} as any);
-  };
-  
-  const isValid = Object.values(errors).every(error => !error);
-  const hasErrors = Object.values(errors).some(error => !!error);
-  
-  return {
-    values,
-    errors,
-    touched,
-    isValid,
-    hasErrors,
-    setValue,
-    setFieldTouched,
-    validateAll,
-    reset,
-  };
 };
