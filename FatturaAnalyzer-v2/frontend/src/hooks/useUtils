@@ -2,22 +2,21 @@
  * Utility Hooks V4.0 - VERSIONE CORRETTA
  * Hook di utilità per cache, error handling, shortcuts, etc.
  * 
- * FIXED: Rimossi import duplicati e dipendenze circolari
+ * FIXED: Risolti tutti i problemi di import e dipendenze circolari
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { useUIStore } from '@/store';
 
 // ===== SMART CACHE HOOK =====
 /**
  * Hook per gestire il caching intelligente con TTL dinamico
  */
 export const useSmartCache = () => {
-  // Ottieni preferenze cache dallo store se disponibili
+  // Ottieni preferenze cache con valori di default
   const cacheEnabled = true; // Default enabled
-  const aiEnabled = true; // Default per ora, può essere collegato allo store
+  const aiEnabled = true; // Default per ora
   
   const getCacheTTL = (type: string) => {
     const baseTTL = {
@@ -68,7 +67,21 @@ export const useSmartCache = () => {
  * Hook per error handling centralizzato con retry logic
  */
 export const useSmartErrorHandling = () => {
-  const addNotification = useUIStore(state => state.addNotification);
+  // Fallback per addNotification senza dipendenze esterne
+  const addNotification = (notification: any) => {
+    console.log('Notification:', notification);
+    // Usa toast come fallback sicuro
+    if (notification.type === 'error') {
+      toast.error(notification.message || 'Errore sconosciuto');
+    } else if (notification.type === 'success') {
+      toast.success(notification.message || 'Operazione completata');
+    } else if (notification.type === 'warning') {
+      toast(notification.message || 'Attenzione', { icon: '⚠️' });
+    } else {
+      toast(notification.message || 'Notifica');
+    }
+  };
+  
   const [retryAttempts, setRetryAttempts] = useState<Record<string, number>>({});
   
   const handleError = (error: any, context: string, shouldRetry = true) => {
@@ -174,56 +187,6 @@ export const useSmartErrorHandling = () => {
     resetRetryAttempts: (context: string) => 
       setRetryAttempts(prev => ({ ...prev, [context]: 0 })),
   };
-};
-
-// ===== KEYBOARD SHORTCUTS HOOK =====
-/**
- * Hook per keyboard shortcuts personalizzabili
- */
-export const useKeyboardShortcuts = () => {
-  const [shortcuts] = useState({
-    // Navigazione
-    'ctrl+shift+i': () => window.location.href = '/invoices',
-    'ctrl+shift+t': () => window.location.href = '/transactions',
-    'ctrl+shift+a': () => window.location.href = '/anagraphics',
-    'ctrl+shift+r': () => window.location.href = '/reconciliation',
-    'ctrl+shift+d': () => window.location.href = '/dashboard',
-    
-    // Azioni quick
-    'ctrl+n': () => document.querySelector('[data-shortcut="new"]')?.click(),
-    'ctrl+s': () => document.querySelector('[data-shortcut="save"]')?.click(),
-    'ctrl+e': () => document.querySelector('[data-shortcut="export"]')?.click(),
-    'ctrl+f': () => (document.querySelector('[data-shortcut="search"]') as HTMLElement)?.focus(),
-    
-    // Bulk operations
-    'ctrl+shift+delete': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
-    'ctrl+shift+e': () => document.querySelector('[data-shortcut="bulk-export"]')?.click(),
-    
-    // AI features
-    'ctrl+shift+ai': () => document.querySelector('[data-shortcut="ai-suggest"]')?.click(),
-  });
-  
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const key = [
-        event.ctrlKey && 'ctrl',
-        event.shiftKey && 'shift',
-        event.altKey && 'alt',
-        event.key.toLowerCase()
-      ].filter(Boolean).join('+');
-      
-      const action = shortcuts[key as keyof typeof shortcuts];
-      if (action) {
-        event.preventDefault();
-        action();
-      }
-    };
-    
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [shortcuts]);
-  
-  return shortcuts;
 };
 
 // ===== DEBOUNCE HOOK =====
@@ -413,39 +376,6 @@ export const usePersistentFilters = <T extends Record<string, any>>(
       filters[key] !== undefined && 
       filters[key] !== ''
     ),
-  };
-};
-
-// ===== VIRTUAL SCROLLING HOOK =====
-/**
- * Hook per gestire virtual scrolling performance
- */
-export const useVirtualScrolling = (
-  items: any[] = [],
-  itemHeight: number = 50,
-  containerHeight: number = 400
-) => {
-  const [scrollTop, setScrollTop] = useState(0);
-  
-  const visibleItemsCount = Math.ceil(containerHeight / itemHeight) + 2; // Buffer
-  const startIndex = Math.floor(scrollTop / itemHeight);
-  const endIndex = Math.min(startIndex + visibleItemsCount, items.length);
-  
-  const visibleItems = items.slice(startIndex, endIndex);
-  const totalHeight = items.length * itemHeight;
-  const offsetY = startIndex * itemHeight;
-  
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
-  };
-  
-  return {
-    visibleItems,
-    totalHeight,
-    offsetY,
-    handleScroll,
-    startIndex,
-    endIndex,
   };
 };
 
@@ -648,4 +578,87 @@ export const usePerformanceMonitor = (componentName: string) => {
   });
   
   return metrics;
+};
+
+// ===== KEYBOARD SHORTCUTS HOOK =====
+/**
+ * Hook per keyboard shortcuts personalizzabili
+ */
+export const useKeyboardShortcuts = () => {
+  const [shortcuts] = useState({
+    // Navigazione
+    'ctrl+shift+i': () => window.location.href = '/invoices',
+    'ctrl+shift+t': () => window.location.href = '/transactions',
+    'ctrl+shift+a': () => window.location.href = '/anagraphics',
+    'ctrl+shift+r': () => window.location.href = '/reconciliation',
+    'ctrl+shift+d': () => window.location.href = '/dashboard',
+    
+    // Azioni quick
+    'ctrl+n': () => document.querySelector('[data-shortcut="new"]')?.click(),
+    'ctrl+s': () => document.querySelector('[data-shortcut="save"]')?.click(),
+    'ctrl+e': () => document.querySelector('[data-shortcut="export"]')?.click(),
+    'ctrl+f': () => (document.querySelector('[data-shortcut="search"]') as HTMLElement)?.focus(),
+    
+    // Bulk operations
+    'ctrl+shift+delete': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
+    'ctrl+shift+e': () => document.querySelector('[data-shortcut="bulk-export"]')?.click(),
+    
+    // AI features
+    'ctrl+shift+ai': () => document.querySelector('[data-shortcut="ai-suggest"]')?.click(),
+  });
+  
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = [
+        event.ctrlKey && 'ctrl',
+        event.shiftKey && 'shift',
+        event.altKey && 'alt',
+        event.key.toLowerCase()
+      ].filter(Boolean).join('+');
+      
+      const action = shortcuts[key as keyof typeof shortcuts];
+      if (action) {
+        event.preventDefault();
+        action();
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [shortcuts]);
+  
+  return shortcuts;
+};
+
+// ===== VIRTUAL SCROLLING HOOK =====
+/**
+ * Hook per gestire virtual scrolling performance
+ */
+export const useVirtualScrolling = (
+  items: any[] = [],
+  itemHeight: number = 50,
+  containerHeight: number = 400
+) => {
+  const [scrollTop, setScrollTop] = useState(0);
+  
+  const visibleItemsCount = Math.ceil(containerHeight / itemHeight) + 2; // Buffer
+  const startIndex = Math.floor(scrollTop / itemHeight);
+  const endIndex = Math.min(startIndex + visibleItemsCount, items.length);
+  
+  const visibleItems = items.slice(startIndex, endIndex);
+  const totalHeight = items.length * itemHeight;
+  const offsetY = startIndex * itemHeight;
+  
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  };
+  
+  return {
+    visibleItems,
+    totalHeight,
+    offsetY,
+    handleScroll,
+    startIndex,
+    endIndex,
+  };
 };
