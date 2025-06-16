@@ -15,7 +15,6 @@ export { ErrorBoundary, CriticalErrorBoundary } from './ErrorBoundary';
 
 // ===== MONITORING & PERFORMANCE =====
 export { PerformanceMonitor, useNetworkStatus, useQueryPerformanceMonitor } from './PerformanceMonitor';
-export { SystemHealthMonitor } from './SystemHealthMonitor';
 
 // ===== LOADING COMPONENTS =====
 export {
