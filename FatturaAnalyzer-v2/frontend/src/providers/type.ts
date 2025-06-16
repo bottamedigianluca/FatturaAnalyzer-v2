@@ -15,9 +15,24 @@ export interface User {
     language?: string;
     aiFeatures?: boolean;
     notifications?: boolean;
+    smartReconciliation?: boolean;
+    realTimeUpdates?: boolean;
   };
   permissions?: string[];
   lastActive?: string;
+  profile?: {
+    firstName?: string;
+    lastName?: string;
+    company?: string;
+    role?: string;
+    avatar?: string;
+  };
+  settings?: {
+    dashboardLayout?: string;
+    defaultView?: string;
+    autoSave?: boolean;
+    analyticsLevel?: 'basic' | 'standard' | 'advanced';
+  };
 }
 
 export interface AuthContextType {
@@ -27,16 +42,23 @@ export interface AuthContextType {
   login: (userData: User, token: string) => Promise<void>;
   logout: () => Promise<void>;
   updatePreferences: (prefs: Partial<User['preferences']>) => Promise<void>;
+  updateProfile: (profile: Partial<User['profile']>) => Promise<void>;
+  updateSettings: (settings: Partial<User['settings']>) => Promise<void>;
   checkSession: () => Promise<boolean>;
+  refreshToken: () => Promise<boolean>;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
 }
 
 // ===== THEME TYPES =====
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = 'light' | 'dark' | 'system' | 'auto';
 
 export interface ThemeProviderProps {
   children: ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
+  enableTransitions?: boolean;
+  respectMotionPreferences?: boolean;
 }
 
 export interface ThemeProviderState {
@@ -44,6 +66,26 @@ export interface ThemeProviderState {
   setTheme: (theme: Theme) => void;
   systemTheme: 'light' | 'dark';
   effectiveTheme: 'light' | 'dark';
+  isSystemTheme: boolean;
+  toggleTheme: () => void;
+  cycleTheme: () => void;
+  applyTheme: (theme: 'light' | 'dark') => void;
+  getThemeColors: () => ThemeColors;
+  supportsSystemTheme: boolean;
+}
+
+export interface ThemeColors {
+  background: string;
+  foreground: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  muted: string;
+  border: string;
+  destructive: string;
+  warning: string;
+  success: string;
+  info: string;
 }
 
 // ===== SYSTEM HEALTH TYPES =====
@@ -52,6 +94,12 @@ export interface SystemHealthContextType {
   lastCheck: string | null;
   features: Record<string, boolean>;
   status: 'healthy' | 'degraded' | 'unhealthy';
+  checkHealth: () => Promise<void>;
+  systemInfo: {
+    version: string;
+    environment: string;
+    features: string[];
+  };
 }
 
 export interface HealthCheckResult {
@@ -70,12 +118,20 @@ export interface ErrorBoundaryState {
   hasError: boolean;
   error?: Error;
   errorInfo?: React.ErrorInfo;
+  errorId?: string;
+  retryCount: number;
+  lastErrorTime?: number;
 }
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+  enableRetry?: boolean;
+  maxRetries?: number;
+  resetTimeoutMs?: number;
+  isolate?: boolean;
+  reportErrors?: boolean;
 }
 
 // ===== QUERY CLIENT TYPES =====
