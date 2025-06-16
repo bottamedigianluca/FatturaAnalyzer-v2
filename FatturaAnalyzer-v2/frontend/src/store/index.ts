@@ -669,16 +669,171 @@ export const enableAllV4Features = () => {
   console.log('🚀 All V4.0 features enabled!');
 };
 
-// ===== EXPORT STORES =====
-export {
-  useUIStore,
-  useDataStore,
-  useReconciliationStore,
-  useImportExportStore,
-  useSyncStore,
+// ===== ADDITIONAL UTILITY HOOKS =====
+
+/**
+ * Hook per gestire le selezioni bulk nelle riconciliazioni
+ */
+export const useBulkSelection = () => {
+  const selectedInvoices = useReconciliationStore(state => state.selectedInvoices);
+  const selectedTransactions = useReconciliationStore(state => state.selectedTransactions);
+  const toggleInvoiceSelection = useReconciliationStore(state => state.toggleInvoiceSelection);
+  const toggleTransactionSelection = useReconciliationStore(state => state.toggleTransactionSelection);
+  const clearSelection = useReconciliationStore(state => state.clearSelection);
+  
+  return {
+    selectedInvoices,
+    selectedTransactions,
+    toggleInvoiceSelection,
+    toggleTransactionSelection,
+    clearSelection,
+    hasSelections: selectedInvoices.length > 0 || selectedTransactions.length > 0,
+    totalSelected: selectedInvoices.length + selectedTransactions.length,
+  };
 };
 
-// Export dei tipi per TypeScript
+/**
+ * Hook per gestire drag & drop nelle riconciliazioni
+ */
+export const useDragDropState = () => {
+  const draggedItem = useReconciliationStore(state => state.draggedItem);
+  const dropTarget = useReconciliationStore(state => state.dropTarget);
+  const setDraggedItem = useReconciliationStore(state => state.setDraggedItem);
+  const setDropTarget = useReconciliationStore(state => state.setDropTarget);
+  
+  return {
+    draggedItem,
+    dropTarget,
+    setDraggedItem,
+    setDropTarget,
+    isDragging: !!draggedItem,
+    canDrop: !!(draggedItem && dropTarget && draggedItem.type !== dropTarget.type),
+  };
+};
+
+/**
+ * Hook per gestire le metriche di performance
+ */
+export const usePerformanceMetrics = () => {
+  const dataMetrics = useDataStore(state => state.performanceMetrics);
+  const reconciliationMetrics = useReconciliationStore(state => state.performanceMetrics);
+  
+  return {
+    data: dataMetrics,
+    reconciliation: reconciliationMetrics,
+    overall: {
+      api_health: dataMetrics.api_response_times ? 'good' : 'unknown',
+      cache_efficiency: dataMetrics.cache_hit_rates ? 'good' : 'unknown',
+      ai_accuracy: reconciliationMetrics.ai_accuracy || 0,
+    },
+  };
+};
+
+/**
+ * Hook per gestire i dati recent/quick access
+ */
+export const useRecentData = () => {
+  const recentInvoices = useDataStore(state => state.recentInvoices);
+  const recentTransactions = useDataStore(state => state.recentTransactions);
+  const recentReconciliations = useReconciliationStore(state => state.recentReconciliations);
+  
+  return {
+    invoices: recentInvoices,
+    transactions: recentTransactions,
+    reconciliations: recentReconciliations,
+    hasRecent: recentInvoices.length > 0 || recentTransactions.length > 0,
+  };
+};
+
+/**
+ * Hook per gestire le statistiche aggregate
+ */
+export const useAggregatedStats = () => {
+  const invoices = useDataStore(state => state.invoices);
+  const transactions = useDataStore(state => state.transactions);
+  const anagraphics = useDataStore(state => state.anagraphics);
+  
+  return {
+    totals: {
+      invoices: invoices.total,
+      transactions: transactions.total,
+      anagraphics: anagraphics.total,
+    },
+    lastUpdated: Math.max(
+      invoices.lastFetch || 0,
+      transactions.lastFetch || 0,
+      anagraphics.lastFetch || 0
+    ),
+    dataFreshness: {
+      invoices: invoices.lastFetch ? Date.now() - invoices.lastFetch : null,
+      transactions: transactions.lastFetch ? Date.now() - transactions.lastFetch : null,
+      anagraphics: anagraphics.lastFetch ? Date.now() - anagraphics.lastFetch : null,
+    },
+  };
+};
+
+/**
+ * Hook per gestire il wizard first run
+ */
+export const useFirstRunWizard = () => {
+  const firstRunState = useUIStore(state => state.firstRunState);
+  const updateFirstRunState = useUIStore(state => state.updateFirstRunState);
+  
+  return {
+    ...firstRunState,
+    updateState: updateFirstRunState,
+    isFirstRun: firstRunState.is_first_run,
+    isCompleted: firstRunState.setup_completed,
+    nextStep: (step: string, data?: Record<string, any>) => {
+      updateFirstRunState({
+        current_step: step,
+        wizard_data: { ...firstRunState.wizard_data, ...data },
+      });
+    },
+    completeWizard: () => {
+      updateFirstRunState({
+        is_first_run: false,
+        setup_completed: true,
+        current_step: 'completed',
+      });
+    },
+  };
+};
+
+/**
+ * Hook per gestire le impostazioni utente
+ */
+export const useUserSettings = () => {
+  const settings = useUIStore(state => state.settings);
+  const updateSettings = useUIStore(state => state.updateSettings);
+  
+  return {
+    settings,
+    updateSettings,
+    isRealTimeEnabled: settings.real_time_updates,
+    isCompactMode: settings.compact_mode,
+    itemsPerPage: settings.items_per_page,
+    language: settings.language,
+  };
+};
+
+/**
+ * Hook per gestire il tema - ALIAS per backward compatibility
+ */
+export const useTheme = () => {
+  const theme = useUIStore(state => state.theme);
+  const setTheme = useUIStore(state => state.setTheme);
+  
+  return { theme, setTheme };
+};
+
+// ===== EXPORT STORES - COMMENTED TO AVOID DUPLICATES =====
+// Gli store sono già esportati sopra quando vengono creati con create()
+// Esportare di nuovo causerebbe duplicati
+
+// export { useUIStore, useDataStore, useReconciliationStore, useImportExportStore, useSyncStore };
+
+// ===== EXPORT TYPES =====
 export type {
   UIState,
   DataState,
