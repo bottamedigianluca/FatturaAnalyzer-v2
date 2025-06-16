@@ -1,314 +1,325 @@
 /**
- * TypeScript type definitions for FatturaAnalyzer Frontend
- * Sincronizzate con i modelli Pydantic del backend
+ * Types V4.0 - Tipi Completi per FatturaAnalyzer
+ * Include tutti i tipi necessari per l'applicazione
  */
 
-// Base types
-export type AnagraphicsType = "Cliente" | "Fornitore";
-export type InvoiceType = "Attiva" | "Passiva";
-export type PaymentStatus = "Aperta" | "Scaduta" | "Pagata Parz." | "Pagata Tot." | "Insoluta" | "Riconciliata";
-export type ReconciliationStatus = "Da Riconciliare" | "Riconciliato Parz." | "Riconciliato Tot." | "Riconciliato Eccesso" | "Ignorato";
-
-// API Response wrapper
+// ===== BASE TYPES =====
 export interface APIResponse<T = any> {
   success: boolean;
-  message: string;
   data?: T;
-  timestamp: string;
+  message?: string;
+  error?: string;
+  details?: any;
+  total?: number;
+  items?: T[];
+  enhanced_data?: any;
 }
 
-export interface ErrorResponse {
-  success: false;
-  error: string;
-  message: string;
-  timestamp: string;
+// ===== CORE ENTITY TYPES =====
+export interface Invoice {
+  id: number;
+  numero: string;
+  data_emissione: string;
+  data_scadenza?: string;
+  tipo_fattura: 'Attiva' | 'Passiva';
+  anagraphics_id: number;
+  anagraphics?: Anagraphics;
+  total_amount: number;
+  iva_amount?: number;
+  payment_status: string;
+  paid_amount?: number;
+  note?: string;
+  file_path?: string;
+  created_at: string;
+  updated_at: string;
+  // Enhanced fields
+  lines?: InvoiceLine[];
+  reconciliation_links?: ReconciliationLink[];
+  aging_days?: number;
+  risk_score?: number;
 }
 
-// Pagination
-export interface PaginationParams {
-  page: number;
-  size: number;
+export interface InvoiceLine {
+  id: number;
+  invoice_id: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  vat_rate?: number;
+  vat_amount?: number;
 }
 
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
+export interface BankTransaction {
+  id: number;
+  data_valuta: string;
+  data_contabile: string;
+  amount: number;
+  description: string;
+  reconciliation_status: string;
+  anagraphics_id_heuristic?: number;
+  anagraphics?: Anagraphics;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+  // Enhanced fields V4.0
+  enhanced_data?: {
+    ai_confidence?: number;
+    pattern_match?: boolean;
+    similar_transactions?: number[];
+    smart_suggestions?: any[];
+  };
+  reconciliation_links?: ReconciliationLink[];
+  reliability_score?: number;
+  category?: string;
+  subcategory?: string;
 }
 
-// Anagraphics
-export interface AnagraphicsBase {
-  type: AnagraphicsType;
+export interface Anagraphics {
+  id: number;
+  type: 'Cliente' | 'Fornitore';
+  business_name?: string;
+  full_name?: string;
   piva?: string;
-  cf?: string;
-  denomination: string;
+  codice_fiscale?: string;
   address?: string;
-  cap?: string;
   city?: string;
   province?: string;
-  country: string;
-  iban?: string;
-  email?: string;
+  cap?: string;
   phone?: string;
+  email?: string;
   pec?: string;
-  codice_destinatario?: string;
-}
-
-export interface AnagraphicsCreate extends AnagraphicsBase {}
-
-export interface AnagraphicsUpdate extends Partial<AnagraphicsBase> {}
-
-export interface Anagraphics extends AnagraphicsBase {
-  id: number;
-  score: number;
   created_at: string;
   updated_at: string;
+  // Enhanced fields
+  client_score?: number;
+  total_invoices?: number;
+  total_amount?: number;
+  payment_reliability?: number;
+  last_transaction_date?: string;
 }
 
-// Invoice Lines
-export interface InvoiceLineBase {
-  line_number: number;
-  description?: string;
-  quantity?: number;
-  unit_measure?: string;
-  unit_price?: number;
-  total_price: number;
-  vat_rate: number;
-  item_code?: string;
-  item_type?: string;
-}
-
-export interface InvoiceLineCreate extends InvoiceLineBase {}
-
-export interface InvoiceLine extends InvoiceLineBase {
+export interface ReconciliationLink {
   id: number;
   invoice_id: number;
-}
-
-// Invoice VAT Summary
-export interface InvoiceVATSummaryBase {
-  vat_rate: number;
-  taxable_amount: number;
-  vat_amount: number;
-}
-
-export interface InvoiceVATSummaryCreate extends InvoiceVATSummaryBase {}
-
-export interface InvoiceVATSummary extends InvoiceVATSummaryBase {
-  id: number;
-  invoice_id: number;
-}
-
-// Invoices
-export interface InvoiceBase {
-  anagraphics_id: number;
-  type: InvoiceType;
-  doc_type?: string;
-  doc_number: string;
-  doc_date: string; // ISO date string
-  total_amount: number;
-  due_date?: string; // ISO date string
-  payment_method?: string;
-  notes?: string;
-  xml_filename?: string;
-  p7m_source_file?: string;
-}
-
-export interface InvoiceCreate extends InvoiceBase {
-  lines?: InvoiceLineCreate[];
-  vat_summary?: InvoiceVATSummaryCreate[];
-}
-
-export interface InvoiceUpdate extends Partial<InvoiceBase> {
-  payment_status?: PaymentStatus;
-  paid_amount?: number;
-}
-
-export interface Invoice extends InvoiceBase {
-  id: number;
-  payment_status: PaymentStatus;
-  paid_amount: number;
-  unique_hash: string;
-  created_at: string;
-  updated_at: string;
-  
-  // Computed fields
-  open_amount?: number;
-  counterparty_name?: string;
-  
-  // Relations
-  lines: InvoiceLine[];
-  vat_summary: InvoiceVATSummary[];
-}
-
-// Bank Transactions
-export interface BankTransactionBase {
-  transaction_date: string; // ISO date string
-  value_date?: string; // ISO date string
-  amount: number;
-  description?: string;
-  causale_abi?: number;
-}
-
-export interface BankTransactionCreate extends BankTransactionBase {
-  unique_hash: string;
-}
-
-export interface BankTransactionUpdate extends Partial<BankTransactionBase> {
-  reconciliation_status?: ReconciliationStatus;
-  reconciled_amount?: number;
-}
-
-export interface BankTransaction extends BankTransactionBase {
-  id: number;
-  reconciliation_status: ReconciliationStatus;
-  reconciled_amount: number;
-  unique_hash: string;
-  created_at: string;
-  updated_at?: string;
-  
-  // Computed fields
-  remaining_amount?: number;
-  is_income?: boolean;
-  is_expense?: boolean;
-}
-
-// Reconciliation
-export interface ReconciliationLinkBase {
   transaction_id: number;
-  invoice_id: number;
-  reconciled_amount: number;
+  amount: number;
+  reconciliation_date: string;
+  user_id?: number;
+  ai_confidence?: number;
+  ai_validated?: boolean;
+  manual_override?: boolean;
   notes?: string;
 }
 
-export interface ReconciliationLinkCreate extends ReconciliationLinkBase {}
+// ===== FILTER TYPES =====
+export interface PaginationParams {
+  page?: number;
+  size?: number;
+  limit?: number;
+  offset?: number;
+}
 
-export interface ReconciliationLink extends ReconciliationLinkBase {
-  id: number;
-  reconciliation_date: string;
-  created_at: string;
+export interface DateRangeFilter {
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface InvoiceFilters extends PaginationParams, DateRangeFilter {
+  type_filter?: 'Attiva' | 'Passiva';
+  status_filter?: string;
+  anagraphics_id?: number;
+  search?: string;
+  min_amount?: number;
+  max_amount?: number;
+}
+
+export interface TransactionFilters extends PaginationParams, DateRangeFilter {
+  status_filter?: string;
+  search?: string;
+  min_amount?: number;
+  max_amount?: number;
+  anagraphics_id_heuristic?: number;
+  hide_pos?: boolean;
+  hide_worldline?: boolean;
+  hide_cash?: boolean;
+  hide_commissions?: boolean;
+  // V4.0 Enhanced
+  enhanced?: boolean;
+  include_summary?: boolean;
+  enable_ai_insights?: boolean;
+  cache_enabled?: boolean;
+}
+
+export interface AnagraphicsFilters extends PaginationParams {
+  type_filter?: 'Cliente' | 'Fornitore';
+  search?: string;
+  city?: string;
+  province?: string;
+}
+
+// ===== ANALYTICS TYPES =====
+export interface AnalyticsRequest {
+  analysis_type: string;
+  parameters?: Record<string, any>;
+  cache_enabled?: boolean;
+  include_predictions?: boolean;
+  output_format?: 'json' | 'excel' | 'csv' | 'pdf';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+}
+
+export interface DashboardData {
+  total_invoices: number;
+  total_transactions: number;
+  reconciled_amount: number;
+  pending_reconciliation: number;
+  kpis: {
+    revenue_trend: number;
+    reconciliation_rate: number;
+    average_processing_time: number;
+    ai_accuracy: number;
+  };
+  charts?: {
+    monthly_revenue: any[];
+    transaction_types: any[];
+    reconciliation_status: any[];
+  };
+  recent_activity?: any[];
+  alerts?: any[];
+}
+
+// ===== RECONCILIATION V4.0 TYPES =====
+export interface UltraReconciliationRequest {
+  operation_type: '1_to_1' | 'n_to_m' | 'smart_client' | 'auto' | 'ultra_smart';
+  invoice_id?: number;
+  transaction_id?: number;
+  anagraphics_id_filter?: number;
+  enable_ai_enhancement?: boolean;
+  enable_smart_patterns?: boolean;
+  enable_predictive_scoring?: boolean;
+  enable_parallel_processing?: boolean;
+  enable_caching?: boolean;
+  confidence_threshold?: number;
+  max_suggestions?: number;
+  max_combination_size?: number;
+  max_search_time_ms?: number;
+  exclude_invoice_ids?: number[];
+  start_date?: string;
+  end_date?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  real_time?: boolean;
+}
+
+export interface ManualMatchRequest {
+  invoice_id: number;
+  transaction_id: number;
+  amount_to_match: number;
+  enable_ai_validation?: boolean;
+  enable_learning?: boolean;
+  force_match?: boolean;
+  user_confidence?: number;
+  notes?: string;
+}
+
+export interface BatchReconciliationRequest {
+  reconciliation_pairs: Array<{
+    invoice_id: number;
+    transaction_id: number;
+    amount: number;
+  }>;
+  enable_ai_validation?: boolean;
+  enable_parallel_processing?: boolean;
+  force_background?: boolean;
 }
 
 export interface ReconciliationSuggestion {
-  confidence: "Alta" | "Media" | "Bassa";
-  confidence_score: number;
-  invoice_ids: number[];
-  transaction_ids?: number[];
-  description: string;
-  total_amount: number;
-  match_details?: Record<string, any>;
-  reasons?: string[];
-}
-
-export interface ReconciliationRequest {
   invoice_id: number;
   transaction_id: number;
+  confidence_score: number;
   amount: number;
+  match_type: 'exact' | 'partial' | 'multi';
+  ai_enhanced: boolean;
+  reasoning?: string;
+  risk_factors?: string[];
 }
 
-export interface ReconciliationBatchRequest {
-  invoice_ids: number[];
-  transaction_ids: number[];
+// ===== UI TYPES =====
+export interface NotificationConfig {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  duration?: number;
+  timestamp: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+  persistent?: boolean;
+  dismissible?: boolean;
 }
 
-// Analytics
-export interface KPIData {
-  total_receivables: number;
-  total_payables: number;
-  overdue_receivables_count: number;
-  overdue_receivables_amount: number;
-  overdue_payables_count: number;
-  overdue_payables_amount: number;
-  revenue_ytd: number;
-  revenue_prev_year_ytd: number;
-  revenue_yoy_change_ytd?: number;
-  gross_margin_ytd: number;
-  margin_percent_ytd?: number;
-  avg_days_to_payment?: number;
-  inventory_turnover_estimate?: number;
-  active_customers_month: number;
-  new_customers_month: number;
+export interface LoadingState {
+  isLoading: boolean;
+  progress?: number;
+  message?: string;
 }
 
-export interface CashFlowData {
-  month: string;
-  incassi_clienti: number;
-  incassi_contanti: number;
-  altri_incassi: number;
-  pagamenti_fornitori: number;
-  spese_carte: number;
-  carburanti: number;
-  trasporti: number;
-  utenze: number;
-  tasse_tributi: number;
-  commissioni_bancarie: number;
-  altri_pagamenti: number;
-  net_operational_flow: number;
-  total_inflows: number;
-  total_outflows: number;
-  net_cash_flow: number;
+export interface ErrorState {
+  hasError: boolean;
+  error?: Error | string;
+  context?: string;
+  retryable?: boolean;
 }
 
-export interface MonthlyRevenueData {
-  month: string;
-  revenue: number;
-  cost: number;
-  gross_margin: number;
-  margin_percent: number;
+// ===== HOOK RETURN TYPES =====
+export interface UseApiResult<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<T>;
 }
 
-export interface TopClientData {
-  id: number;
-  denomination: string;
-  total_revenue: number;
-  num_invoices: number;
-  score: number;
-  avg_order_value: number;
-  last_order_date?: string;
+export interface UseMutationResult<T, V = any> {
+  mutate: (variables: V) => Promise<T>;
+  loading: boolean;
+  error: string | null;
+  reset: () => void;
 }
 
-export interface ProductAnalysisData {
-  normalized_product: string;
-  total_quantity: number;
-  total_value: number;
-  num_invoices: number;
-  avg_unit_price: number;
-  original_descriptions: string[];
+export interface UseQueryResult<T> {
+  data: T | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  isSuccess: boolean;
+  refetch: () => void;
+  isFetching: boolean;
 }
 
-export interface AgingBucket {
-  label: string;
-  amount: number;
-  count: number;
-}
-
-export interface AgingSummary {
-  buckets: AgingBucket[];
-  total_amount: number;
-  total_count: number;
-}
-
-// Import/Export
+// ===== IMPORT/EXPORT TYPES =====
 export interface ImportResult {
   processed: number;
   success: number;
   duplicates: number;
   errors: number;
   unsupported: number;
-  files: Array<{ name: string; status: string }>;
+  files: Array<{
+    name: string;
+    status: string;
+    message?: string;
+  }>;
 }
 
-export interface FileUploadResponse {
-  filename: string;
-  size: number;
-  content_type: string;
-  status: string;
-  message?: string;
+export interface ExportOptions {
+  format: 'excel' | 'csv' | 'json' | 'pdf';
+  filters?: Record<string, any>;
+  include_details?: boolean;
+  include_reconciliation?: boolean;
+  custom_fields?: string[];
 }
 
-// Cloud Sync
+// ===== SYNC TYPES =====
 export interface SyncStatus {
   enabled: boolean;
   service_available: boolean;
@@ -321,224 +332,258 @@ export interface SyncResult {
   success: boolean;
   action?: string;
   message: string;
-  timestamp: string;
+  timestamp?: string;
 }
 
-// Filter types
-export interface DateRangeFilter {
-  start_date?: string;
-  end_date?: string;
+// ===== FORM TYPES =====
+export interface FormField {
+  name: string;
+  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox';
+  label: string;
+  required?: boolean;
+  validation?: (value: any) => string | null;
+  options?: Array<{ label: string; value: any }>;
+  placeholder?: string;
+  defaultValue?: any;
 }
 
-export interface AnagraphicsFilter {
-  type?: AnagraphicsType;
-  search?: string;
-  city?: string;
-  province?: string;
-}
-
-export interface InvoiceFilter {
-  type?: InvoiceType;
-  status?: PaymentStatus;
-  anagraphics_id?: number;
-  search?: string;
-  date_range?: DateRangeFilter;
-  min_amount?: number;
-  max_amount?: number;
-}
-
-export interface TransactionFilter {
-  status?: ReconciliationStatus;
-  search?: string;
-  date_range?: DateRangeFilter;
-  min_amount?: number;
-  max_amount?: number;
-  anagraphics_id_heuristic?: number;
-  hide_pos?: boolean;
-  hide_worldline?: boolean;
-  hide_cash?: boolean;
-  hide_commissions?: boolean;
-}
-
-// Dashboard
-export interface DashboardKPIs {
-  total_receivables: number;
-  total_payables: number;
-  overdue_receivables_amount: number;
-  overdue_receivables_count: number;
-  overdue_payables_amount: number;
-  overdue_payables_count: number;
-  revenue_ytd: number;
-  revenue_prev_year_ytd: number;
-  revenue_yoy_change_ytd?: number;
-  gross_margin_ytd: number;
-  margin_percent_ytd?: number;
-  avg_days_to_payment?: number;
-  inventory_turnover_estimate?: number;
-  active_customers_month: number;
-  new_customers_month: number;
-}
-
-export interface DashboardData {
-  kpis: DashboardKPIs;
-  recent_invoices: Invoice[];
-  recent_transactions: BankTransaction[];
-  cash_flow_summary: CashFlowData[];
-  top_clients: TopClientData[];
-  overdue_invoices: Invoice[];
-}
-
-// Search
-export interface SearchResult {
-  type: "invoice" | "transaction" | "anagraphics";
-  id: number;
-  title: string;
-  subtitle: string;
-  amount?: number;
-  date?: string;
-  status?: string;
-}
-
-export interface SearchResponse {
-  query: string;
-  results: SearchResult[];
-  total: number;
-  took_ms: number;
-}
-
-// UI State types
-export interface TableState {
-  pagination: {
-    pageIndex: number;
-    pageSize: number;
-  };
-  sorting: Array<{
-    id: string;
-    desc: boolean;
-  }>;
-  columnFilters: Array<{
-    id: string;
-    value: any;
-  }>;
-  globalFilter: string;
-}
-
-export interface LoadingState {
-  [key: string]: boolean;
-}
-
-export interface ErrorState {
+export interface FormErrors {
   [key: string]: string | null;
 }
 
-// Form types
-export interface AnagraphicsFormData extends Omit<AnagraphicsCreate, 'country'> {
-  country?: string;
+// ===== UTILITY TYPES =====
+export type SortDirection = 'asc' | 'desc';
+
+export interface SortConfig {
+  field: string;
+  direction: SortDirection;
 }
 
-export interface InvoiceFormData extends Omit<InvoiceCreate, 'doc_date' | 'due_date'> {
-  doc_date: Date;
-  due_date?: Date;
+export interface FilterConfig {
+  field: string;
+  operator: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'startsWith' | 'endsWith';
+  value: any;
 }
 
-export interface TransactionFormData extends Omit<BankTransactionCreate, 'transaction_date' | 'value_date'> {
-  transaction_date: Date;
-  value_date?: Date;
+export type Theme = 'light' | 'dark' | 'system';
+
+export type Language = 'it' | 'en';
+
+// ===== FEATURES FLAGS =====
+export interface FeatureFlags {
+  ai_insights: boolean;
+  smart_reconciliation: boolean;
+  ultra_analytics: boolean;
+  enhanced_transactions: boolean;
+  predictive_scoring: boolean;
+  pattern_learning: boolean;
+  real_time_metrics: boolean;
+  advanced_export: boolean;
+  cloud_sync: boolean;
+  setup_wizard: boolean;
 }
 
-// Theme types
-export type Theme = "light" | "dark" | "system";
-
-// Navigation types
-export interface NavigationItem {
-  title: string;
-  href: string;
-  icon?: string;
-  badge?: string | number;
-  children?: NavigationItem[];
-}
-
-// Notification types
-export interface Notification {
-  id: string;
-  type: "info" | "success" | "warning" | "error";
-  title: string;
-  message?: string;
-  duration?: number;
-  action?: {
-    label: string;
-    onClick: () => void;
-  };
-}
-
-// Chart data types
+// ===== CHART TYPES =====
 export interface ChartDataPoint {
   name: string;
   value: number;
-  label?: string;
-  color?: string;
+  [key: string]: any;
 }
 
-export interface TimeSeriesDataPoint {
-  date: string;
-  value: number;
-  label?: string;
+export interface ChartConfig {
+  type: 'line' | 'area' | 'bar' | 'pie' | 'scatter' | 'composed';
+  data: ChartDataPoint[];
+  title?: string;
+  description?: string;
+  xKey: string;
+  yKeys: string[];
+  colors?: string[];
+  height?: number;
+  formatters?: Record<string, (value: any) => string>;
 }
 
-export interface MultiSeriesDataPoint {
-  name: string;
-  [key: string]: string | number;
+// ===== PERFORMANCE TYPES =====
+export interface PerformanceMetrics {
+  renderTime: number;
+  apiResponseTime: number;
+  cacheHitRate: number;
+  errorRate: number;
+  throughput: number;
 }
 
-// Settings types
-export interface AppSettings {
-  theme: Theme;
-  language: string;
-  currency: string;
-  date_format: string;
-  number_format: string;
-  pagination_size: number;
-  auto_sync: boolean;
-  notifications: {
-    email: boolean;
-    desktop: boolean;
-    sounds: boolean;
+// ===== SEARCH TYPES =====
+export interface SearchResult<T = any> {
+  items: T[];
+  total: number;
+  query: string;
+  filters?: Record<string, any>;
+  suggestions?: string[];
+}
+
+export interface SearchOptions {
+  query: string;
+  filters?: Record<string, any>;
+  sort?: SortConfig;
+  pagination?: PaginationParams;
+  fuzzy?: boolean;
+  highlight?: boolean;
+}
+
+// ===== AUDIT TYPES =====
+export interface AuditLog {
+  id: number;
+  user_id?: number;
+  action: string;
+  entity_type: string;
+  entity_id: number;
+  changes?: Record<string, any>;
+  timestamp: string;
+  ip_address?: string;
+  user_agent?: string;
+}
+
+// ===== BACKUP TYPES =====
+export interface BackupInfo {
+  id: string;
+  filename: string;
+  size: number;
+  created_at: string;
+  type: 'manual' | 'automatic';
+  status: 'completed' | 'in_progress' | 'failed';
+}
+
+// ===== VALIDATION TYPES =====
+export interface ValidationRule {
+  required?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: RegExp;
+  custom?: (value: any) => string | null;
+  message?: string;
+}
+
+export interface ValidationSchema {
+  [key: string]: ValidationRule[];
+}
+
+// ===== WEBSOCKET TYPES =====
+export interface WebSocketMessage {
+  type: string;
+  payload: any;
+  timestamp: string;
+  id: string;
+}
+
+export interface RealTimeUpdate {
+  entity: string;
+  action: 'create' | 'update' | 'delete';
+  data: any;
+  timestamp: string;
+}
+
+// ===== TASK TYPES =====
+export interface Task {
+  id: string;
+  type: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  result?: any;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ===== SYSTEM HEALTH TYPES =====
+export interface SystemHealth {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  version: string;
+  uptime: number;
+  components: {
+    database: 'up' | 'down';
+    api: 'up' | 'down';
+    cache: 'up' | 'down';
+    storage: 'up' | 'down';
+  };
+  metrics: {
+    memory_usage: number;
+    cpu_usage: number;
+    disk_usage: number;
+    response_time: number;
   };
 }
 
-// Hook return types
-export interface UseApiResult<T> {
-  data: T | null;
-  loading: boolean;
-  error: string | null;
-  refetch: () => Promise<void>;
+// ===== CONFIGURATION TYPES =====
+export interface AppConfig {
+  api_url: string;
+  version: string;
+  environment: 'development' | 'staging' | 'production';
+  features: FeatureFlags;
+  limits: {
+    max_file_size: number;
+    max_batch_size: number;
+    rate_limit: number;
+  };
 }
 
-export interface UseMutationResult<T, V = any> {
-  mutate: (variables: V) => Promise<T>;
-  loading: boolean;
-  error: string | null;
-  reset: () => void;
-}
+// ===== DEFAULT EXPORTS =====
+export default {};
 
-// File upload types
-export interface UploadProgress {
-  loaded: number;
-  total: number;
-  percentage: number;
-}
-
-export interface FileWithProgress extends File {
-  progress?: UploadProgress;
-  status?: "pending" | "uploading" | "success" | "error";
-  error?: string;
-}
-
-// Export commonly used types
+// ===== RE-EXPORTS FOR COMPATIBILITY =====
 export type {
-  AnagraphicsType,
-  InvoiceType,
-  PaymentStatus,
-  ReconciliationStatus,
-  Theme,
+  // Core entities
+  Invoice as InvoiceType,
+  BankTransaction as TransactionType,
+  Anagraphics as AnagraphicsType,
+  
+  // API
+  APIResponse as ApiResponse,
+  
+  // Filters
+  InvoiceFilters as InvoiceFilter,
+  TransactionFilters as TransactionFilter,
+  AnagraphicsFilters as AnagraphicsFilter,
+  
+  // UI
+  NotificationConfig as Notification,
+  LoadingState as Loading,
+  ErrorState as Error,
 };
+
+// ===== UTILITY TYPE HELPERS =====
+export type Partial<T> = {
+  [P in keyof T]?: T[P];
+};
+
+export type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+export type NonNullable<T> = T extends null | undefined ? never : T;
+
+export type KeyOf<T> = keyof T;
+
+export type ValueOf<T> = T[keyof T];
+
+// ===== BRANDED TYPES =====
+export type InvoiceId = number & { __brand: 'InvoiceId' };
+export type TransactionId = number & { __brand: 'TransactionId' };
+export type AnagraphicsId = number & { __brand: 'AnagraphicsId' };
+
+// ===== ENUM-LIKE TYPES =====
+export const InvoiceTypes = {
+  ACTIVE: 'Attiva' as const,
+  PASSIVE: 'Passiva' as const,
+} as const;
+
+export const AnagraphicsTypes = {
+  CLIENT: 'Cliente' as const,
+  SUPPLIER: 'Fornitore' as const,
+} as const;
+
+export const ReconciliationStatuses = {
+  UNRECONCILED: 'Da Riconciliare' as const,
+  RECONCILED: 'Riconciliato' as const,
+  PARTIAL: 'Parzialmente Riconciliato' as const,
+} as const;
+
+export type InvoiceType = typeof InvoiceTypes[keyof typeof InvoiceTypes];
+export type AnagraphicsType = typeof AnagraphicsTypes[keyof typeof AnagraphicsTypes];
+export type ReconciliationStatus = typeof ReconciliationStatuses[keyof typeof ReconciliationStatuses];
