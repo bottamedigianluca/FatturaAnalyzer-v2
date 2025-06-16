@@ -49,7 +49,7 @@ import {
   SettingsPage
 } from '@/pages';
 
-import './globals.css';
+import '@/styles/globals.css';
 
 // ===== ENHANCED APP STATES V4.0 =====
 type AppState = 
