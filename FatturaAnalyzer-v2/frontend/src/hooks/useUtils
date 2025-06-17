@@ -18,7 +18,7 @@ export const useSmartCache = () => {
   // Ottieni preferenze cache con valori di default
   const cacheEnabled = true; // Default enabled
   const aiEnabled = true; // Assicurati che questa sia definita qui
-
+  const getCacheTTL = (type: string): number => {
       const ttlMap: Record<string, number> = {
         invoices: 300000,
         transactions: 180000,
