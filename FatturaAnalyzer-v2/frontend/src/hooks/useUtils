@@ -19,7 +19,7 @@ export const useSmartCache = () => {
   const cacheEnabled = true; // Default enabled
   const aiEnabled = true; // Default per ora
   
-  const getCacheTTL = (type: string): number => {
+  function getCacheTTL(type: string): number {
     // Definiamo l'oggetto con le durate TTL in modo esplicito
     const ttlMap: Record<string, number> = {
       invoices: 300000,        // 5 minuti
