@@ -67,12 +67,10 @@ class ThreadSafeConnectionPool:
         self._total_requests = 0
         self._cache_hits = 0
         self._created_connections = 0
-        
-    def _get_thread_connection(self) -> sqlite3.Connection:
 
     def _get_thread_connection(self) -> sqlite3.Connection:
 
-    if not hasattr(self._thread_local, 'connection') or self._thread_local.connection is None:
+     if not hasattr(self._thread_local, 'connection') or self._thread_local.connection is None:
         # Crea nuova connessione per questo thread
         conn = get_connection()
         
@@ -94,7 +92,7 @@ class ThreadSafeConnectionPool:
             
         logger.debug(f"Created new SQLite connection for thread {threading.get_ident()}")
         
-    return self._thread_local.connection
+     return self._thread_local.connection
         
     def get_connection(self) -> sqlite3.Connection:
         """Ottiene connessione thread-safe"""
