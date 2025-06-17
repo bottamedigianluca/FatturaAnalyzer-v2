@@ -19,27 +19,24 @@ export const useSmartCache = () => {
   const cacheEnabled = true; // Default enabled
   const aiEnabled = true; // Assicurati che questa sia definita qui
 
-  const getCacheTTL = (type: string): number => {
-    
-    // 1. Definisci la mappa di valori separatamente.
-    const ttlMap: Record<string, number> = {
-      invoices: 300000,
-      transactions: 180000,
-      anagraphics: 600000,
-      reconciliation: 120000,
-      stats: 300000,
-      ai_insights: 600000,
-      dashboard: 300000,
-    };
+const getCacheTTL = (type: string): number => {
+      const ttlMap: Record<string, number> = {
+        invoices: 300000,
+        transactions: 180000,
+        anagraphics: 600000,
+        reconciliation: 120000,
+        stats: 300000,
+        ai_insights: 600000,
+        dashboard: 300000,
+      };
 
-    // 2. Accedi alla mappa per ottenere il valore base.
-    const baseTTL = ttlMap[type] || 300000;
-    
-    // 3. Applica la logica e restituisci il valore finale.
-    const finalTTL = aiEnabled ? baseTTL * 0.7 : baseTTL;
-    
-    return finalTTL;
-  };
+      const baseTTL = ttlMap[type] || 300000;
+      
+      // Assicurati che aiEnabled sia definito nello scope
+      const finalTTL = aiEnabled ? baseTTL * 0.7 : baseTTL;
+      
+      return finalTTL;
+    };
   
   const shouldRefetch = (lastFetch: number | null, type: string) => {
     if (!lastFetch) return true;
