@@ -19,19 +19,25 @@ export const useSmartCache = () => {
   const cacheEnabled = true; // Default enabled
   const aiEnabled = true; // Default per ora
   
-  const getCacheTTL = (type: string) => {
-    const baseTTL = {
-      invoices: 300000, // 5 minutes
-      transactions: 180000, // 3 minutes
-      anagraphics: 600000, // 10 minutes
-      reconciliation: 120000, // 2 minutes
-      stats: 300000, // 5 minutes
-      ai_insights: 600000, // 10 minutes
-      dashboard: 300000, // 5 minutes
-    }[type] || 300000;
+  const getCacheTTL = (type: string): number => {
+    // Definiamo l'oggetto con le durate TTL in modo esplicito
+    const ttlMap: Record<string, number> = {
+      invoices: 300000,        // 5 minuti
+      transactions: 180000,    // 3 minuti
+      anagraphics: 600000,     // 10 minuti
+      reconciliation: 120000,  // 2 minuti
+      stats: 300000,           // 5 minuti
+      ai_insights: 600000,     // 10 minuti
+      dashboard: 300000,       // 5 minuti
+    };
+
+    // Otteniamo il valore dalla mappa o usiamo un valore di default
+    const baseTTL = ttlMap[type] || 300000;
     
-    // Riduce TTL se AI è abilitato per dati più freschi
-    return aiEnabled ? baseTTL * 0.7 : baseTTL;
+    // Applichiamo la logica per l'AI
+    const finalTTL = aiEnabled ? baseTTL * 0.7 : baseTTL;
+    
+    return finalTTL;
   };
   
   const shouldRefetch = (lastFetch: number | null, type: string) => {
