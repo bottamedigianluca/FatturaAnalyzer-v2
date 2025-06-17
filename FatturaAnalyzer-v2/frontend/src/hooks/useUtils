@@ -5,7 +5,7 @@
  * FIXED: Risolti tutti i problemi di import e dipendenze circolari
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 
@@ -13,47 +13,51 @@ import { toast } from 'react-hot-toast';
 /**
  * Hook per gestire il caching intelligente con TTL dinamico
  */
-export const useSmartCache = () => {
+const TTL_MAP = Object.freeze({
+  'invoices': 300000,
+  'transactions': 300000,
+  'anagraphics': 300000,
+  'reconciliation': 300000,
+  'import': 600000,
+  'export': 600000,
+  'executive-dashboard': 900000,
+  'operations-dashboard': 900000,
+  'ai-insights': 1200000,
+  'analytics-export': 1200000,
+  'ultra-predictions': 1800000,
+});
+
+const DEFAULT_TTL = 300000;
+const AI_TTL_MULTIPLIER = 0.7;
+
+// Rimosse le dichiarazioni 'type' e 'interface'
+export const useSmartCache = (options: { cacheEnabled?: boolean; aiEnabled?: boolean } = {}) => {
+  const { cacheEnabled = true, aiEnabled = true } = options;
   const queryClient = useQueryClient();
-  // Ottieni preferenze cache con valori di default
-  const cacheEnabled = true; // Default enabled
-  const aiEnabled = true; // Assicurati che questa sia definita qui
-  const getCacheTTL = (type: string): number => {
-  const ttlMap: Record<string, number> = {
-    invoices: 300000,
-    transactions: 180000,
-    anagraphics: 600000,
-    reconciliation: 120000,
-    stats: 300000,
-    ai_insights: 600000,
-    dashboard: 300000,
-  };
 
-  const baseTTL = ttlMap[type] || 300000;
-  const finalTTL = aiEnabled ? baseTTL * 0.7 : baseTTL;
+  // Rimosse le annotazioni di tipo dai parametri
+  const getCacheTTL = useCallback((type) => {
+    const baseTTL = TTL_MAP[type] ?? DEFAULT_TTL;
+    return aiEnabled ? Math.round(baseTTL * AI_TTL_MULTIPLIER) : baseTTL;
+  }, [aiEnabled]);
 
-  return finalTTL;
-};
-  
-  const shouldRefetch = (lastFetch: number | null, type: string) => {
-    if (!lastFetch) return true;
-    if (!cacheEnabled) return true;
-    
+  const shouldRefetch = useCallback((lastFetchTime, type) => {
+    if (!cacheEnabled || lastFetchTime === null) {
+      return true;
+    }
     const ttl = getCacheTTL(type);
-    return Date.now() - lastFetch > ttl;
-  };
-  
-  const invalidateSmartCache = (patterns: string[]) => {
-    patterns.forEach(pattern => {
-      queryClient.invalidateQueries({ 
-        predicate: (query) => 
-          query.queryKey.some(key => 
-            typeof key === 'string' && key.includes(pattern)
-          )
-      });
+    return Date.now() - lastFetchTime > ttl;
+  }, [cacheEnabled, getCacheTTL]);
+
+  const invalidateSmartCache = useCallback((patterns) => {
+    queryClient.invalidateQueries({
+      predicate: (query) =>
+        query.queryKey.some(
+          (key) => typeof key === 'string' && patterns.some(pattern => key.includes(pattern))
+        ),
     });
-  };
-  
+  }, [queryClient]);
+
   return {
     getCacheTTL,
     shouldRefetch,
@@ -62,6 +66,7 @@ export const useSmartCache = () => {
     aiEnhanced: aiEnabled,
   };
 };
+
 
 // ===== SMART ERROR HANDLING HOOK =====
 /**
@@ -595,17 +600,17 @@ export const useKeyboardShortcuts = () => {
     'ctrl+shift+d': () => window.location.href = '/dashboard',
     
     // Azioni quick
-    'ctrl+n': () => document.querySelector('[data-shortcut="new"]')?.click(),
-    'ctrl+s': () => document.querySelector('[data-shortcut="save"]')?.click(),
-    'ctrl+e': () => document.querySelector('[data-shortcut="export"]')?.click(),
+    'ctrl+n': () => (document.querySelector('[data-shortcut="new"]') as HTMLElement | null)?.click(),
+    'ctrl+s': () => (document.querySelector('[data-shortcut="save"]') as HTMLElement | null)?.click(),
+    'ctrl+e': () => (document.querySelector('[data-shortcut="export"]') as HTMLElement | null)?.click(),
     'ctrl+f': () => (document.querySelector('[data-shortcut="search"]') as HTMLElement)?.focus(),
     
     // Bulk operations
-    'ctrl+shift+delete': () => document.querySelector('[data-shortcut="bulk-delete"]')?.click(),
-    'ctrl+shift+e': () => document.querySelector('[data-shortcut="bulk-export"]')?.click(),
+    'ctrl+shift+delete': () => (document.querySelector('[data-shortcut="bulk-delete"]') as HTMLElement | null)?.click(),
+    'ctrl+shift+e': () => (document.querySelector('[data-shortcut="bulk-export"]') as HTMLElement | null)?.click(),
     
     // AI features
-    'ctrl+shift+ai': () => document.querySelector('[data-shortcut="ai-suggest"]')?.click(),
+    'ctrl+shift+ai': () => (document.querySelector('[data-shortcut="ai-suggest"]') as HTMLElement | null)?.click(),
   });
   
   useEffect(() => {
