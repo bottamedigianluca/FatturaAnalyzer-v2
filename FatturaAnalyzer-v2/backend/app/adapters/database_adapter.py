@@ -69,30 +69,30 @@ class ThreadSafeConnectionPool:
         self._created_connections = 0
         
     def _get_thread_connection(self) -> sqlite3.Connection:
-        """Ottiene/crea connessione per il thread corrente"""
-        if not hasattr(self._thread_local, 'connection') or self._thread_local.connection is None:
-            # Crea nuova connessione per questo thread
-            conn = get_connection()
+    """Ottiene/crea connessione per il thread corrente"""
+    if not hasattr(self._thread_local, 'connection') or self._thread_local.connection is None:
+        # Crea nuova connessione per questo thread
+        conn = get_connection()
+        
+        # Ottimizzazioni SQLite
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL") 
+        conn.execute("PRAGMA cache_size=10000")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA mmap_size=268435456")  # 256MB
+        conn.execute("PRAGMA foreign_keys=ON")
+        
+        # Imposta timeout tramite PRAGMA invece di attributo
+        conn.execute(f"PRAGMA busy_timeout={DatabaseConfig.QUERY_TIMEOUT_SECONDS * 1000}")
+        
+        self._thread_local.connection = conn
+        
+        with self._lock:
+            self._created_connections += 1
             
-            # Ottimizzazioni SQLite
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL") 
-            conn.execute("PRAGMA cache_size=10000")
-            conn.execute("PRAGMA temp_store=MEMORY")
-            conn.execute("PRAGMA mmap_size=268435456")  # 256MB
-            conn.execute("PRAGMA foreign_keys=ON")
-            
-            # Imposta timeout per evitare lock
-            conn.timeout = DatabaseConfig.QUERY_TIMEOUT_SECONDS
-            
-            self._thread_local.connection = conn
-            
-            with self._lock:
-                self._created_connections += 1
-                
-            logger.debug(f"Created new SQLite connection for thread {threading.get_ident()}")
-            
-        return self._thread_local.connection
+        logger.debug(f"Created new SQLite connection for thread {threading.get_ident()}")
+        
+    return self._thread_local.connection
         
     def get_connection(self) -> sqlite3.Connection:
         """Ottiene connessione thread-safe"""
