@@ -20,25 +20,26 @@ export const useSmartCache = () => {
   const aiEnabled = true; // Default per ora
   
   function getCacheTTL(type: string): number {
-    // Definiamo l'oggetto con le durate TTL in modo esplicito
     const ttlMap: Record<string, number> = {
-      invoices: 300000,        // 5 minuti
-      transactions: 180000,    // 3 minuti
-      anagraphics: 600000,     // 10 minuti
-      reconciliation: 120000,  // 2 minuti
-      stats: 300000,           // 5 minuti
-      ai_insights: 600000,     // 10 minuti
-      dashboard: 300000,       // 5 minuti
+      invoices: 300000,
+      transactions: 180000,
+      anagraphics: 600000,
+      reconciliation: 120000,
+      stats: 300000,
+      ai_insights: 600000,
+      dashboard: 300000,
     };
 
-    // Otteniamo il valore dalla mappa o usiamo un valore di default
     const baseTTL = ttlMap[type] || 300000;
     
-    // Applichiamo la logica per l'AI
+    // NOTA: Assicurati che la variabile 'aiEnabled' sia definita nello scope superiore, 
+    // come nel tuo codice originale.
+    const aiEnabled = true; // O come viene determinata nel tuo hook
+    
     const finalTTL = aiEnabled ? baseTTL * 0.7 : baseTTL;
     
     return finalTTL;
-  };
+}
   
   const shouldRefetch = (lastFetch: number | null, type: string) => {
     if (!lastFetch) return true;
