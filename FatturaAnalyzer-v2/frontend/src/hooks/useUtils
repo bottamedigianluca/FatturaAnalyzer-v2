@@ -17,9 +17,11 @@ export const useSmartCache = () => {
   const queryClient = useQueryClient();
   // Ottieni preferenze cache con valori di default
   const cacheEnabled = true; // Default enabled
-  const aiEnabled = true; // Default per ora
-  
-  function getCacheTTL(type: string): number {
+  const aiEnabled = true; // Assicurati che questa sia definita qui
+
+  const getCacheTTL = (type: string): number => {
+    
+    // 1. Definisci la mappa di valori separatamente.
     const ttlMap: Record<string, number> = {
       invoices: 300000,
       transactions: 180000,
@@ -30,16 +32,14 @@ export const useSmartCache = () => {
       dashboard: 300000,
     };
 
+    // 2. Accedi alla mappa per ottenere il valore base.
     const baseTTL = ttlMap[type] || 300000;
     
-    // NOTA: Assicurati che la variabile 'aiEnabled' sia definita nello scope superiore, 
-    // come nel tuo codice originale.
-    const aiEnabled = true; // O come viene determinata nel tuo hook
-    
+    // 3. Applica la logica e restituisci il valore finale.
     const finalTTL = aiEnabled ? baseTTL * 0.7 : baseTTL;
     
     return finalTTL;
-}
+  };
   
   const shouldRefetch = (lastFetch: number | null, type: string) => {
     if (!lastFetch) return true;
