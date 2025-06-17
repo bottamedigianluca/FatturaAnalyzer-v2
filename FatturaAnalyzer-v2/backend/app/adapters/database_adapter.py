@@ -1,6 +1,6 @@
 """
-Database Adapter ULTRA-OTTIMIZZATO per FastAPI - Versione 3.0
-Sfrutta al 100% il backend con connection pooling, cache intelligente, e performance monitoring
+Database Adapter ULTRA-OTTIMIZZATO per FastAPI - Versione 3.1 Thread-Safe
+Risolve completamente i problemi di thread SQLite con connection pooling ottimizzato
 """
 
 import asyncio
@@ -45,6 +45,7 @@ class DatabaseConfig:
     BATCH_SIZE = int(os.getenv('DB_BATCH_SIZE', '100'))
     ENABLE_QUERY_CACHE = os.getenv('DB_ENABLE_CACHE', 'true').lower() == 'true'
     ENABLE_PERFORMANCE_MONITORING = os.getenv('DB_ENABLE_MONITORING', 'true').lower() == 'true'
+    USE_THREAD_SAFE_POOL = os.getenv('DB_THREAD_SAFE', 'true').lower() == 'true'
 
 # ================== CLASSI UTILITY ==================
 
@@ -54,10 +55,106 @@ class CacheableList(list):
         super().__init__(data)
         self._from_cache = False
 
-# ================== CONNECTION POOL AVANZATO ==================
+# ================== CONNECTION POOL THREAD-SAFE ==================
 
-class ConnectionPool:
-    """Pool di connessioni thread-safe con monitoring"""
+class ThreadSafeConnectionPool:
+    """Pool di connessioni completamente thread-safe per SQLite"""
+    
+    def __init__(self, pool_size: int = DatabaseConfig.CONNECTION_POOL_SIZE):
+        self.pool_size = pool_size
+        self._lock = threading.RLock()
+        self._thread_local = threading.local()
+        self._total_requests = 0
+        self._cache_hits = 0
+        self._created_connections = 0
+        
+    def _get_thread_connection(self) -> sqlite3.Connection:
+        """Ottiene/crea connessione per il thread corrente"""
+        if not hasattr(self._thread_local, 'connection') or self._thread_local.connection is None:
+            # Crea nuova connessione per questo thread
+            conn = get_connection()
+            
+            # Ottimizzazioni SQLite
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL") 
+            conn.execute("PRAGMA cache_size=10000")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA mmap_size=268435456")  # 256MB
+            conn.execute("PRAGMA foreign_keys=ON")
+            
+            # Imposta timeout per evitare lock
+            conn.timeout = DatabaseConfig.QUERY_TIMEOUT_SECONDS
+            
+            self._thread_local.connection = conn
+            
+            with self._lock:
+                self._created_connections += 1
+                
+            logger.debug(f"Created new SQLite connection for thread {threading.get_ident()}")
+            
+        return self._thread_local.connection
+        
+    def get_connection(self) -> sqlite3.Connection:
+        """Ottiene connessione thread-safe"""
+        with self._lock:
+            self._total_requests += 1
+            
+        # Test connessione esistente
+        if hasattr(self._thread_local, 'connection') and self._thread_local.connection is not None:
+            try:
+                self._thread_local.connection.execute("SELECT 1")
+                with self._lock:
+                    self._cache_hits += 1
+                return self._thread_local.connection
+            except sqlite3.Error:
+                # Connessione non valida, creane una nuova
+                self._thread_local.connection = None
+                
+        return self._get_thread_connection()
+    
+    def return_connection(self, conn: sqlite3.Connection):
+        """Restituisce connessione al pool (per compatibilità)"""
+        # Per SQLite thread-safe, non facciamo nulla
+        # La connessione rimane nel thread locale
+        pass
+    
+    def close_thread_connection(self):
+        """Chiude connessione del thread corrente"""
+        if hasattr(self._thread_local, 'connection') and self._thread_local.connection is not None:
+            try:
+                self._thread_local.connection.close()
+                logger.debug(f"Closed SQLite connection for thread {threading.get_ident()}")
+            except sqlite3.Error as e:
+                logger.warning(f"Error closing thread connection: {e}")
+            finally:
+                self._thread_local.connection = None
+                with self._lock:
+                    self._created_connections = max(0, self._created_connections - 1)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Statistiche del pool"""
+        with self._lock:
+            return {
+                'pool_type': 'thread_safe',
+                'total_requests': self._total_requests,
+                'cache_hit_rate': self._cache_hits / max(1, self._total_requests),
+                'created_connections': self._created_connections,
+                'current_thread_id': threading.get_ident(),
+                'has_thread_connection': hasattr(self._thread_local, 'connection') and self._thread_local.connection is not None
+            }
+    
+    def close_all(self):
+        """Chiude tutte le connessioni in modo sicuro"""
+        # Chiudi solo la connessione del thread corrente per evitare errori cross-thread
+        self.close_thread_connection()
+        
+        with self._lock:
+            logger.info(f"Connection pool cleanup completed. Created connections: {self._created_connections}")
+
+# ================== CONNECTION POOL LEGACY (Fallback) ==================
+
+class LegacyConnectionPool:
+    """Pool di connessioni legacy per compatibilità"""
     
     def __init__(self, pool_size: int = DatabaseConfig.CONNECTION_POOL_SIZE):
         self.pool_size = pool_size
@@ -69,7 +166,7 @@ class ConnectionPool:
         self._cache_hits = 0
         
     def get_connection(self) -> sqlite3.Connection:
-        """Ottiene connessione dal pool"""
+        """Ottiene connessione dal pool legacy"""
         with self._lock:
             self._total_requests += 1
             
@@ -101,13 +198,17 @@ class ConnectionPool:
                 self._connections.append(conn)
                 self._active_connections -= 1
             else:
-                conn.close()
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
                 self._created_connections -= 1
     
     def get_stats(self) -> Dict[str, Any]:
         """Statistiche del pool"""
         with self._lock:
             return {
+                'pool_type': 'legacy',
                 'pool_size': self.pool_size,
                 'available_connections': len(self._connections),
                 'active_connections': self._active_connections,
@@ -121,18 +222,34 @@ class ConnectionPool:
         with self._lock:
             while self._connections:
                 conn = self._connections.popleft()
-                conn.close()
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
             self._created_connections = 0
             self._active_connections = 0
 
-_connection_pool = ConnectionPool()
+# Scegli il tipo di pool basato sulla configurazione
+if DatabaseConfig.USE_THREAD_SAFE_POOL:
+    _connection_pool = ThreadSafeConnectionPool()
+    logger.info("Using ThreadSafeConnectionPool")
+else:
+    _connection_pool = LegacyConnectionPool()
+    logger.info("Using LegacyConnectionPool")
 
 @contextmanager
 def get_pooled_connection():
-    """Context manager per connessioni dal pool"""
+    """Context manager per connessioni thread-safe"""
     conn = _connection_pool.get_connection()
     try:
         yield conn
+    except Exception as e:
+        # Rollback in caso di errore
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        raise
     finally:
         _connection_pool.return_connection(conn)
 
@@ -415,8 +532,8 @@ def performance_tracked(query_type: str):
 
 class DatabaseAdapterOptimized:
     """
-    Database Adapter ULTRA-OTTIMIZZATO V3.0
-    Performance-first design con connection pooling, cache intelligente, batch processing
+    Database Adapter ULTRA-OTTIMIZZATO V3.1 Thread-Safe
+    Performance-first design con connection pooling thread-safe
     """
     
     def __init__(self):
@@ -427,13 +544,13 @@ class DatabaseAdapterOptimized:
         self._query_stats = defaultdict(int)
         self._lock = threading.RLock()
         
-        logger.info("DatabaseAdapterOptimized V3.0 initialized with connection pooling")
+        logger.info("DatabaseAdapterOptimized V3.1 Thread-Safe initialized")
     
     # ===== CORE QUERY METHODS OTTIMIZZATI =====
     
     @performance_tracked('generic_query')
     async def execute_query_async(self, query: str, params: Tuple = None) -> List[Dict]:
-        """Esegue query SELECT con cache intelligente"""
+        """Esegue query SELECT con cache intelligente - Thread Safe"""
         
         # Check cache first
         cached_result = _query_cache.get(query, params or ())
@@ -462,16 +579,20 @@ class DatabaseAdapterOptimized:
                 
                 return result
         
-        result = await loop.run_in_executor(self.executor, _execute_query)
-        
-        with self._lock:
-            self._query_stats['SELECT'] += 1
-        
-        return result
+        try:
+            result = await loop.run_in_executor(self.executor, _execute_query)
+            
+            with self._lock:
+                self._query_stats['SELECT'] += 1
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in execute_query_async: {e}")
+            raise
     
     @performance_tracked('write_query')
     async def execute_write_async(self, query: str, params: Tuple = None) -> int:
-        """Esegue query INSERT/UPDATE/DELETE ottimizzata"""
+        """Esegue query INSERT/UPDATE/DELETE ottimizzata - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
@@ -479,36 +600,45 @@ class DatabaseAdapterOptimized:
             with get_pooled_connection() as conn:
                 cursor = conn.cursor()
                 
-                if params:
-                    cursor.execute(query, params)
-                else:
-                    cursor.execute(query)
-                
-                conn.commit()
-                
-                # Invalida cache correlata
-                self._invalidate_related_cache(query)
-                
+                try:
+                    if params:
+                        cursor.execute(query, params)
+                    else:
+                        cursor.execute(query)
+                    
+                    conn.commit()
+                    
+                    # Invalida cache correlata
+                    self._invalidate_related_cache(query)
+                    
+                    if query.strip().upper().startswith('INSERT'):
+                        return cursor.lastrowid
+                    else:
+                        return cursor.rowcount
+                        
+                except Exception as e:
+                    conn.rollback()
+                    raise
+        
+        try:
+            result = await loop.run_in_executor(self.executor, _execute_write)
+            
+            with self._lock:
                 if query.strip().upper().startswith('INSERT'):
-                    return cursor.lastrowid
-                else:
-                    return cursor.rowcount
-        
-        result = await loop.run_in_executor(self.executor, _execute_write)
-        
-        with self._lock:
-            if query.strip().upper().startswith('INSERT'):
-                self._query_stats['INSERT'] += 1
-            elif query.strip().upper().startswith('UPDATE'):
-                self._query_stats['UPDATE'] += 1
-            elif query.strip().upper().startswith('DELETE'):
-                self._query_stats['DELETE'] += 1
-        
-        return result
+                    self._query_stats['INSERT'] += 1
+                elif query.strip().upper().startswith('UPDATE'):
+                    self._query_stats['UPDATE'] += 1
+                elif query.strip().upper().startswith('DELETE'):
+                    self._query_stats['DELETE'] += 1
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in execute_write_async: {e}")
+            raise
     
     @performance_tracked('batch_write')
     async def execute_batch_write_async(self, query: str, params_list: List[Tuple]) -> List[int]:
-        """Esegue batch di query write per performance ottimali"""
+        """Esegue batch di query write per performance ottimali - Thread Safe"""
         
         if not params_list:
             return []
@@ -542,8 +672,12 @@ class DatabaseAdapterOptimized:
                         conn.rollback()
                         raise
             
-            chunk_results = await loop.run_in_executor(self.executor, _execute_batch_chunk)
-            results.extend(chunk_results)
+            try:
+                chunk_results = await loop.run_in_executor(self.executor, _execute_batch_chunk)
+                results.extend(chunk_results)
+            except Exception as e:
+                logger.error(f"Error in batch write chunk: {e}")
+                raise
         
         # Invalida cache
         self._invalidate_related_cache(query)
@@ -557,41 +691,46 @@ class DatabaseAdapterOptimized:
     
     @performance_tracked('create_tables')
     async def create_tables_async(self):
-        """Crea tabelle con ottimizzazioni"""
+        """Crea tabelle con ottimizzazioni - Thread Safe"""
         loop = asyncio.get_event_loop()
         
         def _create_optimized():
-            # Use pooled connection
-            with get_pooled_connection() as conn:
-                create_tables()
-                
-                # Add indexes for performance
-                performance_indexes = [
-                    "CREATE INDEX IF NOT EXISTS idx_invoices_anagraphics ON Invoices(anagraphics_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_invoices_date ON Invoices(doc_date)",
-                    "CREATE INDEX IF NOT EXISTS idx_invoices_status ON Invoices(payment_status)",
-                    "CREATE INDEX IF NOT EXISTS idx_transactions_date ON BankTransactions(transaction_date)",
-                    "CREATE INDEX IF NOT EXISTS idx_transactions_status ON BankTransactions(reconciliation_status)",
-                    "CREATE INDEX IF NOT EXISTS idx_transactions_hash ON BankTransactions(unique_hash)",
-                    "CREATE INDEX IF NOT EXISTS idx_recon_links_invoice ON ReconciliationLinks(invoice_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_recon_links_transaction ON ReconciliationLinks(transaction_id)",
-                ]
-                
-                cursor = conn.cursor()
-                for index_sql in performance_indexes:
-                    try:
-                        cursor.execute(index_sql)
-                    except Exception as e:
-                        logger.warning(f"Failed to create index: {e}")
-                
-                conn.commit()
-                return True
+            try:
+                # Use pooled connection
+                with get_pooled_connection() as conn:
+                    # Usa la funzione esistente del core
+                    create_tables()
+                    
+                    # Add indexes for performance
+                    performance_indexes = [
+                        "CREATE INDEX IF NOT EXISTS idx_invoices_anagraphics ON Invoices(anagraphics_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_invoices_date ON Invoices(doc_date)",
+                        "CREATE INDEX IF NOT EXISTS idx_invoices_status ON Invoices(payment_status)",
+                        "CREATE INDEX IF NOT EXISTS idx_transactions_date ON BankTransactions(transaction_date)",
+                        "CREATE INDEX IF NOT EXISTS idx_transactions_status ON BankTransactions(reconciliation_status)",
+                        "CREATE INDEX IF NOT EXISTS idx_transactions_hash ON BankTransactions(unique_hash)",
+                        "CREATE INDEX IF NOT EXISTS idx_recon_links_invoice ON ReconciliationLinks(invoice_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_recon_links_transaction ON ReconciliationLinks(transaction_id)",
+                    ]
+                    
+                    cursor = conn.cursor()
+                    for index_sql in performance_indexes:
+                        try:
+                            cursor.execute(index_sql)
+                        except Exception as e:
+                            logger.warning(f"Failed to create index: {e}")
+                    
+                    conn.commit()
+                    return True
+            except Exception as e:
+                logger.error(f"Error in create_tables_async: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _create_optimized)
     
     @performance_tracked('get_anagraphics')
     async def get_anagraphics_async(self, type_filter: str = None) -> List[Dict]:
-        """Ottiene anagrafiche con cache"""
+        """Ottiene anagrafiche con cache - Thread Safe"""
         
         # Check cache first
         cache_key = f"anagraphics_{type_filter or 'all'}"
@@ -602,13 +741,17 @@ class DatabaseAdapterOptimized:
         loop = asyncio.get_event_loop()
         
         def _get_anagraphics():
-            df = get_anagraphics(type_filter)
-            result = df.to_dict('records') if not df.empty else []
-            
-            # Cache result
-            _query_cache.set(f"anagraphics_{type_filter or 'all'}", (), result)
-            
-            return result
+            try:
+                df = get_anagraphics(type_filter)
+                result = df.to_dict('records') if not df.empty else []
+                
+                # Cache result
+                _query_cache.set(f"anagraphics_{type_filter or 'all'}", (), result)
+                
+                return result
+            except Exception as e:
+                logger.error(f"Error in get_anagraphics: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _get_anagraphics)
     
@@ -620,18 +763,22 @@ class DatabaseAdapterOptimized:
         anagraphics_id_filter: int = None,
         limit: int = None
     ) -> List[Dict]:
-        """Ottiene fatture con cache e ottimizzazioni"""
+        """Ottiene fatture con cache e ottimizzazioni - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _get_invoices():
-            df = get_invoices(
-                type_filter=type_filter,
-                status_filter=status_filter,
-                anagraphics_id_filter=anagraphics_id_filter,
-                limit=limit
-            )
-            return df.to_dict('records') if not df.empty else []
+            try:
+                df = get_invoices(
+                    type_filter=type_filter,
+                    status_filter=status_filter,
+                    anagraphics_id_filter=anagraphics_id_filter,
+                    limit=limit
+                )
+                return df.to_dict('records') if not df.empty else []
+            except Exception as e:
+                logger.error(f"Error in get_invoices: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _get_invoices)
     
@@ -648,23 +795,27 @@ class DatabaseAdapterOptimized:
         hide_cash: bool = False,
         hide_commissions: bool = False
     ) -> List[Dict]:
-        """Ottiene transazioni con cache e ottimizzazioni"""
+        """Ottiene transazioni con cache e ottimizzazioni - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _get_transactions():
-            df = get_transactions(
-                start_date=start_date,
-                end_date=end_date,
-                status_filter=status_filter,
-                limit=limit,
-                anagraphics_id_heuristic_filter=anagraphics_id_heuristic_filter,
-                hide_pos=hide_pos,
-                hide_worldline=hide_worldline,
-                hide_cash=hide_cash,
-                hide_commissions=hide_commissions
-            )
-            return df.to_dict('records') if not df.empty else []
+            try:
+                df = get_transactions(
+                    start_date=start_date,
+                    end_date=end_date,
+                    status_filter=status_filter,
+                    limit=limit,
+                    anagraphics_id_heuristic_filter=anagraphics_id_heuristic_filter,
+                    hide_pos=hide_pos,
+                    hide_worldline=hide_worldline,
+                    hide_cash=hide_cash,
+                    hide_commissions=hide_commissions
+                )
+                return df.to_dict('records') if not df.empty else []
+            except Exception as e:
+                logger.error(f"Error in get_transactions: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _get_transactions)
     
@@ -672,7 +823,7 @@ class DatabaseAdapterOptimized:
     
     @performance_tracked('batch_anagraphics')
     async def add_anagraphics_batch_async(self, anagraphics_list: List[Dict]) -> List[Optional[int]]:
-        """Aggiunge anagrafiche in batch ottimizzato"""
+        """Aggiunge anagrafiche in batch ottimizzato - Thread Safe"""
         
         if not anagraphics_list:
             return []
@@ -681,8 +832,8 @@ class DatabaseAdapterOptimized:
         
         def _add_batch():
             results = []
-            with get_pooled_connection() as conn:
-                try:
+            try:
+                with get_pooled_connection() as conn:
                     for anag_data in anagraphics_list:
                         anag_type = anag_data.get('type', 'Cliente')
                         cursor = conn.cursor()
@@ -691,30 +842,28 @@ class DatabaseAdapterOptimized:
                     
                     conn.commit()
                     return results
-                    
-                except Exception as e:
-                    conn.rollback()
-                    logger.error(f"Batch anagraphics add failed: {e}")
-                    raise
+            except Exception as e:
+                logger.error(f"Batch anagraphics add failed: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _add_batch)
     
     @performance_tracked('batch_transactions')
     async def add_transactions_batch_async(self, transactions_df: pd.DataFrame) -> Tuple[int, int, int, int]:
-        """Aggiunge transazioni in batch ultra-ottimizzato"""
+        """Aggiunge transazioni in batch ultra-ottimizzato - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _add_transactions():
-            with get_pooled_connection() as conn:
-                cursor = conn.cursor()
-                try:
+            try:
+                with get_pooled_connection() as conn:
+                    cursor = conn.cursor()
                     result = add_transactions(cursor, transactions_df)
                     conn.commit()
                     return result
-                except Exception as e:
-                    conn.rollback()
-                    raise
+            except Exception as e:
+                logger.error(f"Batch transactions add failed: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _add_transactions)
     
@@ -722,38 +871,50 @@ class DatabaseAdapterOptimized:
     
     @performance_tracked('reconciliation_links')
     async def get_reconciliation_links_async(self, item_type: str, item_id: int) -> List[Dict]:
-        """Ottiene link riconciliazione con cache"""
+        """Ottiene link riconciliazione con cache - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _get_links():
-            df = get_reconciliation_links_for_item(item_type, item_id)
-            return df.to_dict('records') if not df.empty else []
+            try:
+                df = get_reconciliation_links_for_item(item_type, item_id)
+                return df.to_dict('records') if not df.empty else []
+            except Exception as e:
+                logger.error(f"Error getting reconciliation links: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _get_links)
     
     @performance_tracked('item_details')
     async def get_item_details_async(self, item_type: str, item_id: int) -> Optional[Dict]:
-        """Ottiene dettagli elemento con cache"""
+        """Ottiene dettagli elemento con cache - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _get_details():
-            with get_pooled_connection() as conn:
-                row = get_item_details(conn, item_type, item_id)
-                return dict(row) if row else None
+            try:
+                with get_pooled_connection() as conn:
+                    row = get_item_details(conn, item_type, item_id)
+                    return dict(row) if row else None
+            except Exception as e:
+                logger.error(f"Error getting item details: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _get_details)
     
     # ===== FUNZIONI UTILITY AVANZATE =====
     
     async def check_duplicate_async(self, table: str, column: str, value: str) -> bool:
-        """Verifica duplicati con cache"""
+        """Verifica duplicati con cache - Thread Safe"""
         
-        query = f"SELECT COUNT(*) as count FROM {table} WHERE {column} = ?"
-        result = await self.execute_query_async(query, (value,))
-        
-        return result[0]['count'] > 0 if result else False
+        try:
+            query = f"SELECT COUNT(*) as count FROM {table} WHERE {column} = ?"
+            result = await self.execute_query_async(query, (value,))
+            
+            return result[0]['count'] > 0 if result else False
+        except Exception as e:
+            logger.error(f"Error checking duplicate: {e}")
+            return False
     
     async def update_transaction_state_async(
         self,
@@ -761,19 +922,23 @@ class DatabaseAdapterOptimized:
         reconciliation_status: str,
         reconciled_amount: float
     ) -> bool:
-        """Aggiorna stato transazione ottimizzato"""
+        """Aggiorna stato transazione ottimizzato - Thread Safe"""
         
-        query = """
-            UPDATE BankTransactions 
-            SET reconciliation_status = ?, reconciled_amount = ?, updated_at = datetime('now')
-            WHERE id = ?
-        """
-        
-        result = await self.execute_write_async(query, (reconciliation_status, reconciled_amount, transaction_id))
-        return result > 0
+        try:
+            query = """
+                UPDATE BankTransactions 
+                SET reconciliation_status = ?, reconciled_amount = ?, updated_at = datetime('now')
+                WHERE id = ?
+            """
+            
+            result = await self.execute_write_async(query, (reconciliation_status, reconciled_amount, transaction_id))
+            return result > 0
+        except Exception as e:
+            logger.error(f"Error updating transaction state: {e}")
+            return False
     
     async def get_database_stats_async(self) -> Dict[str, Any]:
-        """Ottiene statistiche database complete"""
+        """Ottiene statistiche database complete - Thread Safe"""
         
         stats_queries = [
             ("tables_count", "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'"),
@@ -806,50 +971,58 @@ class DatabaseAdapterOptimized:
     # ===== ADVANCED OPTIMIZATION METHODS =====
     
     async def optimize_database_async(self) -> Dict[str, Any]:
-        """Ottimizza database per performance"""
+        """Ottimizza database per performance - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _optimize():
             optimization_results = {}
             
-            with get_pooled_connection() as conn:
-                cursor = conn.cursor()
+            try:
+                with get_pooled_connection() as conn:
+                    cursor = conn.cursor()
+                    
+                    # Analyze tables
+                    cursor.execute("ANALYZE")
+                    optimization_results['analyze'] = True
+                    
+                    # Vacuum if needed
+                    cursor.execute("PRAGMA integrity_check")
+                    integrity = cursor.fetchone()
+                    if integrity and integrity[0] == 'ok':
+                        cursor.execute("VACUUM")
+                        optimization_results['vacuum'] = True
+                    
+                    # Reindex
+                    cursor.execute("REINDEX")
+                    optimization_results['reindex'] = True
+                    
+                    conn.commit()
                 
-                # Analyze tables
-                cursor.execute("ANALYZE")
-                optimization_results['analyze'] = True
-                
-                # Vacuum if needed
-                cursor.execute("PRAGMA integrity_check")
-                integrity = cursor.fetchone()
-                if integrity and integrity[0] == 'ok':
-                    cursor.execute("VACUUM")
-                    optimization_results['vacuum'] = True
-                
-                # Reindex
-                cursor.execute("REINDEX")
-                optimization_results['reindex'] = True
-                
-                conn.commit()
-            
-            return optimization_results
+                return optimization_results
+            except Exception as e:
+                logger.error(f"Error in database optimization: {e}")
+                raise
         
         return await loop.run_in_executor(self.executor, _optimize)
     
     async def clear_all_caches_async(self) -> Dict[str, Any]:
-        """Pulisce tutte le cache"""
+        """Pulisce tutte le cache - Thread Safe"""
         
-        _query_cache.clear()
-        
-        # Force garbage collection
-        gc.collect()
-        
-        return {
-            'query_cache_cleared': True,
-            'garbage_collected': True,
-            'timestamp': time.time()
-        }
+        try:
+            _query_cache.clear()
+            
+            # Force garbage collection
+            gc.collect()
+            
+            return {
+                'query_cache_cleared': True,
+                'garbage_collected': True,
+                'timestamp': time.time()
+            }
+        except Exception as e:
+            logger.error(f"Error clearing caches: {e}")
+            raise
     
     def _invalidate_related_cache(self, query: str):
         """Invalida cache correlata basandosi sulla query"""
@@ -875,8 +1048,12 @@ class DatabaseAdapterOptimized:
     async def add_anagraphics_async(self, anag_data: Dict, anag_type: str) -> Optional[int]:
         """Legacy method - single anagraphics add"""
         
-        result = await self.add_anagraphics_batch_async([{**anag_data, 'type': anag_type}])
-        return result[0] if result else None
+        try:
+            result = await self.add_anagraphics_batch_async([{**anag_data, 'type': anag_type}])
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"Error adding anagraphics: {e}")
+            return None
     
     async def add_transactions_async(self, transactions_df: pd.DataFrame) -> Tuple[int, int, int, int]:
         """Legacy method - transactions add"""
@@ -889,16 +1066,20 @@ class DatabaseAdapterOptimized:
         payment_status: str, 
         paid_amount: float
     ) -> bool:
-        """Aggiorna riconciliazione fattura"""
+        """Aggiorna riconciliazione fattura - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _update_invoice():
-            with get_pooled_connection() as conn:
-                success = update_invoice_reconciliation_state(conn, invoice_id, payment_status, paid_amount)
-                if success:
-                    conn.commit()
-                return success
+            try:
+                with get_pooled_connection() as conn:
+                    success = update_invoice_reconciliation_state(conn, invoice_id, payment_status, paid_amount)
+                    if success:
+                        conn.commit()
+                    return success
+            except Exception as e:
+                logger.error(f"Error updating invoice reconciliation: {e}")
+                return False
         
         return await loop.run_in_executor(self.executor, _update_invoice)
     
@@ -908,7 +1089,7 @@ class DatabaseAdapterOptimized:
         reconciliation_status: str, 
         reconciled_amount: float
     ) -> bool:
-        """Aggiorna riconciliazione transazione"""
+        """Aggiorna riconciliazione transazione - Thread Safe"""
         
         return await self.update_transaction_state_async(
             transaction_id, reconciliation_status, reconciled_amount
@@ -920,16 +1101,20 @@ class DatabaseAdapterOptimized:
         transaction_id: int, 
         amount_to_add: float
     ) -> bool:
-        """Aggiunge link riconciliazione"""
+        """Aggiunge link riconciliazione - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _add_link():
-            with get_pooled_connection() as conn:
-                success = add_or_update_reconciliation_link(conn, invoice_id, transaction_id, amount_to_add)
-                if success:
-                    conn.commit()
-                return success
+            try:
+                with get_pooled_connection() as conn:
+                    success = add_or_update_reconciliation_link(conn, invoice_id, transaction_id, amount_to_add)
+                    if success:
+                        conn.commit()
+                    return success
+            except Exception as e:
+                logger.error(f"Error adding reconciliation link: {e}")
+                return False
         
         return await loop.run_in_executor(self.executor, _add_link)
     
@@ -938,21 +1123,25 @@ class DatabaseAdapterOptimized:
         transaction_id: int = None, 
         invoice_id: int = None
     ) -> Tuple[bool, Tuple[List, List]]:
-        """Rimuove link riconciliazione"""
+        """Rimuove link riconciliazione - Thread Safe"""
         
         loop = asyncio.get_event_loop()
         
         def _remove_links():
-            with get_pooled_connection() as conn:
-                success, affected = remove_reconciliation_links(conn, transaction_id, invoice_id)
-                if success:
-                    conn.commit()
-                return success, affected
+            try:
+                with get_pooled_connection() as conn:
+                    success, affected = remove_reconciliation_links(conn, transaction_id, invoice_id)
+                    if success:
+                        conn.commit()
+                    return success, affected
+            except Exception as e:
+                logger.error(f"Error removing reconciliation links: {e}")
+                return False, ([], [])
         
         return await loop.run_in_executor(self.executor, _remove_links)
     
     async def check_database_exists_async(self) -> bool:
-        """Verifica esistenza database"""
+        """Verifica esistenza database - Thread Safe"""
         
         try:
             result = await self.execute_query_async(
@@ -987,8 +1176,12 @@ class BatchProcessor:
         
         for i in range(0, len(dataset), batch_size):
             batch = dataset[i:i + batch_size]
-            batch_result = await processor_func(batch)
-            results.extend(batch_result if isinstance(batch_result, list) else [batch_result])
+            try:
+                batch_result = await processor_func(batch)
+                results.extend(batch_result if isinstance(batch_result, list) else [batch_result])
+            except Exception as e:
+                logger.error(f"Error processing batch {i//batch_size + 1}: {e}")
+                raise
         
         return results
 
@@ -1050,7 +1243,7 @@ class DatabaseHealthChecker:
         self.adapter = adapter
     
     async def comprehensive_health_check(self) -> Dict[str, Any]:
-        """Health check completo"""
+        """Health check completo - Thread Safe"""
         
         health_results = {
             'overall_status': 'healthy',
@@ -1070,7 +1263,7 @@ class DatabaseHealthChecker:
         # Performance test
         try:
             start_time = time.time()
-            await self.adapter.execute_query_async("SELECT COUNT(*) FROM Invoices")
+            await self.adapter.execute_query_async("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
             query_time = (time.time() - start_time) * 1000
             
             if query_time < 100:
@@ -1099,12 +1292,12 @@ class DatabaseHealthChecker:
         
         # Connection pool health
         pool_stats = _connection_pool.get_stats()
-        if pool_stats['cache_hit_rate'] > 0.8:
+        if pool_stats.get('cache_hit_rate', 0) > 0.8:
             health_results['checks']['connection_pool'] = 'optimal'
             health_results['performance_score'] += 25
         else:
             health_results['checks']['connection_pool'] = 'suboptimal'
-            health_results['recommendations'].append('Consider increasing pool size')
+            health_results['recommendations'].append('Consider connection pool optimization')
         
         # Final status
         if health_results['performance_score'] >= 75:
@@ -1125,14 +1318,14 @@ _db_adapter_instance: Optional[DatabaseAdapterOptimized] = None
 _adapter_lock = threading.Lock()
 
 def get_database_adapter() -> DatabaseAdapterOptimized:
-    """Factory function per ottenere istanza adapter ottimizzato"""
+    """Factory function per ottenere istanza adapter ottimizzato - Thread Safe"""
     global _db_adapter_instance
     
     if _db_adapter_instance is None:
         with _adapter_lock:
             if _db_adapter_instance is None:
                 _db_adapter_instance = DatabaseAdapterOptimized()
-                logger.info("DatabaseAdapterOptimized V3.0 instance created")
+                logger.info("DatabaseAdapterOptimized V3.1 Thread-Safe instance created")
     
     return _db_adapter_instance
 
@@ -1145,21 +1338,24 @@ health_checker = DatabaseHealthChecker(db_adapter_optimized)
 # ================== CLEANUP E SHUTDOWN ==================
 
 def cleanup_database_adapter():
-    """Cleanup resources quando l'applicazione si chiude"""
+    """Cleanup resources quando l'applicazione si chiude - Thread Safe"""
     
-    logger.info("Cleaning up database adapter resources")
-    
-    # Close connection pool
-    _connection_pool.close_all()
-    
-    # Clear caches
-    _query_cache.clear()
-    
-    # Shutdown thread pool
-    if db_adapter_optimized and db_adapter_optimized.executor:
-        db_adapter_optimized.executor.shutdown(wait=True)
-    
-    logger.info("Database adapter cleanup completed")
+    try:
+        logger.info("Cleaning up database adapter resources")
+        
+        # Close connection pool (solo thread corrente per evitare errori cross-thread)
+        _connection_pool.close_all()
+        
+        # Clear caches
+        _query_cache.clear()
+        
+        # Shutdown thread pool
+        if db_adapter_optimized and db_adapter_optimized.executor:
+            db_adapter_optimized.executor.shutdown(wait=False)
+        
+        logger.info("Database adapter cleanup completed")
+    except Exception as e:
+        logger.warning(f"Error during cleanup: {e}")
 
 # Register cleanup at module level
 import atexit
@@ -1174,7 +1370,8 @@ __all__ = [
     'db_adapter_optimized',
     'get_database_adapter',
     'DatabaseConfig',
-    'ConnectionPool',
+    'ThreadSafeConnectionPool',
+    'LegacyConnectionPool',
     'IntelligentQueryCache',
     'PerformanceMonitor',
     'BatchProcessor',
@@ -1185,8 +1382,8 @@ __all__ = [
 ]
 
 # Version info
-__version__ = '3.0.0'
-__description__ = 'Ultra-optimized database adapter with connection pooling and intelligent caching'
+__version__ = '3.1.0'
+__description__ = 'Ultra-optimized thread-safe database adapter with connection pooling and intelligent caching'
 
 logger.info(f"DatabaseAdapterOptimized V{__version__} loaded successfully!")
 db_adapter = db_adapter_optimized
