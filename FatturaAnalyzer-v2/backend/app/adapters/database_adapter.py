@@ -46,6 +46,14 @@ class DatabaseConfig:
     ENABLE_QUERY_CACHE = os.getenv('DB_ENABLE_CACHE', 'true').lower() == 'true'
     ENABLE_PERFORMANCE_MONITORING = os.getenv('DB_ENABLE_MONITORING', 'true').lower() == 'true'
 
+# ================== CLASSI UTILITY ==================
+
+class CacheableList(list):
+    """Lista che può tenere traccia se proviene dalla cache"""
+    def __init__(self, data):
+        super().__init__(data)
+        self._from_cache = False
+
 # ================== CONNECTION POOL AVANZATO ==================
 
 class ConnectionPool:
@@ -430,10 +438,10 @@ class DatabaseAdapterOptimized:
         # Check cache first
         cached_result = _query_cache.get(query, params or ())
         if cached_result is not None:
-        # Crea un'istanza della nostra lista speciale per poter aggiungere il flag
+            # Crea un'istanza della nostra lista speciale per poter aggiungere il flag
             result_from_cache = CacheableList(cached_result)
-        result_from_cache._from_cache = True
-        return result_from_cache
+            result_from_cache._from_cache = True
+            return result_from_cache
         
         loop = asyncio.get_event_loop()
         
@@ -1148,7 +1156,8 @@ def cleanup_database_adapter():
     _query_cache.clear()
     
     # Shutdown thread pool
-    db_adapter_optimized.executor.shutdown(wait=True)
+    if db_adapter_optimized and db_adapter_optimized.executor:
+        db_adapter_optimized.executor.shutdown(wait=True)
     
     logger.info("Database adapter cleanup completed")
 
@@ -1181,4 +1190,3 @@ __description__ = 'Ultra-optimized database adapter with connection pooling and 
 
 logger.info(f"DatabaseAdapterOptimized V{__version__} loaded successfully!")
 db_adapter = db_adapter_optimized
-
