@@ -430,8 +430,10 @@ class DatabaseAdapterOptimized:
         # Check cache first
         cached_result = _query_cache.get(query, params or ())
         if cached_result is not None:
-            cached_result._from_cache = True
-            return cached_result
+        # Crea un'istanza della nostra lista speciale per poter aggiungere il flag
+        result_from_cache = CacheableList(cached_result)
+        result_from_cache._from_cache = True
+        return result_from_cache
         
         loop = asyncio.get_event_loop()
         
