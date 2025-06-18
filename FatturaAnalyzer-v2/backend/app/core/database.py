@@ -565,21 +565,21 @@ def get_anagraphics(type_filter=None):
     try:
         conn = get_connection()
         query = """SELECT id, type, denomination, piva, cf, city, province, score,
-                          email, phone, pec, iban, address, cap, codice_destinatario
+                          email, phone, pec, iban, address, cap, codice_destinatario,
+                          created_at, updated_at
                    FROM Anagraphics"""
         params = []
         if type_filter and type_filter in ['Cliente', 'Fornitore']:
             query += " WHERE type = ?"
             params.append(type_filter)
         query += " ORDER BY denomination COLLATE NOCASE"
-        df = pd.read_sql_query(query, conn, params=params if params else None)
+        df = pd.read_sql_query(query, conn, params=params if params else None, parse_dates=['created_at', 'updated_at'])
         return df if df is not None else pd.DataFrame()
     except Exception as e:
         logger.error(f"Errore recupero anagrafiche (filtro: {type_filter}): {e}", exc_info=True)
         return pd.DataFrame()
     finally:
         if conn: conn.close()
-
 def get_invoices(type_filter=None, status_filter=None, anagraphics_id_filter=None, limit=None):
     conn = None
     cols_out_expected = [
