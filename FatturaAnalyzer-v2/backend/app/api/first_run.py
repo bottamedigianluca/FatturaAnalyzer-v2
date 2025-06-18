@@ -1,5 +1,5 @@
 """
-First Run API endpoints - Sistema di rilevamento primo avvio COMPLETO
+First Run API endpoints - Sistema di rilevamento primo avvio COMPLETO - VERSIONE CORRETTA E COMPLETA
 """
 
 import logging
@@ -23,13 +23,142 @@ router = APIRouter()
 
 
 class FirstRunManager:
-    """Gestisce il rilevamento e setup del primo avvio"""
+    """Gestisce il rilevamento e setup del primo avvio - VERSIONE CORRETTA E COMPLETA"""
     
     WIZARD_STATE_FILE = "wizard_state.json"
     
     @staticmethod
-    def is_first_run() -> bool:
-        """Determina se è il primo avvio del sistema"""
+    async def check_database_setup_status() -> Dict[str, Any]:
+        """Controlla lo stato setup nel database - NUOVO METODO CORRETTO"""
+        try:
+            from app.adapters.database_adapter import db_adapter
+            
+            # Controlla se esistono tabelle
+            tables_result = await db_adapter.execute_query_async("""
+                SELECT COUNT(*) as count FROM sqlite_master 
+                WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            """)
+            
+            has_tables = tables_result and tables_result[0]['count'] > 0
+            
+            if not has_tables:
+                return {
+                    "database_exists": False,
+                    "has_tables": False,
+                    "setup_completed": False,
+                    "wizard_completed": False
+                }
+            
+            # Controlla se esiste tabella Settings
+            settings_table_result = await db_adapter.execute_query_async("""
+                SELECT COUNT(*) as count FROM sqlite_master 
+                WHERE type='table' AND name='Settings'
+            """)
+            
+            has_settings_table = settings_table_result and settings_table_result[0]['count'] > 0
+            
+            if not has_settings_table:
+                # Crea tabella Settings se non esiste
+                await db_adapter.execute_write_async("""
+                    CREATE TABLE IF NOT EXISTS Settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                logger.info("Created Settings table")
+            
+            # Controlla impostazioni setup
+            setup_settings = await db_adapter.execute_query_async("""
+                SELECT key, value FROM Settings 
+                WHERE key IN ('setup_completed', 'wizard_completed', 'database_initialized', 'first_run_completed')
+            """)
+            
+            settings_dict = {row['key']: row['value'] for row in setup_settings} if setup_settings else {}
+            
+            setup_completed = settings_dict.get('setup_completed', 'false').lower() == 'true'
+            wizard_completed = settings_dict.get('wizard_completed', 'false').lower() == 'true'
+            database_initialized = settings_dict.get('database_initialized', 'false').lower() == 'true'
+            first_run_completed = settings_dict.get('first_run_completed', 'false').lower() == 'true'
+            
+            return {
+                "database_exists": True,
+                "has_tables": has_tables,
+                "has_settings_table": has_settings_table,
+                "setup_completed": setup_completed,
+                "wizard_completed": wizard_completed,
+                "database_initialized": database_initialized,
+                "first_run_completed": first_run_completed,
+                "settings_found": settings_dict
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking database setup status: {e}")
+            return {
+                "database_exists": False,
+                "has_tables": False,
+                "setup_completed": False,
+                "wizard_completed": False,
+                "error": str(e)
+            }
+    
+    @staticmethod
+    async def is_first_run() -> bool:
+        """Determina se è il primo avvio del sistema - VERSIONE CORRETTA"""
+        
+        # 1. Prima controlla il database (priorità alta) - NUOVO
+        db_status = await FirstRunManager.check_database_setup_status()
+        
+        # Se il database dice che il setup è completato, non è primo avvio
+        if db_status.get("setup_completed") and db_status.get("wizard_completed"):
+            logger.info("✅ Database indicates setup is completed - not first run")
+            return False
+        
+        # 2. Controlla se esiste config.ini con dati validi (logica originale)
+        config_path = "config.ini"
+        if not Path(config_path).exists():
+            logger.info("❌ config.ini not found - first run required")
+            return True
+        
+        try:
+            config = configparser.ConfigParser()
+            config.read(config_path, encoding='utf-8')
+            
+            # Verifica sezioni essenziali
+            if not config.has_section('Azienda'):
+                logger.info("❌ Azienda section missing in config.ini - first run required")
+                return True
+            
+            # Verifica dati azienda essenziali
+            ragione_sociale = config.get('Azienda', 'RagioneSociale', fallback='').strip()
+            partita_iva = config.get('Azienda', 'PartitaIVA', fallback='').strip()
+            
+            if not ragione_sociale or ragione_sociale == 'La Tua Azienda SRL':
+                logger.info("❌ Company name not configured - first run required")
+                return True
+            
+            if not partita_iva or len(partita_iva) < 11:
+                logger.info("❌ VAT number not configured - first run required")
+                return True
+            
+            # 3. Verifica se database esiste e ha dati (controllo finale)
+            db_path = settings.get_database_path()
+            if not Path(db_path).exists():
+                logger.info("❌ Database file not found - first run required")
+                return True
+            
+            # Se tutto sembra configurato E il database non dice diversamente, non è primo avvio
+            logger.info("✅ All checks passed - not first run")
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking first run status: {e}")
+            return True
+    
+    @staticmethod
+    def is_first_run_sync() -> bool:
+        """Versione sincrona per compatibilità - MANTIENE LOGICA ORIGINALE"""
         
         # Controlla se esiste config.ini con dati validi
         config_path = "config.ini"
@@ -67,24 +196,32 @@ class FirstRunManager:
             return True
     
     @staticmethod
-    def get_system_status() -> Dict[str, Any]:
-        """Ottiene stato completo del sistema"""
+    async def get_system_status() -> Dict[str, Any]:
+        """Ottiene stato completo del sistema - VERSIONE MIGLIORATA"""
         
         config_path = "config.ini"
         db_path = settings.get_database_path()
         
+        # Controlla stato database - NUOVO
+        db_status = await FirstRunManager.check_database_setup_status()
+        
+        # Stato base
+        is_first_run = await FirstRunManager.is_first_run()
+        
         status = {
-            "is_first_run": FirstRunManager.is_first_run(),
+            "is_first_run": is_first_run,
             "config_exists": Path(config_path).exists(),
             "database_exists": Path(db_path).exists(),
             "company_configured": False,
-            "database_initialized": False,
-            "setup_completed": False,
+            "database_initialized": db_status.get("database_initialized", False),
+            "setup_completed": db_status.get("setup_completed", False),
+            "wizard_completed": db_status.get("wizard_completed", False),
             "config_version": "unknown",
-            "last_check": datetime.now().isoformat()
+            "last_check": datetime.now().isoformat(),
+            "database_status": db_status  # NUOVO
         }
         
-        # Analizza configurazione se esiste
+        # Analizza configurazione se esiste (logica originale)
         if status["config_exists"]:
             try:
                 config = configparser.ConfigParser()
@@ -108,24 +245,68 @@ class FirstRunManager:
             except Exception as e:
                 logger.error(f"Error analyzing config: {e}")
         
-        # Controlla database
+        # Controlla database fisico (logica originale)
         if status["database_exists"]:
             try:
                 # Verifica se database ha tabelle (controllo semplificato)
                 db_size = Path(db_path).stat().st_size
-                status["database_initialized"] = db_size > 1024  # Almeno 1KB
+                status["database_file_initialized"] = db_size > 1024  # Almeno 1KB
             except Exception as e:
-                logger.error(f"Error checking database: {e}")
+                logger.error(f"Error checking database file: {e}")
+                status["database_file_initialized"] = False
+        else:
+            status["database_file_initialized"] = False
         
-        # Determina se setup è completato
+        # Determina se setup è completato (logica corretta)
         status["setup_completed"] = (
+            not status["is_first_run"] and
             status["config_exists"] and 
             status["company_configured"] and 
             status["database_initialized"] and
-            not status["is_first_run"]
+            status["wizard_completed"]
         )
         
         return status
+    
+    @staticmethod
+    async def mark_setup_completed() -> bool:
+        """Marca il setup come completato nel database - NUOVO METODO"""
+        try:
+            from app.adapters.database_adapter import db_adapter
+            
+            # Assicurati che la tabella Settings esista
+            await db_adapter.execute_write_async("""
+                CREATE TABLE IF NOT EXISTS Settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Marca tutte le impostazioni come completate
+            settings_to_set = [
+                ('setup_completed', 'true'),
+                ('wizard_completed', 'true'),
+                ('database_initialized', 'true'),
+                ('first_run_completed', 'true'),
+                ('company_configured', 'true'),
+                ('setup_timestamp', datetime.now().isoformat())
+            ]
+            
+            for key, value in settings_to_set:
+                await db_adapter.execute_write_async("""
+                    INSERT OR REPLACE INTO Settings (key, value, updated_at) 
+                    VALUES (?, ?, datetime('now'))
+                """, (key, value))
+                logger.info(f"✅ Set {key} = {value}")
+            
+            logger.info("✅ Setup marked as completed in database")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error marking setup as completed: {e}")
+            return False
     
     @staticmethod
     async def save_wizard_state(state: Dict[str, Any]) -> bool:
@@ -161,7 +342,7 @@ class FirstRunManager:
 async def check_first_run():
     """Controlla se è il primo avvio del sistema"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         
         if status["is_first_run"]:
             return APIResponse(
@@ -200,7 +381,7 @@ async def check_first_run():
 async def start_setup_wizard():
     """Avvia il wizard di setup guidato"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         
         if not status["is_first_run"]:
             return APIResponse(
@@ -299,7 +480,7 @@ async def setup_database_step():
         logger.info("🗄️ Starting database setup...")
         
         # Verifica stato sistema
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         
         if status["database_initialized"]:
             return APIResponse(
@@ -323,6 +504,21 @@ async def setup_database_step():
         
         logger.info("🔧 Creating database tables...")
         await db_adapter.create_tables_async()
+        
+        # Assicurati che la tabella Settings esista e marca database come inizializzato
+        await db_adapter.execute_write_async("""
+            CREATE TABLE IF NOT EXISTS Settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        await db_adapter.execute_write_async("""
+            INSERT OR REPLACE INTO Settings (key, value, updated_at) 
+            VALUES ('database_initialized', 'true', datetime('now'))
+        """)
         
         # Test connessione database
         logger.info("🧪 Testing database connection...")
@@ -349,7 +545,7 @@ async def setup_database_step():
         try:
             from app.main import app
             if hasattr(app, 'state'):
-                updated_status = FirstRunManager.get_system_status()
+                updated_status = await FirstRunManager.get_system_status()
                 if updated_status["setup_completed"]:
                     app.state.first_run_required = False
                     logger.info("🎯 Updated app state: first_run_required = False")
@@ -399,7 +595,7 @@ async def complete_setup_wizard():
         logger.info("🏁 Completing setup wizard...")
         
         # Verifica stato finale
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         
         if not status["database_initialized"]:
             raise HTTPException(
@@ -409,6 +605,11 @@ async def complete_setup_wizard():
         
         if not status["company_configured"]:
             logger.warning("⚠️ Company data not fully configured, but proceeding...")
+        
+        # Marca setup come completato nel database - NUOVO
+        success = await FirstRunManager.mark_setup_completed()
+        if not success:
+            raise HTTPException(status_code=500, detail="Errore marcatura setup completato")
         
         # Aggiorna configurazione per marcare setup completato
         config_path = "config.ini"
@@ -452,7 +653,7 @@ async def complete_setup_wizard():
             logger.warning(f"Could not update app state: {e}")
         
         # Verifica stato finale
-        final_status = FirstRunManager.get_system_status()
+        final_status = await FirstRunManager.get_system_status()
         
         return APIResponse(
             success=True,
@@ -503,7 +704,7 @@ async def complete_setup_wizard():
 async def get_wizard_status():
     """Ottiene stato attuale del wizard"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         wizard_state = FirstRunManager.load_wizard_state()
         
         return APIResponse(
@@ -534,7 +735,7 @@ async def get_wizard_status():
 async def skip_wizard():
     """Salta il wizard (crea configurazione minima)"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         
         if not status["is_first_run"]:
             return APIResponse(
@@ -626,7 +827,7 @@ async def skip_wizard():
 async def get_system_info():
     """Ottiene informazioni dettagliate del sistema"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         wizard_state = FirstRunManager.load_wizard_state()
         
         # Informazioni aggiuntive
@@ -726,6 +927,25 @@ async def force_reset_first_run():
             wizard_state_path.rename(wizard_backup_path)
             logger.info(f"Wizard state backed up to {wizard_backup_path}")
         
+        # Reset database settings - NUOVO
+        try:
+            from app.adapters.database_adapter import db_adapter
+            
+            # Rimuovi tutte le impostazioni di setup dal database
+            reset_keys = [
+                'setup_completed', 'wizard_completed', 'database_initialized', 
+                'first_run_completed', 'company_configured', 'setup_timestamp'
+            ]
+            
+            for key in reset_keys:
+                await db_adapter.execute_write_async("""
+                    DELETE FROM Settings WHERE key = ?
+                """, (key,))
+                logger.info(f"Removed database setting: {key}")
+            
+        except Exception as e:
+            logger.warning(f"Could not reset database settings: {e}")
+        
         # Reset app state
         try:
             from app.main import app
@@ -738,7 +958,7 @@ async def force_reset_first_run():
             logger.warning(f"Could not reset app state: {e}")
         
         # Verifica stato dopo reset
-        status_after_reset = FirstRunManager.get_system_status()
+        status_after_reset = await FirstRunManager.get_system_status()
         
         return APIResponse(
             success=True,
@@ -747,6 +967,7 @@ async def force_reset_first_run():
                 "reset_completed": True,
                 "config_backup_created": backup_created,
                 "wizard_state_reset": True,
+                "database_settings_reset": True,
                 "app_state_reset": True,
                 "status_after_reset": status_after_reset,
                 "note": "Questo endpoint è disponibile solo in modalità sviluppo",
@@ -769,7 +990,7 @@ async def force_reset_first_run():
 async def first_run_health_check():
     """Health check specifico per il sistema first run"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         wizard_state = FirstRunManager.load_wizard_state()
         
         health_status = "healthy" if status["setup_completed"] else "needs_setup"
@@ -834,6 +1055,16 @@ async def test_database_connection():
         tables_result = await db_adapter.execute_query_async(tables_query)
         table_names = [row['name'] for row in tables_result] if tables_result else []
         
+        # Test Settings table
+        settings_test = None
+        try:
+            settings_result = await db_adapter.execute_query_async("SELECT key, value FROM Settings LIMIT 5")
+            settings_test = "accessible"
+            settings_count = len(settings_result) if settings_result else 0
+        except Exception as e:
+            settings_test = f"error: {str(e)}"
+            settings_count = 0
+        
         # Informazioni database
         db_path = settings.get_database_path()
         db_exists = Path(db_path).exists()
@@ -851,6 +1082,8 @@ async def test_database_connection():
                 "tables_found": len(table_names),
                 "table_names": table_names,
                 "database_initialized": len(table_names) > 0,
+                "settings_table": settings_test,
+                "settings_count": settings_count,
                 "test_timestamp": datetime.now().isoformat()
             }
         )
@@ -882,7 +1115,7 @@ async def generate_sample_data():
         logger.info("📊 Generating sample data...")
         
         # Verifica che database sia inizializzato
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         if not status["database_initialized"]:
             raise HTTPException(
                 status_code=400,
@@ -963,7 +1196,7 @@ async def generate_sample_data():
 async def get_wizard_steps():
     """Ottiene lista dettagliata degli step del wizard"""
     try:
-        status = FirstRunManager.get_system_status()
+        status = await FirstRunManager.get_system_status()
         wizard_state = FirstRunManager.load_wizard_state()
         
         steps = [
