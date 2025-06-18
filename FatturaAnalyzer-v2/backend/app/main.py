@@ -1,4 +1,4 @@
-# app/main.py - Aggiornato con First Run Wizard
+# app/main.py - Aggiornato con First Run Wizard e nuovi endpoint
 #!/usr/bin/env python3
 """
 FatturaAnalyzer v2 - FastAPI Backend
@@ -36,7 +36,9 @@ from app.api import (
     import_export,
     sync,
     setup,
-    first_run
+    first_run,
+    health,
+    system
 )
 
 # Configure logging
@@ -65,9 +67,9 @@ async def lifespan(app: FastAPI):
     os.makedirs('temp', exist_ok=True)
     os.makedirs('backups', exist_ok=True)
     
-    # Check for first run
+    # Check for first run using UPDATED logic
     from app.api.first_run import FirstRunManager
-    is_first_run = FirstRunManager.is_first_run()
+    is_first_run = await FirstRunManager.is_first_run()  # Now uses async method!
     
     if is_first_run:
         logger.info("🎯 First run detected - setup wizard will be available")
@@ -89,7 +91,7 @@ async def lifespan(app: FastAPI):
                 result = config_manager.perform_auto_update()
                 if result["success"]:
                     logger.info(f"✅ Configuration auto-updated: {result['message']}")
-                    is_first_run = False  # Configuration was auto-updated
+                    is_first_run = await FirstRunManager.is_first_run()  # Re-check after auto-update
                 else:
                     logger.warning(f"⚠️ Auto-update failed: {result['message']}")
             except Exception as e:
@@ -159,16 +161,18 @@ add_cors_middleware(app)
 add_security_middleware(app)
 
 
-# First Run Detection Middleware
+# First Run Detection Middleware - UPDATED VERSION
 @app.middleware("http")
 async def first_run_detection_middleware(request: Request, call_next):
-    """Middleware per rilevare primo avvio e redirigere al setup se necessario"""
+    """Middleware per rilevare primo avvio e redirigere al setup se necessario - VERSIONE AGGIORNATA"""
     
     # Skip middleware per endpoint specifici
     skip_paths = [
         "/health",
+        "/api/health",
         "/api/first-run",
         "/api/setup", 
+        "/api/system",
         "/api/docs",
         "/api/redoc",
         "/openapi.json",
@@ -181,31 +185,40 @@ async def first_run_detection_middleware(request: Request, call_next):
     if any(path.startswith(skip_path) for skip_path in skip_paths):
         return await call_next(request)
     
-    # Se è primo avvio e l'utente non sta già facendo setup, suggerisci setup
-    if getattr(app.state, 'first_run_required', False):
-        # Per richieste API, restituisci JSON con info setup
-        if path.startswith("/api/"):
-            return JSONResponse(
-                status_code=200,  # Non è un errore, è informativo
-                content={
-                    "first_run_detected": True,
-                    "message": "Sistema non configurato - setup richiesto",
-                    "setup_wizard_url": "/api/first-run/check",
-                    "recommendation": "Avvia il setup wizard per configurare il sistema"
-                }
-            )
-        else:
-            # Per richieste non-API, continua normalmente
-            return await call_next(request)
+    # Controlla first run usando la logica aggiornata
+    try:
+        from app.api.first_run import FirstRunManager
+        is_first_run_needed = await FirstRunManager.is_first_run()
+        
+        # Se è primo avvio e l'utente non sta già facendo setup, suggerisci setup
+        if is_first_run_needed:
+            # Per richieste API, restituisci JSON con info setup
+            if path.startswith("/api/"):
+                return JSONResponse(
+                    status_code=200,  # Non è un errore, è informativo
+                    content={
+                        "first_run_detected": True,
+                        "message": "Sistema non configurato - setup richiesto",
+                        "setup_wizard_url": "/api/first-run/check",
+                        "recommendation": "Avvia il setup wizard per configurare il sistema"
+                    }
+                )
+            else:
+                # Per richieste non-API, continua normalmente
+                return await call_next(request)
+    except Exception as e:
+        logger.warning(f"Error in first run middleware: {e}")
+        # In caso di errore nel middleware, continua normalmente
+        pass
     
     # Normale processing
     return await call_next(request)
 
 
-# Health check endpoint (sempre disponibile)
+# Health check endpoint (sempre disponibile) - VERSIONE AGGIORNATA
 @app.get("/health")
 async def health_check():
-    """Health check endpoint con info setup"""
+    """Health check endpoint con info setup - VERSIONE AGGIORNATA"""
     from app.adapters.database_adapter import db_adapter
     try:
         # Test database se non è primo avvio
@@ -216,6 +229,13 @@ async def health_check():
                 database_status = "connected" if test_result else "error"
             except:
                 database_status = "error"
+        else:
+            # Anche durante primo avvio, prova a testare il database
+            try:
+                test_result = await db_adapter.execute_query_async("SELECT 1 as test")
+                database_status = "initialized" if test_result else "not_initialized"
+            except:
+                database_status = "not_initialized"
         
         # Test core availability
         core_status = "available"
@@ -226,15 +246,26 @@ async def health_check():
         except Exception as e:
             core_status = f"error: {str(e)}"
         
+        # Usa la logica aggiornata per first run
+        try:
+            from app.api.first_run import FirstRunManager
+            is_first_run = await FirstRunManager.is_first_run()
+            system_status = await FirstRunManager.get_system_status()
+            company_configured = system_status.get("company_configured", False)
+        except Exception as e:
+            logger.warning(f"Error getting system status: {e}")
+            is_first_run = getattr(app.state, 'first_run_required', True)
+            company_configured = getattr(app.state, 'company_configured', False)
+        
         return {
             "status": "healthy",
             "version": "2.0.0",
             "database": database_status,
             "core_integration": core_status,
-            "first_run_required": getattr(app.state, 'first_run_required', True),
+            "first_run_required": is_first_run,
             "setup_wizard_enabled": getattr(app.state, 'setup_wizard_enabled', True),
-            "company_configured": getattr(app.state, 'company_configured', False),
-            "timestamp": "2025-06-05T12:00:00Z"
+            "company_configured": company_configured,
+            "timestamp": "2025-06-18T12:00:00Z"
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -245,6 +276,10 @@ async def health_check():
 # First Run e Setup sempre disponibili
 app.include_router(first_run.router, prefix="/api/first-run", tags=["First Run Wizard"])
 app.include_router(setup.router, prefix="/api/setup", tags=["Setup & Configuration"])
+
+# Nuovi endpoint di sistema
+app.include_router(health.router, prefix="/api/health", tags=["Health Check"])
+app.include_router(system.router, prefix="/api/system", tags=["System Management"])
 
 # API Routes principali (disponibili dopo setup o durante primo avvio per testing)
 app.include_router(anagraphics.router, prefix="/api/anagraphics", tags=["Anagraphics"])
@@ -264,20 +299,28 @@ if os.path.exists("static"):
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     logger.error(f"Global exception: {exc}", exc_info=True)
+    
+    # Controlla first run per la risposta
+    try:
+        from app.api.first_run import FirstRunManager
+        is_first_run = await FirstRunManager.is_first_run()
+    except:
+        is_first_run = getattr(app.state, 'first_run_required', False)
+    
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
             "message": "An unexpected error occurred" if not settings.DEBUG else str(exc),
-            "first_run_required": getattr(app.state, 'first_run_required', False)
+            "first_run_required": is_first_run
         }
     )
 
 
-# Root endpoint con first run detection
+# Root endpoint con first run detection - AGGIORNATO
 @app.get("/")
 async def root():
-    """Root endpoint con supporto first run"""
+    """Root endpoint con supporto first run - VERSIONE AGGIORNATA"""
     
     base_response = {
         "message": "FatturaAnalyzer API v2.0 - Sistema Gestione Fatture Italiane",
@@ -286,8 +329,19 @@ async def root():
         "core_integration": "active"
     }
     
+    # Usa la logica aggiornata per controllare first run
+    try:
+        from app.api.first_run import FirstRunManager
+        is_first_run = await FirstRunManager.is_first_run()
+        system_status = await FirstRunManager.get_system_status()
+        company_configured = system_status.get("company_configured", False)
+    except Exception as e:
+        logger.warning(f"Error getting first run status in root endpoint: {e}")
+        is_first_run = getattr(app.state, 'first_run_required', False)
+        company_configured = getattr(app.state, 'company_configured', False)
+    
     # Se è primo avvio, aggiungi informazioni setup
-    if getattr(app.state, 'first_run_required', False):
+    if is_first_run:
         base_response.update({
             "first_run_detected": True,
             "setup_required": True,
@@ -304,7 +358,7 @@ async def root():
             "setup_completed": True,
             "docs": "/api/docs" if settings.DEBUG else "disabled",
             "health": "/health",
-            "company_configured": getattr(app.state, 'company_configured', False),
+            "company_configured": company_configured,
             "features": [
                 "Invoice Management",
                 "Bank Transaction Processing", 
@@ -318,22 +372,27 @@ async def root():
     return base_response
 
 
-# Endpoint per il controllo configurazione
+# Endpoint per il controllo configurazione - AGGIORNATO
 @app.get("/api/config/status")
 async def get_config_status():
-    """Ottiene stato configurazione sistema"""
+    """Ottiene stato configurazione sistema - VERSIONE AGGIORNATA"""
     try:
+        from app.api.first_run import FirstRunManager
+        
+        system_status = await FirstRunManager.get_system_status()
         config_manager = ConfigManager()
         auto_update_info = config_manager.auto_update_check()
         
         return {
-            "first_run_required": getattr(app.state, 'first_run_required', False),
-            "company_configured": getattr(app.state, 'company_configured', False),
+            "first_run_required": system_status["is_first_run"],
+            "company_configured": system_status["company_configured"],
+            "setup_completed": system_status["setup_completed"],
+            "wizard_completed": system_status["wizard_completed"],
+            "database_initialized": system_status["database_initialized"],
             "config_version": auto_update_info.get("current_version", "unknown"),
             "config_valid": auto_update_info.get("config_valid", False),
             "needs_update": auto_update_info.get("needs_update", False),
-            "auto_update_available": auto_update_info.get("auto_update_available", False),
-            "database_initialized": not getattr(app.state, 'first_run_required', True)
+            "auto_update_available": auto_update_info.get("auto_update_available", False)
         }
     except Exception as e:
         logger.error(f"Error getting config status: {e}")
@@ -343,16 +402,16 @@ async def get_config_status():
         }
 
 
-# Endpoint per forzare ricontrollo primo avvio (utile per sviluppo)
+# Endpoint per forzare ricontrollo primo avvio (utile per sviluppo) - AGGIORNATO
 @app.post("/api/system/recheck-first-run")
 async def recheck_first_run():
-    """Ricontrolla se è primo avvio (solo per sviluppo)"""
+    """Ricontrolla se è primo avvio (solo per sviluppo) - VERSIONE AGGIORNATA"""
     if not settings.DEBUG:
         raise HTTPException(status_code=404, detail="Endpoint disponibile solo in modalità debug")
     
     try:
         from app.api.first_run import FirstRunManager
-        is_first_run = FirstRunManager.is_first_run()
+        is_first_run = await FirstRunManager.is_first_run()
         
         # Aggiorna stato app
         app.state.first_run_required = is_first_run
@@ -361,7 +420,7 @@ async def recheck_first_run():
         return {
             "first_run_required": is_first_run,
             "state_updated": True,
-            "message": "First run status rechecked and updated"
+            "message": "First run status rechecked and updated using new logic"
         }
     except Exception as e:
         logger.error(f"Error rechecking first run: {e}")
@@ -370,10 +429,12 @@ async def recheck_first_run():
 
 def main():
     """Main function for running the server"""
-    # Pre-flight check per primo avvio
+    # Pre-flight check per primo avvio con logica aggiornata
     try:
-        from app.api.first_run import FirstRunManager
-        if FirstRunManager.is_first_run():
+        # Non possiamo usare la versione async qui, quindi useremo un controllo semplificato
+        print("🎯 Checking system status...")
+        config_path = Path("config.ini")
+        if not config_path.exists():
             print("🎯 PRIMO AVVIO RILEVATO!")
             print("📋 Il sistema non è ancora configurato.")
             print("🌐 Dopo l'avvio, visita: http://127.0.0.1:8000/api/first-run/check")
