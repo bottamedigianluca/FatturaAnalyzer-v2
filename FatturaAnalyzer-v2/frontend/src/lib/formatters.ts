@@ -473,15 +473,16 @@ export const highlightSearchTerm = (
     return text;
   }
 
-  const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  // Escape dei caratteri speciali per la regex
+  const escapedSearchTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedSearchTerm})`, 'gi');
   const parts = text.split(regex);
 
   return parts.map((part, index) =>
     regex.test(part) ? (
-      React.createElement('mark', {
-        key: index,
-        className: "bg-yellow-200 dark:bg-yellow-800 px-1 rounded"
-      }, part)
+      <mark key={index} className="bg-yellow-200 dark:bg-yellow-800 px-1 rounded">
+        {part}
+      </mark>
     ) : (
       part
     )
