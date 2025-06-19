@@ -2,7 +2,7 @@
  * Utility functions for formatting data
  * Funzioni per formattare valute, date, numeri per l'UI italiana
  */
-
+import React from 'react';
 import { format, formatDistanceToNow, parseISO, isValid } from 'date-fns';
 import { it } from 'date-fns/locale';
 
