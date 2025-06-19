@@ -235,7 +235,7 @@ export function deepMerge<T extends Record<string, any>>(
     for (const key in source) {
       if (isPlainObject(source[key])) {
         if (!target[key]) Object.assign(target, { [key]: {} })
-        deepMerge(target[key], source[key])
+        deepMerge(target[key] as any, source[key] as any)
       } else {
         Object.assign(target, { [key]: source[key] })
       }
@@ -281,7 +281,7 @@ export function set(obj: any, path: string, value: any): void {
 /**
  * Crea una funzione di pick per selezionare proprietà da un oggetto
  */
-export function pick<T, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
+export function pick<T extends object, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   const result = {} as Pick<T, K>
   for (const key of keys) {
     if (key in obj) {
