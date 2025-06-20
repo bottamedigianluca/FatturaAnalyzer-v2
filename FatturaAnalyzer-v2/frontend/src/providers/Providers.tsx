@@ -151,8 +151,13 @@ export default ProvidersWrapper;
 // ===== ADDITIONAL EXPORTS =====
 export { useAuth } from './AuthProvider';
 export { useTheme } from './ThemeProvider';
-export { useSystemHealthContext, useSystemHealth } from './SystemHealthProvider';
+export { useSystemHealthContext } from './SystemHealthProvider';
 export { useNetworkStatus, useQueryPerformanceMonitor } from './PerformanceMonitor';
+
+// Import hooks for internal usage
+import { useSystemHealthContext } from './SystemHealthProvider';
+import { useAuth } from './AuthProvider';
+import { useTheme } from './ThemeProvider';
 
 // ===== PROVIDER UTILITIES =====
 export const withProviders = <P extends object>(
@@ -170,13 +175,13 @@ export const withProviders = <P extends object>(
 
 // ===== PROVIDER HEALTH CHECK HOOK =====
 export const useProvidersHealth = () => {
-  const { isSystemHealthy, status } = useSystemHealthContext();
+  const { isSystemHealthy } = useSystemHealthContext();
   const { isAuthenticated } = useAuth();
   const { theme } = useTheme();
   
   return {
     allHealthy: isSystemHealthy && isAuthenticated,
-    systemHealth: status,
+    systemHealth: isSystemHealthy,
     authStatus: isAuthenticated ? 'authenticated' : 'unauthenticated',
     themeStatus: theme,
     providersReady: true,
