@@ -8,7 +8,6 @@ import {
   useSensors,
   PointerSensor,
   KeyboardSensor,
-  DragOverEvent,
   closestCenter,
   CollisionDetection,
   pointerWithin,
@@ -33,7 +32,6 @@ import {
   ArrowRight,
   DollarSign,
   Calendar,
-  Users,
   Activity,
   AlertTriangle,
   Sparkles,
@@ -41,13 +39,9 @@ import {
   Search,
   RefreshCw,
   Settings,
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
   Plus,
   Minus,
   Equal,
-  Hash,
   Clock,
 } from 'lucide-react';
 
@@ -58,28 +52,29 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Button,
-  Badge,
-  Input,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Progress,
+} from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  Separator,
-  Switch,
-} from '@/components/ui';
+} from '@/components/ui/tooltip';
 
 // Hooks
-import { useInvoices } from '@/hooks/useInvoices';
-import { useTransactions } from '@/hooks/useTransactions';
-import { usePerformReconciliation } from '@/hooks/useReconciliation';
-import { useUIStore, useReconciliationStore } from '@/store';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/services/api';
+import { useUIStore } from '@/store';
 
 // Utils
 import { formatCurrency, formatDate } from '@/lib/formatters';
@@ -397,7 +392,7 @@ function MatchZone({
             <CardTitle className="text-sm">{getStatusText()}</CardTitle>
           </div>
           
-          {zone.totalAmount > 0 && (
+          {zone.totalAmount !== 0 && (
             <Badge variant="outline" className="font-mono">
               {formatCurrency(zone.totalAmount)}
             </Badge>
@@ -549,11 +544,54 @@ export function DragDropReconciliation({
   const [draggedItem, setDraggedItem] = useState<DragData | null>(null);
 
   const { addNotification } = useUIStore();
-  const performReconciliation = usePerformReconciliation();
+  const queryClient = useQueryClient();
 
-  // Data fetching
-  const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(invoiceFilters);
-  const { data: transactionsData, isLoading: transactionsLoading } = useTransactions(transactionFilters);
+  // Data fetching con API reali
+  const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
+    queryKey: ['invoices', invoiceFilters],
+    queryFn: () => apiClient.getInvoices(invoiceFilters),
+    staleTime: 300000,
+  });
+
+  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
+    queryKey: ['transactions', transactionFilters],
+    queryFn: () => apiClient.getTransactions(transactionFilters),
+    staleTime: 300000,
+  });
+
+  // Mutation per riconciliazione
+  const performReconciliation = useMutation({
+    mutationFn: async (params: {
+      invoice_id: number;
+      transaction_id: number;
+      amount_to_match: number;
+    }) => {
+      return await apiClient.applyManualMatchV4({
+        invoice_id: params.invoice_id,
+        transaction_id: params.transaction_id,
+        amount_to_match: params.amount_to_match,
+        enable_ai_validation: true,
+        enable_learning: true,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      addNotification({
+        type: 'success',
+        title: 'Riconciliazione Completata',
+        message: 'Match eseguito con successo',
+      });
+      onReconciliationComplete?.();
+    },
+    onError: (error) => {
+      addNotification({
+        type: 'error',
+        title: 'Errore Riconciliazione',
+        message: error.message || 'Errore durante la riconciliazione',
+      });
+    },
+  });
 
   const invoices = invoicesData?.items || [];
   const transactions = transactionsData?.items || [];
@@ -651,10 +689,14 @@ export function DragDropReconciliation({
         const itemExists = targetZone.items.some(item => item.id === draggedItem.id);
         if (!itemExists) {
           // Remove item from other zones first
-          const updatedZones = matchZones.map(zone => ({
-            ...zone,
-            items: zone.items.filter(item => item.id !== draggedItem.id),
-          }));
+          matchZones.forEach(zone => {
+            if (zone.id !== zoneId) {
+              const newItems = zone.items.filter(item => item.id !== draggedItem.id);
+              if (newItems.length !== zone.items.length) {
+                updateZone(zone.id, newItems);
+              }
+            }
+          });
           
           // Add item to target zone
           const newItems = [...targetZone.items, draggedItem];
@@ -697,25 +739,22 @@ export function DragDropReconciliation({
 
     try {
       // For now, reconcile the first invoice with the first transaction
-      // In a real implementation, you might want to handle multiple items differently
       const invoice = invoices[0].item as Invoice;
       const transaction = transactions[0].item as BankTransaction;
       
       await performReconciliation.mutateAsync({
         invoice_id: invoice.id,
         transaction_id: transaction.id,
-        amount: Math.min(invoice.total_amount, Math.abs(transaction.amount)),
+        amount_to_match: Math.min(invoice.total_amount, Math.abs(transaction.amount)),
       });
 
       // Clear the zone after successful reconciliation
       updateZone(zone.id, []);
       
-      onReconciliationComplete?.();
-      
     } catch (error) {
       console.error('Reconciliation error:', error);
     }
-  }, [performReconciliation, updateZone, addNotification, onReconciliationComplete]);
+  }, [performReconciliation, updateZone, addNotification]);
 
   // Custom collision detection
   const collisionDetection: CollisionDetection = useCallback((args) => {
@@ -770,7 +809,7 @@ export function DragDropReconciliation({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => window.location.reload()}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Aggiorna
           </Button>
