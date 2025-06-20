@@ -416,4 +416,14 @@ export function validateDateRange(
     return { isValid: false, error: `Data inizio: ${startValidation.error}` };
   }
 
-  const endValidation
+  const endValidation = validateDate(endDate);
+  if (!endValidation.isValid) {
+    return { isValid: false, error: `Data fine: ${endValidation.error}` };
+  }
+
+  if (startValidation.value && endValidation.value && startValidation.value > endValidation.value) {
+    return { isValid: false, error: 'La data di inizio non può essere successiva alla data di fine' };
+  }
+
+    return { isValid: true };
+  }
