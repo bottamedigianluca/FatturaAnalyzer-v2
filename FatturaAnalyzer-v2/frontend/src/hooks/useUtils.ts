@@ -27,6 +27,8 @@ const TTL_MAP = Object.freeze({
   'ultra-predictions': 1800000,
 });
 
+type TTLType = keyof typeof TTL_MAP;
+
 const DEFAULT_TTL = 300000;
 const AI_TTL_MULTIPLIER = 0.7;
 
@@ -35,13 +37,13 @@ export const useSmartCache = (options: { cacheEnabled?: boolean; aiEnabled?: boo
   const { cacheEnabled = true, aiEnabled = true } = options;
   const queryClient = useQueryClient();
 
-  // Rimosse le annotazioni di tipo dai parametri
-  const getCacheTTL = useCallback((type) => {
-    const baseTTL = TTL_MAP[type] ?? DEFAULT_TTL;
+  // Usa il tipo TTLType per il parametro type
+  const getCacheTTL = useCallback((type: string) => {
+    const baseTTL = (TTL_MAP as Record<string, number>)[type] ?? DEFAULT_TTL;
     return aiEnabled ? Math.round(baseTTL * AI_TTL_MULTIPLIER) : baseTTL;
   }, [aiEnabled]);
 
-  const shouldRefetch = useCallback((lastFetchTime, type) => {
+  const shouldRefetch = useCallback((lastFetchTime: number | null, type: string) => {
     if (!cacheEnabled || lastFetchTime === null) {
       return true;
     }
@@ -49,7 +51,7 @@ export const useSmartCache = (options: { cacheEnabled?: boolean; aiEnabled?: boo
     return Date.now() - lastFetchTime > ttl;
   }, [cacheEnabled, getCacheTTL]);
 
-  const invalidateSmartCache = useCallback((patterns) => {
+  const invalidateSmartCache = useCallback((patterns: string[]) => {
     queryClient.invalidateQueries({
       predicate: (query) =>
         query.queryKey.some(
