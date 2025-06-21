@@ -153,11 +153,20 @@ app = FastAPI(
 # Add middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(ErrorHandlerMiddleware)
+if settings.DEBUG:
+    logger.warning("ATTENZIONE: Configurazione CORS permissiva per sviluppo attiva.")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Permetti tutte le origini
+        allow_credentials=True,
+        allow_methods=["*"],  # Permetti tutti i metodi
+        allow_headers=["*"],  # Permetti tutti gli header
+    )
+else:
+    # Usa la configurazione più restrittiva per la produzione
+    add_cors_middleware(app)
 
-# CORS configuration
-add_cors_middleware(app)
-
-# Security middleware (rate limiting, etc.)
+# Aggiungi gli altri middleware
 add_security_middleware(app)
 
 
