@@ -128,11 +128,11 @@ export const ProvidersWrapper: React.FC<ProvidersWrapperProps> = ({
               </QueryProvider>
             </Suspense>
           </ErrorBoundary>
-          
+         <Toaster  
         </ThemeProvider>
         
         {/* Toast Notifications - Sempre visibili */}
-        <Toaster 
+        
           position="top-right"
           toastOptions={{
             duration: 4000,
