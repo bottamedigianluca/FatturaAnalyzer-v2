@@ -33,71 +33,71 @@ async def get_invoices_list(
     """Get paginated list of invoices with filters"""
     from app.adapters.database_adapter import db_adapter
     try:
-        pagination = PaginationParams(page=page, size=size)
+        # Costruiamo la query SQL in modo dinamico e sicuro
+        base_query = """
+            SELECT
+                i.id, i.anagraphics_id, i.type, i.doc_type, i.doc_number, i.doc_date, 
+                i.total_amount, i.due_date, i.payment_status, i.paid_amount, i.payment_method,
+                i.notes, i.xml_filename, i.p7m_source_file, i.unique_hash, 
+                i.created_at, i.updated_at,
+                a.denomination as counterparty_name,
+                (i.total_amount - i.paid_amount) as open_amount
+            FROM Invoices i
+            LEFT JOIN Anagraphics a ON i.anagraphics_id = a.id
+            WHERE 1=1
+        """
+        params = []
         
-        # Usa il database adapter per consistenza con la logica del core
-        # Prima otteniamo tutti i risultati filtrati usando la logica del core
-        invoices = await db_adapter.get_invoices_async(
-            type_filter=type_filter.value if type_filter else None,
-            status_filter=status_filter.value if status_filter else None,
-            anagraphics_id_filter=anagraphics_id,
-            limit=None  # Non limitiamo qui per permettere filtri aggiuntivi
-        )
+        if type_filter:
+            base_query += " AND i.type = ?"
+            params.append(type_filter.value)
+        if status_filter:
+            base_query += " AND i.payment_status = ?"
+            params.append(status_filter.value)
+        if anagraphics_id:
+            base_query += " AND i.anagraphics_id = ?"
+            params.append(anagraphics_id)
+        if start_date:
+            base_query += " AND i.doc_date >= ?"
+            params.append(start_date.isoformat())
+        if end_date:
+            base_query += " AND i.doc_date <= ?"
+            params.append(end_date.isoformat())
+        if min_amount is not None:
+            base_query += " AND i.total_amount >= ?"
+            params.append(min_amount)
+        if max_amount is not None:
+            base_query += " AND i.total_amount <= ?"
+            params.append(max_amount)
+        if search:
+            search_lower = f"%{search.lower()}%"
+            base_query += " AND (LOWER(i.doc_number) LIKE ? OR LOWER(a.denomination) LIKE ?)"
+            params.extend([search_lower, search_lower])
+
+        # Esegui la query per ottenere tutti i risultati filtrati
+        all_filtered_invoices = await db_adapter.execute_query_async(base_query, tuple(params))
         
-        # Applica filtri aggiuntivi non supportati dal core
-        filtered_invoices = []
-        for invoice in invoices:
-            # Search filter
-            if search:
-                search_lower = search.lower()
-                if (search_lower not in invoice.get('doc_number', '').lower() and 
-                    search_lower not in invoice.get('counterparty_name', '').lower()):
-                    continue
-            
-            # Date filters
-            if start_date or end_date:
-                try:
-                    # La data potrebbe essere string o datetime
-                    doc_date_str = invoice.get('doc_date')
-                    if isinstance(doc_date_str, str):
-                        invoice_date = datetime.fromisoformat(doc_date_str).date()
-                    else:
-                        invoice_date = doc_date_str
-                    
-                    if start_date and invoice_date < start_date:
-                        continue
-                    if end_date and invoice_date > end_date:
-                        continue
-                except (ValueError, TypeError, AttributeError):
-                    continue
-            
-            # Amount filters
-            total_amount = invoice.get('total_amount', 0)
-            if min_amount is not None and total_amount < min_amount:
-                continue
-            if max_amount is not None and total_amount > max_amount:
-                continue
-            
-            filtered_invoices.append(invoice)
+        total = len(all_filtered_invoices)
         
-        # Paginazione manuale
-        total = len(filtered_invoices)
-        start_idx = pagination.offset
-        end_idx = start_idx + pagination.size
-        paginated_items = filtered_invoices[start_idx:end_idx]
+        # Applica la paginazione
+        start_idx = (page - 1) * size
+        end_idx = start_idx + size
+        paginated_items = all_filtered_invoices[start_idx:end_idx]
         
-        pages = (total + pagination.size - 1) // pagination.size
+        pages = (total + size - 1) // size if total > 0 else 0
         
         return InvoiceListResponse(
             items=paginated_items,
             total=total,
-            page=pagination.page,
-            size=pagination.size,
+            page=page,
+            size=size,
             pages=pages
         )
-        
     except Exception as e:
         logger.error(f"Error getting invoices list: {e}", exc_info=True)
+        # Forniamo un dettaglio più utile in caso di errore di validazione Pydantic
+        if "validation error" in str(e).lower():
+            raise HTTPException(status_code=500, detail=f"Data validation error for response model: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving invoices: {str(e)}")
 
 
