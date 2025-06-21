@@ -29,34 +29,27 @@ logger = logging.getLogger(__name__)
 
 
 def get_db_path():
-    try:
+    """
+    Calcola il percorso del database in modo robusto, relativo alla root del backend.
+    """
+    # La root del progetto backend è la directory che contiene 'app', 'scripts', 'data', etc.
+    backend_root = Path(__file__).resolve().parent.parent.parent
+    config_path = backend_root / 'config.ini'
+
+    if not config_path.exists():
+        logging.warning(f"Config file non trovato in {config_path}. Uso percorso di default.")
+        db_path = backend_root / 'data' / 'fattura_analyzer.db'
+    else:
         config = configparser.ConfigParser()
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(project_root, 'config.ini')
-        if not os.path.exists(config_path):
-            logging.warning(f"Config file '{config_path}' non trovato. Uso default '{DATABASE_NAME}' nella root.")
-            db_full_path = os.path.join(project_root, DATABASE_NAME)
-        else:
-            config.read(config_path)
-            db_name = config.get('Paths', 'DatabaseFile', fallback=DATABASE_NAME)
-            if os.path.isabs(db_name):
-                db_full_path = db_name
-            else:
-                db_full_path = os.path.join(project_root, db_name)
-        db_dir = os.path.dirname(db_full_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-        logging.debug(f"Percorso DB determinato: {db_full_path}")
-        return db_full_path
-    except Exception as e:
-        logging.error(f"Errore lettura config per percorso DB: {e}. Uso fallback.")
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        fallback_path = os.path.join(project_root, DATABASE_NAME)
-        logging.warning(f"Percorso DB fallback: {fallback_path}")
-        db_dir = os.path.dirname(fallback_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-        return fallback_path
+        config.read(config_path)
+        db_rel_path_str = config.get('Paths', 'DatabaseFile', fallback='data/fattura_analyzer.db')
+        db_path = backend_root / db_rel_path_str
+
+    # Assicura che la directory genitore esista
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    logging.info(f"Percorso database determinato: {db_path}")
+    return str(db_path)
 
 DB_PATH = get_db_path()
 
