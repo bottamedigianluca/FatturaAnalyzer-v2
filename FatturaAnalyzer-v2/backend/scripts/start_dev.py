@@ -70,7 +70,8 @@ def main():
             "app.main:app",
             "--host", "127.0.0.1",
             "--port", "8000",
-            "--reload",
+            "--reload-engine", "poll",
+            "--reload-dir", str(app_dir),
             "--log-level", "info"
         ], check=True)
     except KeyboardInterrupt:
