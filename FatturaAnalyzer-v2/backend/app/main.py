@@ -214,33 +214,37 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(ErrorHandlerMiddleware)
 
-# Handler esplicito per OPTIONS - MIGLIORATO
-@app.options("/{path:path}")
-async def enhanced_options_handler(request: Request, path: str):
+# Handler esplicito per OPTIONS - VERSIONE CORRETTA
+@app.options("/{full_path:path}")
+async def enhanced_options_handler(request: Request, full_path: str):
     """
-    Handler migliorato per richieste OPTIONS con logging dettagliato
+    Handler COMPLETO per richieste OPTIONS con gestione universale
     """
     origin = request.headers.get("origin", "unknown")
     method = request.headers.get("access-control-request-method", "unknown")
     headers = request.headers.get("access-control-request-headers", "")
     
-    logger.info(f"🔍 OPTIONS: /{path} | Origin: {origin} | Method: {method}")
+    logger.info(f"🔍 OPTIONS: /{full_path} | Origin: {origin} | Method: {method} | Headers: {headers}")
+    
+    # Determina origin permesso
+    allowed_origin = "*"  # Default per sviluppo
+    if origin != "unknown":
+        if origin in allowed_origins or "*" in allowed_origins:
+            allowed_origin = origin
+        elif settings.DEBUG:
+            allowed_origin = origin  # Permissivo in debug
     
     response_headers = {
-        "Access-Control-Allow-Origin": origin if origin in allowed_origins or "*" in allowed_origins else "*",
+        "Access-Control-Allow-Origin": allowed_origin,
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
-        "Access-Control-Allow-Headers": ", ".join([
-            "Accept", "Accept-Language", "Content-Language", "Content-Type",
-            "Authorization", "X-Requested-With", "X-API-Key", "X-Request-ID",
-            "Cache-Control", "Pragma", "Origin", "User-Agent", "DNT",
-            "If-Modified-Since", "Keep-Alive", "X-Custom-Header",
-            "Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
-            "Access-Control-Allow-Headers", "X-Enhanced", "X-Force-Background",
-            "X-Smart-Validation"
-        ]) + (f", {headers}" if headers else ""),
+        "Access-Control-Allow-Headers": "*",  # Permissivo per sviluppo
         "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Max-Age": "600"
+        "Access-Control-Max-Age": "86400",  # 24 ore
+        "Access-Control-Expose-Headers": "Content-Range, X-Content-Range, X-Total-Count, X-Request-ID, X-API-Version",
+        "Vary": "Origin"
     }
+    
+    logger.info(f"✅ OPTIONS Response: {response_headers['Access-Control-Allow-Origin']}")
     
     return Response(
         status_code=200,
@@ -251,29 +255,58 @@ async def enhanced_options_handler(request: Request, path: str):
 # Security middleware DOPO CORS  
 add_security_middleware(app)
 
-# Middleware per debug CORS
+# Middleware per debug CORS - VERSIONE MIGLIORATA
 @app.middleware("http")
-async def debug_cors_middleware(request: Request, call_next):
-    """Middleware per debug CORS"""
-    if settings.DEBUG:
-        origin = request.headers.get("origin")
-        if origin:
-            logger.info(f"🌐 Request: {request.method} {request.url.path} | Origin: {origin}")
+async def enhanced_cors_debug_middleware(request: Request, call_next):
+    """Middleware avanzato per debug CORS e gestione universale"""
+    origin = request.headers.get("origin")
+    method = request.method
+    path = request.url.path
     
+    if settings.DEBUG:
+        logger.info(f"🌐 {method} {path} | Origin: {origin or 'None'}")
+    
+    # Gestione speciale per richieste OPTIONS
+    if method == "OPTIONS":
+        logger.info(f"🔧 Handling OPTIONS preflight for {path}")
+        
+        # Headers CORS universali per OPTIONS
+        response_headers = {
+            "Access-Control-Allow-Origin": origin if origin else "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "86400",
+            "Access-Control-Expose-Headers": "Content-Range, X-Content-Range, X-Total-Count, X-Request-ID, X-API-Version",
+            "Vary": "Origin"
+        }
+        
+        return Response(
+            status_code=200,
+            headers=response_headers,
+            content=""
+        )
+    
+    # Per altre richieste, procedi normalmente
     response = await call_next(request)
     
     # Aggiungi headers CORS extra se necessario
     if settings.DEBUG and hasattr(response, 'headers'):
         response.headers["X-Debug-CORS"] = "enabled"
+        
+        # Forza headers CORS se origin è presente
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
     
     return response
 
-# First Run Detection Middleware
+# First Run Detection Middleware - VERSIONE CORRETTA
 @app.middleware("http") 
 async def first_run_detection_middleware(request: Request, call_next):
-    """Middleware per rilevare primo avvio e redirigere al setup se necessario"""
+    """Middleware per rilevare primo avvio - NON interferisce con CORS"""
     
-    # Skip middleware per endpoint specifici
+    # Skip middleware per endpoint specifici E per richieste OPTIONS
     skip_paths = [
         "/health",
         "/api/health",
@@ -283,10 +316,16 @@ async def first_run_detection_middleware(request: Request, call_next):
         "/api/docs",
         "/api/redoc",
         "/openapi.json",
-        "/static"
+        "/static",
+        "/api/cors-test"  # Aggiungi endpoint test
     ]
     
     path = request.url.path
+    method = request.method
+    
+    # IMPORTANTE: Skip per tutte le richieste OPTIONS (gestite dal middleware CORS)
+    if method == "OPTIONS":
+        return await call_next(request)
     
     # Se il path inizia con uno dei percorsi da saltare, continua normalmente
     if any(path.startswith(skip_path) for skip_path in skip_paths):
@@ -301,7 +340,7 @@ async def first_run_detection_middleware(request: Request, call_next):
         if is_first_run_needed:
             # Per richieste API, restituisci JSON con info setup
             if path.startswith("/api/"):
-                return JSONResponse(
+                response = JSONResponse(
                     status_code=200,  # Non è un errore, è informativo
                     content={
                         "first_run_detected": True,
@@ -310,6 +349,14 @@ async def first_run_detection_middleware(request: Request, call_next):
                         "recommendation": "Avvia il setup wizard per configurare il sistema"
                     }
                 )
+                
+                # Aggiungi headers CORS anche qui se necessario
+                origin = request.headers.get("origin")
+                if origin:
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                
+                return response
             else:
                 # Per richieste non-API, continua normalmente
                 return await call_next(request)
