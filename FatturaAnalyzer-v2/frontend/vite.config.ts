@@ -61,7 +61,7 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,vue,txt,woff2}'],
         },
         devOptions: {
-          enabled: true, // Abilita PWA anche in sviluppo per test
+          enabled: false, // Abilita PWA anche in sviluppo per test
         },
       }),
     ],
