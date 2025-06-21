@@ -157,13 +157,28 @@ app.add_middleware(ErrorHandlerMiddleware)
 logger.warning("ATTENZIONE: Configurazione CORS forzata per sviluppo attiva.")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permetti a TUTTE le origini di connettersi
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permetti GET, POST, PUT, DELETE, etc.
-    allow_headers=["*"],  # Permetti tutti gli header
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Aggiungi gli altri middleware
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """
+    Handler esplicito per le richieste OPTIONS per risolvere problemi CORS.
+    """
+    logger.info(f"Gestione richiesta OPTIONS per il percorso: /{path}")
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true",
+        },
+    )
+
 add_security_middleware(app)
 
 
