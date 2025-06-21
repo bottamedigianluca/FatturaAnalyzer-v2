@@ -128,7 +128,7 @@ export const ProvidersWrapper: React.FC<ProvidersWrapperProps> = ({
               </QueryProvider>
             </Suspense>
           </ErrorBoundary>
-         <Toaster  
+           
         </ThemeProvider>
         
         {/* Toast Notifications - Sempre visibili */}
@@ -139,7 +139,7 @@ export const ProvidersWrapper: React.FC<ProvidersWrapperProps> = ({
             className: 'toast-custom',
           }}
         />
-        
+        <Toaster
       </HotReloadDetector>
     </CriticalErrorBoundary>
   );
