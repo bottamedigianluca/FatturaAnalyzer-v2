@@ -42,7 +42,7 @@ const pageNames: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const { theme, setTheme } = useUIStore();
-  const notifications = useNotifications();
+  const notifications = useUIStore((state) => state.notifications);
   
   const currentPageName = pageNames[location.pathname] || 'FatturaAnalyzer';
   const unreadNotifications = notifications.filter(n => n.type === 'error' || n.type === 'warning').length;
