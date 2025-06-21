@@ -104,7 +104,7 @@ interface AnagraphicsListProps {
   onFilterChange?: (filters: AnagraphicsFilters) => void;
 }
 
-export function AnagraphicsList({
+export function AnagraphicsPage({
   data = [],
   loading = false,
   error,
