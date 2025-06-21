@@ -8,6 +8,7 @@ import logging
 import pandas as pd
 from decimal import Decimal, InvalidOperation
 import re # Importa re per usare regex nel filtro POS avanzato
+from pathlib import Path
 
 # Importa solo le funzioni necessarie da utils per evitare cicli
 try:
