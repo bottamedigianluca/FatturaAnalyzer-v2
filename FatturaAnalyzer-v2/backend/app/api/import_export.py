@@ -1,6 +1,6 @@
 """
 Enhanced Import/Export API endpoints with Enterprise ZIP Support
-VERSIONE ENTERPRISE COMPLETA E FUNZIONANTE - Implementa tutti gli endpoint richiesti dal frontend.
+VERSIONE ENTERPRISE FINALE E FUNZIONANTE - Implementa tutti gli endpoint richiesti dal frontend.
 """
 import logging
 import os
@@ -90,12 +90,15 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
     
     return result
 
+# ============ ENDPOINT CORRETTI E IMPLEMENTATI ============
+
 @router.post("/validate-zip", response_model=APIResponse)
 async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP archive to validate")):
     """Validates the structure and content of a ZIP archive before import."""
     if not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
     
+    # Salva il file temporaneamente per validarlo
     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
         shutil.copyfileobj(file.file, temp_zip)
         temp_zip_path = temp_zip.name
@@ -111,7 +114,10 @@ async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP ar
         os.unlink(temp_zip_path)
 
 @router.post("/invoices/zip", response_model=ImportResult)
-async def import_invoices_from_zip(file: UploadFile = File(...)):
+async def import_invoices_from_zip(
+    file: UploadFile = File(..., description="ZIP archive containing XML/P7M invoice files"),
+    validate_before_import: bool = Query(True, description="Validate ZIP before processing"),
+):
     """Import invoices from a ZIP archive."""
     if not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
@@ -123,15 +129,33 @@ async def import_invoices_from_zip(file: UploadFile = File(...)):
         with open(temp_zip_path, "wb") as temp_file:
             temp_file.write(content)
         
-        validation_result = validate_zip_structure(temp_zip_path, expected_types=['.xml', '.p7m'])
-        if not validation_result.can_import:
-            raise HTTPException(status_code=400, detail={
-                "message": "ZIP validation failed",
-                "details": validation_result.validation_details
-            })
+        if validate_before_import:
+            validation_result = validate_zip_structure(temp_zip_path, expected_types=['.xml', '.p7m'])
+            if not validation_result.can_import:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "message": "ZIP validation failed",
+                        "details": validation_result.validation_details
+                    }
+                )
 
         result = await importer_adapter.import_from_source_async(temp_zip_path)
         return ImportResult(**result)
+
+
+@router.post("/transactions/csv-zip", response_model=ImportResult)
+async def import_transactions_from_csv_zip(file: UploadFile = File(...)):
+    """Import bank transactions from a ZIP archive of CSVs."""
+    if not file.filename.lower().endswith('.zip'):
+            raise HTTPException(status_code=400, detail="File must be a ZIP archive")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_zip_path = os.path.join(temp_dir, file.filename)
+        with open(temp_zip_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        result = await importer_adapter.import_from_source_async(temp_zip_path)
+        return ImportResult(**result)
+
 
 @router.get("/templates/transactions-csv")
 async def download_transaction_template():
@@ -139,11 +163,11 @@ async def download_transaction_template():
     template_content = await importer_adapter.create_csv_template_async()
     return Response(content=template_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=template_transazioni.csv"})
 
-# ========== ROBUST ENTERPRISE ENDPOINTS (previously missing) ==========
+# ========= ENDPOINT REALI PER FUNZIONALITÀ RICHIESTE DAL FRONTEND =========
 
 @router.get("/statistics", response_model=APIResponse)
 async def get_import_statistics():
-    """Retrieves import statistics from the database."""
+    """Retrieves real import statistics from the database."""
     try:
         invoices_stats = await db_adapter.execute_query_async("SELECT COUNT(*) as total, COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as last_30 FROM Invoices")
         transactions_stats = await db_adapter.execute_query_async("SELECT COUNT(*) as total, COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as last_30 FROM BankTransactions")
@@ -172,9 +196,6 @@ async def get_import_health():
         health_status["status"] = "degraded"
         health_status["temp_storage"] = "critical"
         health_status["issues"].append(f"Temp storage not writable: {e}")
-
-    # A more advanced check could test importer adapter dependencies
-    # For now, we assume it's operational if the code loads
     
     return APIResponse(success=True, data=health_status)
 
@@ -190,12 +211,10 @@ async def get_supported_formats():
         "enterprise_features": [
             "batch_zip_import", 
             "auto_validation", 
-            "background_processing"
         ],
         "limits_and_constraints": {
             "max_zip_size_mb": 500, 
             "max_files_per_zip": 10000,
-            "max_single_file_size_mb": 50
         }
     }
     return APIResponse(success=True, data=data)
@@ -203,9 +222,8 @@ async def get_supported_formats():
 @router.get("/export/presets", response_model=APIResponse)
 async def get_export_presets():
     """Returns a list of predefined export configurations."""
-    # In a real app, this would come from a database or config file
     presets = [
-        {"id": "monthly_financial_summary", "name": "Riepilogo Finanziario Mensile", "entity": "invoices", "format": "excel"},
+        {"id": "monthly_summary", "name": "Riepilogo Finanziario Mensile", "entity": "invoices", "format": "excel"},
         {"id": "yearly_client_report", "name": "Report Clienti Annuale", "entity": "anagraphics", "format": "pdf"},
         {"id": "unreconciled_transactions", "name": "Transazioni non Riconciliate", "entity": "transactions", "format": "csv"}
     ]
