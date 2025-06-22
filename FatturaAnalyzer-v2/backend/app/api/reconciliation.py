@@ -1,18 +1,23 @@
 """
-Reconciliation API ULTRA-OTTIMIZZATA V4.0 - AGGIORNATA PER NUOVO ADAPTER
-VERSIONE FINALE E FUNZIONANTE - Implementa tutti gli endpoint richiesti dal frontend
+Reconciliation API ULTRA-OTTIMIZZATA V4.0 - VERSIONE FINALE E FUNZIONANTE
+Risolve l'errore di importazione circolare.
 """
 import logging
 import asyncio
 import time
-import uuid
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Body
-from app.adapters.reconciliation_adapter import get_reconciliation_adapter_v4, initialize_reconciliation_system_v4
-from app.adapters.database_adapter import db_adapter
+from app.adapters.reconciliation_adapter import (
+    get_reconciliation_adapter_v4,
+    initialize_reconciliation_system_v4
+)
 from app.models import APIResponse
-from app.api.reconciliation import UltraReconciliationRequest, ManualMatchRequestV4, BatchReconciliationRequestV4
+# CORREZIONE FONDAMENTALE: Importa i modelli dalla loro posizione corretta in app.models
+from app.models.reconciliation import (
+    UltraReconciliationRequest, 
+    ManualMatchRequestV4, 
+    BatchReconciliationRequestV4
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,23 +91,8 @@ async def trigger_auto_reconciliation_v4(confidence_threshold: float = 0.9, max_
 async def get_reconciliation_performance_metrics():
     """Get real performance metrics from the reconciliation engine."""
     try:
-        # Query reale per calcolare le metriche
-        total_links = await db_adapter.execute_query_async("SELECT COUNT(*) as count FROM ReconciliationLinks")
-        total_reconciled = total_links[0]['count'] if total_links else 0
-        
-        total_transactions = await db_adapter.execute_query_async("SELECT COUNT(*) as count FROM BankTransactions")
-        total_trans_count = total_transactions[0]['count'] if total_transactions else 0
-
-        success_rate = (total_reconciled / total_trans_count) * 100 if total_trans_count > 0 else 0
-
-        # Dati di esempio per altre metriche in attesa di implementazione ML completa
-        metrics = {
-            "success_rate": success_rate,
-            "ai_accuracy": 95.5,  # Esempio
-            "total_reconciliations": total_reconciled,
-            "time_saved_hours": total_reconciled * 0.05, # Stima: 3 minuti risparmiati a riconciliazione
-            "average_confidence": 0.85 # Esempio
-        }
+        adapter = await get_adapter_v4()
+        metrics = await adapter.get_performance_metrics_async()
         return APIResponse(success=True, message="Performance metrics retrieved", data=metrics)
     except Exception as e:
         logger.error(f"Failed to get reconciliation performance metrics: {e}")
@@ -112,8 +102,7 @@ async def get_reconciliation_performance_metrics():
 async def get_reconciliation_system_status():
     """Get the health status of the reconciliation system components."""
     try:
-        adapter = await get_adapter_v4()
-        status = await adapter.get_system_status_async()
+        status = await get_system_status_v4()
         return APIResponse(success=True, data=status)
     except Exception as e:
         logger.error(f"Failed to get reconciliation system status: {e}")
@@ -123,8 +112,7 @@ async def get_reconciliation_system_status():
 async def get_reconciliation_version():
     """Get the version of the reconciliation engine."""
     try:
-        adapter = await get_adapter_v4()
-        version_info = await adapter.get_version_info_async()
+        version_info = await get_version_info()
         return APIResponse(success=True, data=version_info)
     except Exception as e:
         logger.error(f"Failed to get reconciliation version: {e}")
