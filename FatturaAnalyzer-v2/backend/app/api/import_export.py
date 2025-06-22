@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class ZIPValidationResult:
+    """Data class for ZIP archive validation results."""
     def __init__(self):
         self.validation_status: str = 'unknown'
         self.can_import: bool = False
@@ -84,6 +85,10 @@ async def import_invoices_from_zip(file: UploadFile = File(...)):
             with open(temp_zip_path, "wb") as temp_file:
                 shutil.copyfileobj(file.file, temp_file)
             
+            validation_result = validate_zip_structure(temp_zip_path, expected_types=['.xml', '.p7m'])
+            if not validation_result.can_import:
+                raise HTTPException(status_code=400, detail={"message": "ZIP validation failed", "details": validation_result.validation_details})
+
             result = await importer_adapter.import_from_source_async(temp_zip_path)
             return ImportResult(**result)
         except Exception as e:
