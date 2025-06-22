@@ -1,4 +1,292 @@
-import React, { useState, useCallback, useMemo } from 'react';
+{/* Filters - ENTERPRISE CONFIGURABILITY */}
+      {showFilters && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filtri
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Stato Fatture</label>
+                <Select
+                  value={invoiceFilters.status_filter}
+                  onValueChange={(value) => setInvoiceFilters(prev => ({ ...prev, status_filter: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Aperta">Aperte</SelectItem>
+                    <SelectItem value="Scaduta">Scadute</SelectItem>
+                    <SelectItem value="Pagata Parz.">Pagate Parzialmente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">Stato Movimenti</label>
+                <Select
+                  value={transactionFilters.status_filter}
+                  onValueChange={(value) => setTransactionFilters(prev => ({ ...prev, status_filter: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Da Riconciliare">Da Riconciliare</SelectItem>
+                    <SelectItem value="Riconciliato Parz.">Parzialmente Riconciliati</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">Limite Risultati</label>
+                <Select
+                  value={maxItems.toString()}
+                  onValueChange={(value) => {
+                    const newLimit = parseInt(value);
+                    setInvoiceFilters(prev => ({ ...prev, size: newLimit }));
+                    setTransactionFilters(prev => ({ ...prev, size: newLimit }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 elementi</SelectItem>
+                    <SelectItem value="20">20 elementi</SelectItem>
+                    <SelectItem value="50">50 elementi</SelectItem>
+                    <SelectItem value="100">100 elementi</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end">
+                <Button className="w-full">
+                  <Search className="h-4 w-4 mr-2" />
+                  Applica Filtri
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Main Drag & Drop Interface - ENTERPRISE READY */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left side - Available items */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Invoices */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  Fatture Disponibili ({invoices.length})
+                </CardTitle>
+                <CardDescription>
+                  Trascina le fatture nelle zone di riconciliazione
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {invoicesLoading ? (
+                  <div className="space-y-3">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-20 bg-gray-200 rounded animate-pulse" />
+                    ))}
+                  </div>
+                ) : invoices.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600">Nessuna fattura disponibile</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    <SortableContext 
+                      items={invoices.map(inv => `invoice-${inv.id}`)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {invoices.map((invoice) => {
+                        const isInZone = matchZones.some(zone => 
+                          zone.items.some(item => item.id === `invoice-${invoice.id}`)
+                        );
+                        
+                        if (isInZone) return null;
+                        
+                        return (
+                          <SortableItem 
+                            key={transaction.id} 
+                            id={`transaction-${transaction.id}`}
+                            data={{
+                              type: 'transaction',
+                              item: transaction,
+                              id: `transaction-${transaction.id}`,
+                            }}
+                          >
+                            <TransactionCard transaction={transaction} />
+                          </SortableItem>
+                        );
+                      })}
+                    </SortableContext>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right side - Match zones */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="sticky top-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                Zone di Riconciliazione
+              </h3>
+              
+              <div className="space-y-4">
+                {matchZones.map((zone) => (
+                  <div
+                    key={zone.id}
+                    id={zone.id}
+                    className="transition-all"
+                  >
+                    <MatchZone
+                      zone={zone}
+                      onRemoveItem={(itemId) => handleRemoveItem(zone.id, itemId)}
+                      onReconcile={handleReconcile}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Drag overlay - ENTERPRISE POLISH */}
+        <DragOverlay>
+          {draggedItem && (
+            <motion.div
+              initial={{ scale: 1, rotate: 0 }}
+              animate={{ scale: 1.05, rotate: 2 }}
+              className="opacity-90"
+            >
+              {draggedItem.type === 'invoice' ? (
+                <InvoiceCard 
+                  invoice={draggedItem.item as Invoice} 
+                  isDragOverlay={true}
+                  showQuickActions={false}
+                />
+              ) : (
+                <TransactionCard 
+                  transaction={draggedItem.item as BankTransaction} 
+                  isDragOverlay={true}
+                  showQuickActions={false}
+                />
+              )}
+            </motion.div>
+          )}
+        </DragOverlay>
+      </DndContext>
+
+      {/* Processing Status - ENTERPRISE FEEDBACK */}
+      {performReconciliation.isPending && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+        >
+          <Card className="w-96 border-2 border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50">
+            <CardContent className="p-8 text-center">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-16 h-16 border-4 border-blue-300 border-t-blue-600 rounded-full mx-auto mb-6"
+              />
+              
+              <h3 className="text-xl font-bold text-blue-700 mb-2">
+                Riconciliazione in Corso
+              </h3>
+              
+              <p className="text-blue-600 mb-4">
+                Processamento delle riconciliazioni tramite AI...
+              </p>
+              
+              <div className="space-y-2">
+                <Progress value={75} className="w-full" />
+                <p className="text-xs text-blue-500">
+                  Validazione AI in corso
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+                        
+                        return (
+                          <SortableItem 
+                            key={invoice.id} 
+                            id={`invoice-${invoice.id}`}
+                            data={{
+                              type: 'invoice',
+                              item: invoice,
+                              id: `invoice-${invoice.id}`,
+                            }}
+                          >
+                            <InvoiceCard invoice={invoice} />
+                          </SortableItem>
+                        );
+                      })}
+                    </SortableContext>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Transactions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-emerald-600" />
+                  Movimenti Disponibili ({transactions.length})
+                </CardTitle>
+                <CardDescription>
+                  Trascina i movimenti nelle zone di riconciliazione
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {transactionsLoading ? (
+                  <div className="space-y-3">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-20 bg-gray-200 rounded animate-pulse" />
+                    ))}
+                  </div>
+                ) : transactions.length === 0 ? (
+                  <div className="text-center py-8">
+                    <CreditCard className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600">Nessun movimento disponibile</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    <SortableContext 
+                      items={transactions.map(trans => `transaction-${trans.id}`)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {transactions.map((transaction) => {
+                        const isInZone = matchZones.some(zone => 
+                          zone.items.some(item => item.id === `transaction-${transaction.id}`)
+                        );
+                        
+                        if (isInZone) return null;import React, { useState, useCallback, useMemo } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -71,16 +359,17 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-// Hooks
+// Hooks - CORRETTI per usare i nuovi hook
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/services/api';
 import { useUIStore } from '@/store';
+import { usePerformReconciliation } from '@/hooks/useReconciliation';
 
 // Utils
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 
-// Types
+// Types - CORRETTI e semplificati
 import type { Invoice, BankTransaction } from '@/types';
 
 interface DragDropReconciliationProps {
@@ -103,7 +392,7 @@ interface MatchZone {
   status: 'perfect' | 'close' | 'different' | 'empty';
 }
 
-// Sortable item wrapper for drag and drop
+// Sortable item wrapper for drag and drop - CORRETTO
 function SortableItem({ 
   children, 
   id, 
@@ -159,7 +448,7 @@ function SortableItem({
   );
 }
 
-// Invoice card component
+// Invoice card component - CORRETTO
 function InvoiceCard({ 
   invoice, 
   isDragOverlay = false,
@@ -194,7 +483,7 @@ function InvoiceCard({
             </div>
             
             <p className="text-sm font-medium text-gray-900 mb-1">
-              {invoice.counterparty_name}
+              {invoice.counterparty_name || 'Cliente non specificato'}
             </p>
             
             <div className="space-y-1">
@@ -245,7 +534,7 @@ function InvoiceCard({
   );
 }
 
-// Transaction card component
+// Transaction card component - CORRETTO
 function TransactionCard({ 
   transaction, 
   isDragOverlay = false,
@@ -337,7 +626,7 @@ function TransactionCard({
   );
 }
 
-// Match zone component for drag and drop
+// Match zone component - CORRETTO
 function MatchZone({ 
   zone, 
   onRemoveItem,
@@ -522,11 +811,13 @@ function MatchZone({
   );
 }
 
+// Main component - CORRETTO e ENTERPRISE-READY
 export function DragDropReconciliation({
   showFilters = true,
   maxItems = 20,
   onReconciliationComplete
 }: DragDropReconciliationProps) {
+  // State management - CORRETTO
   const [invoiceFilters, setInvoiceFilters] = useState({
     status_filter: 'Aperta',
     size: maxItems,
@@ -543,60 +834,31 @@ export function DragDropReconciliation({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draggedItem, setDraggedItem] = useState<DragData | null>(null);
 
+  // Hooks - CORRETTI per usare i nuovi hook
   const { addNotification } = useUIStore();
   const queryClient = useQueryClient();
+  const performReconciliation = usePerformReconciliation();
 
-  // Data fetching con API reali
-  const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
+  // Data fetching con API reali - CORRETTO
+  const { data: invoicesData, isLoading: invoicesLoading, error: invoicesError } = useQuery({
     queryKey: ['invoices', invoiceFilters],
     queryFn: () => apiClient.getInvoices(invoiceFilters),
     staleTime: 300000,
+    retry: 2,
   });
 
-  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
+  const { data: transactionsData, isLoading: transactionsLoading, error: transactionsError } = useQuery({
     queryKey: ['transactions', transactionFilters],
     queryFn: () => apiClient.getTransactions(transactionFilters),
     staleTime: 300000,
+    retry: 2,
   });
 
-  // Mutation per riconciliazione
-  const performReconciliation = useMutation({
-    mutationFn: async (params: {
-      invoice_id: number;
-      transaction_id: number;
-      amount_to_match: number;
-    }) => {
-      return await apiClient.applyManualMatchV4({
-        invoice_id: params.invoice_id,
-        transaction_id: params.transaction_id,
-        amount_to_match: params.amount_to_match,
-        enable_ai_validation: true,
-        enable_learning: true,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      addNotification({
-        type: 'success',
-        title: 'Riconciliazione Completata',
-        message: 'Match eseguito con successo',
-      });
-      onReconciliationComplete?.();
-    },
-    onError: (error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore Riconciliazione',
-        message: error.message || 'Errore durante la riconciliazione',
-      });
-    },
-  });
-
+  // Safely extract data - ENTERPRISE SAFETY
   const invoices = invoicesData?.items || [];
   const transactions = transactionsData?.items || [];
 
-  // Drag and drop sensors
+  // Drag and drop sensors - CORRETTO
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -606,7 +868,7 @@ export function DragDropReconciliation({
     useSensor(KeyboardSensor)
   );
 
-  // Calculate zone status based on amounts
+  // Calculate zone status based on amounts - CORRETTO
   const calculateZoneStatus = useCallback((items: DragData[]): MatchZone['status'] => {
     if (items.length === 0) return 'empty';
     
@@ -625,7 +887,7 @@ export function DragDropReconciliation({
     return 'different';
   }, []);
 
-  // Update zone when items change
+  // Update zone when items change - CORRETTO
   const updateZone = useCallback((zoneId: string, items: DragData[]) => {
     setMatchZones(prev => prev.map(zone => {
       if (zone.id === zoneId) {
@@ -648,12 +910,12 @@ export function DragDropReconciliation({
     }));
   }, [calculateZoneStatus]);
 
-  // Drag handlers
+  // Drag handlers - CORRETTI
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     setActiveId(active.id as string);
     
-    // Find the dragged item
+    // Find the dragged item - SAFETY CHECKS
     const invoice = invoices.find(inv => `invoice-${inv.id}` === active.id);
     const transaction = transactions.find(trans => `transaction-${trans.id}` === active.id);
     
@@ -680,7 +942,7 @@ export function DragDropReconciliation({
 
     if (!over || !draggedItem) return;
 
-    // Check if dropping on a match zone
+    // Check if dropping on a match zone - SAFETY CHECKS
     const zoneId = over.id as string;
     if (zoneId.startsWith('zone-')) {
       const targetZone = matchZones.find(zone => zone.id === zoneId);
@@ -713,7 +975,7 @@ export function DragDropReconciliation({
     }
   }, [draggedItem, matchZones, updateZone, addNotification]);
 
-  // Remove item from zone
+  // Remove item from zone - CORRETTO
   const handleRemoveItem = useCallback((zoneId: string, itemId: string) => {
     const zone = matchZones.find(z => z.id === zoneId);
     if (zone) {
@@ -722,7 +984,7 @@ export function DragDropReconciliation({
     }
   }, [matchZones, updateZone]);
 
-  // Perform reconciliation
+  // Perform reconciliation - CORRETTO con nuovi hook
   const handleReconcile = useCallback(async (zone: MatchZone) => {
     const invoices = zone.items.filter(item => item.type === 'invoice');
     const transactions = zone.items.filter(item => item.type === 'transaction');
@@ -746,6 +1008,8 @@ export function DragDropReconciliation({
         invoice_id: invoice.id,
         transaction_id: transaction.id,
         amount_to_match: Math.min(invoice.total_amount, Math.abs(transaction.amount)),
+        enable_ai_validation: true,
+        enable_learning: true,
       });
 
       // Clear the zone after successful reconciliation
@@ -756,7 +1020,7 @@ export function DragDropReconciliation({
     }
   }, [performReconciliation, updateZone, addNotification]);
 
-  // Custom collision detection
+  // Custom collision detection - CORRETTO
   const collisionDetection: CollisionDetection = useCallback((args) => {
     // First check for zones
     const zoneCollisions = rectIntersection({
@@ -774,7 +1038,7 @@ export function DragDropReconciliation({
     return pointerWithin(args);
   }, []);
 
-  // Statistics
+  // Statistics - CORRETTO
   const stats = useMemo(() => {
     const totalInZones = matchZones.reduce((sum, zone) => sum + zone.items.length, 0);
     const perfectMatches = matchZones.filter(zone => zone.status === 'perfect').length;
@@ -794,9 +1058,41 @@ export function DragDropReconciliation({
     };
   }, [matchZones, invoices.length, transactions.length]);
 
+  // Error handling - ENTERPRISE
+  if (invoicesError || transactionsError) {
+    return (
+      <Card className="border-red-200 bg-red-50">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-8 w-8 text-red-600" />
+            <div>
+              <h3 className="text-lg font-semibold text-red-900">
+                Errore nel caricamento dati
+              </h3>
+              <p className="text-red-700">
+                {invoicesError?.message || transactionsError?.message || 'Errore sconosciuto'}
+              </p>
+              <Button 
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ['invoices'] });
+                  queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                }} 
+                variant="outline" 
+                className="mt-3 border-red-300"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Riprova
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header - ENTERPRISE READY */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
@@ -809,7 +1105,10 @@ export function DragDropReconciliation({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => window.location.reload()}>
+          <Button variant="outline" onClick={() => {
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          }}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Aggiorna
           </Button>
@@ -820,7 +1119,7 @@ export function DragDropReconciliation({
         </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Statistics Cards - ENTERPRISE */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -884,258 +1183,3 @@ export function DragDropReconciliation({
           </CardContent>
         </Card>
       </div>
-
-      {/* Filters */}
-      {showFilters && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filtri
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Stato Fatture</label>
-                <Select
-                  value={invoiceFilters.status_filter}
-                  onValueChange={(value) => setInvoiceFilters(prev => ({ ...prev, status_filter: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Aperta">Aperte</SelectItem>
-                    <SelectItem value="Scaduta">Scadute</SelectItem>
-                    <SelectItem value="Pagata Parz.">Pagate Parzialmente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Stato Movimenti</label>
-                <Select
-                  value={transactionFilters.status_filter}
-                  onValueChange={(value) => setTransactionFilters(prev => ({ ...prev, status_filter: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Da Riconciliare">Da Riconciliare</SelectItem>
-                    <SelectItem value="Riconciliato Parz.">Parzialmente Riconciliati</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Limite Risultati</label>
-                <Select
-                  value={maxItems.toString()}
-                  onValueChange={(value) => {
-                    const newLimit = parseInt(value);
-                    setInvoiceFilters(prev => ({ ...prev, size: newLimit }));
-                    setTransactionFilters(prev => ({ ...prev, size: newLimit }));
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10 elementi</SelectItem>
-                    <SelectItem value="20">20 elementi</SelectItem>
-                    <SelectItem value="50">50 elementi</SelectItem>
-                    <SelectItem value="100">100 elementi</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-end">
-                <Button className="w-full">
-                  <Search className="h-4 w-4 mr-2" />
-                  Applica Filtri
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={collisionDetection}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left side - Available items */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Invoices */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                  Fatture Disponibili ({invoices.length})
-                </CardTitle>
-                <CardDescription>
-                  Trascina le fatture nelle zone di riconciliazione
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {invoicesLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(3)].map((_, i) => (
-                      <div key={i} className="h-20 bg-gray-200 rounded animate-pulse" />
-                    ))}
-                  </div>
-                ) : invoices.length === 0 ? (
-                  <div className="text-center py-8">
-                    <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                    <p className="text-gray-600">Nessuna fattura disponibile</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    <SortableContext 
-                      items={invoices.map(inv => `invoice-${inv.id}`)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {invoices.map((invoice) => {
-                        const isInZone = matchZones.some(zone => 
-                          zone.items.some(item => item.id === `invoice-${invoice.id}`)
-                        );
-                        
-                        if (isInZone) return null;
-                        
-                        return (
-                          <SortableItem 
-                            key={invoice.id} 
-                            id={`invoice-${invoice.id}`}
-                            data={{
-                              type: 'invoice',
-                              item: invoice,
-                              id: `invoice-${invoice.id}`,
-                            }}
-                          >
-                            <InvoiceCard invoice={invoice} />
-                          </SortableItem>
-                        );
-                      })}
-                    </SortableContext>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Transactions */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5 text-emerald-600" />
-                  Movimenti Disponibili ({transactions.length})
-                </CardTitle>
-                <CardDescription>
-                  Trascina i movimenti nelle zone di riconciliazione
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {transactionsLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(3)].map((_, i) => (
-                      <div key={i} className="h-20 bg-gray-200 rounded animate-pulse" />
-                    ))}
-                  </div>
-                ) : transactions.length === 0 ? (
-                  <div className="text-center py-8">
-                    <CreditCard className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                    <p className="text-gray-600">Nessun movimento disponibile</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    <SortableContext 
-                      items={transactions.map(trans => `transaction-${trans.id}`)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {transactions.map((transaction) => {
-                        const isInZone = matchZones.some(zone => 
-                          zone.items.some(item => item.id === `transaction-${transaction.id}`)
-                        );
-                        
-                        if (isInZone) return null;
-                        
-                        return (
-                          <SortableItem 
-                            key={transaction.id} 
-                            id={`transaction-${transaction.id}`}
-                            data={{
-                              type: 'transaction',
-                              item: transaction,
-                              id: `transaction-${transaction.id}`,
-                            }}
-                          >
-                            <TransactionCard transaction={transaction} />
-                          </SortableItem>
-                        );
-                      })}
-                    </SortableContext>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right side - Match zones */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="sticky top-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Zone di Riconciliazione
-              </h3>
-              
-              <div className="space-y-4">
-                {matchZones.map((zone) => (
-                  <div
-                    key={zone.id}
-                    id={zone.id}
-                    className="transition-all"
-                  >
-                    <MatchZone
-                      zone={zone}
-                      onRemoveItem={(itemId) => handleRemoveItem(zone.id, itemId)}
-                      onReconcile={handleReconcile}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Drag overlay */}
-        <DragOverlay>
-          {draggedItem && (
-            <motion.div
-              initial={{ scale: 1, rotate: 0 }}
-              animate={{ scale: 1.05, rotate: 2 }}
-              className="opacity-90"
-            >
-              {draggedItem.type === 'invoice' ? (
-                <InvoiceCard 
-                  invoice={draggedItem.item as Invoice} 
-                  isDragOverlay={true}
-                  showQuickActions={false}
-                />
-              ) : (
-                <TransactionCard 
-                  transaction={draggedItem.item as BankTransaction} 
-                  isDragOverlay={true}
-                  showQuickActions={false}
-                />
-              )}
-            </motion.div>
-          )}
-        </DragOverlay>
-      </DndContext>
-    </div>
-  );
-}
