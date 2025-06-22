@@ -1,42 +1,295 @@
 /**
- * Types V4.0 - Tipi Completi per FatturaAnalyzer
- * Include tutti i tipi necessari per l'applicazione
+ * Types V4.0 Ultra-Enhanced for FatturaAnalyzer - COMPLETE & FIXED
+ * Definizioni TypeScript centralizzate per tutti i componenti
  */
 
-// ===== BASE TYPES =====
-export interface APIResponse<T = any> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
-  details?: any;
-  total?: number;
-  items?: T[];
-  enhanced_data?: any;
+import { ReactNode } from 'react';
+
+// ===== USER & AUTH TYPES =====
+export interface User {
+  id: string;
+  username: string;
+  email?: string;
+  preferences?: {
+    theme?: 'light' | 'dark' | 'system';
+    language?: string;
+    aiFeatures?: boolean;
+    notifications?: boolean;
+    smartReconciliation?: boolean;
+    realTimeUpdates?: boolean;
+  };
+  permissions?: string[];
+  lastActive?: string;
+  profile?: {
+    firstName?: string;
+    lastName?: string;
+    company?: string;
+    role?: string;
+    avatar?: string;
+  };
+  settings?: {
+    dashboardLayout?: string;
+    defaultView?: string;
+    autoSave?: boolean;
+    analyticsLevel?: 'basic' | 'standard' | 'advanced';
+  };
 }
 
-// ===== CORE ENTITY TYPES =====
+export interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (userData: User, token: string) => Promise<void>;
+  logout: () => Promise<void>;
+  updatePreferences: (prefs: Partial<User['preferences']>) => Promise<void>;
+  updateProfile: (profile: Partial<User['profile']>) => Promise<void>;
+  updateSettings: (settings: Partial<User['settings']>) => Promise<void>;
+  checkSession: () => Promise<boolean>;
+  refreshToken: () => Promise<boolean>;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
+}
+
+// ===== THEME TYPES =====
+export type Theme = 'light' | 'dark' | 'system' | 'auto';
+
+export interface ThemeProviderProps {
+  children: ReactNode;
+  defaultTheme?: Theme;
+  storageKey?: string;
+  enableTransitions?: boolean;
+  respectMotionPreferences?: boolean;
+}
+
+export interface ThemeProviderState {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  systemTheme: 'light' | 'dark';
+  effectiveTheme: 'light' | 'dark';
+  isSystemTheme: boolean;
+  toggleTheme: () => void;
+  cycleTheme: () => void;
+  applyTheme: (theme: 'light' | 'dark') => void;
+  getThemeColors: () => ThemeColors;
+  supportsSystemTheme: boolean;
+}
+
+export interface ThemeColors {
+  background: string;
+  foreground: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  muted: string;
+  border: string;
+  destructive: string;
+  warning: string;
+  success: string;
+  info: string;
+}
+
+// ===== SYSTEM HEALTH TYPES =====
+export interface HealthStatus {
+  backend_healthy: boolean;
+  database_connected: boolean;
+  last_health_check: string | null;
+  api_version?: string;
+  core_integration_status?: string;
+  first_run_required?: boolean;
+  features?: Record<string, boolean>;
+  performance_metrics?: {
+    loadTime: number;
+    memoryUsage?: number;
+    memoryPressure?: boolean;
+    api_response_time?: number;
+  };
+  error_count?: number;
+  warning_count?: number;
+}
+
+export interface SystemHealthContextType {
+  healthStatus: HealthStatus;
+  isSystemHealthy: boolean;
+  isLoading: boolean;
+  lastCheck: string | null;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  checkSystemHealth: () => Promise<void>;
+  checkHealth: () => Promise<void>; // Alias per compatibilità
+  systemInfo: {
+    version: string;
+    environment: string;
+    features: string[];
+  };
+  retryCount: number;
+  isOnline: boolean;
+  errorCount: number;
+  warningCount: number;
+}
+
+export interface HealthCheckResult {
+  backend_healthy: boolean;
+  last_health_check: string;
+  user_authenticated: boolean;
+  performance_metrics?: {
+    loadTime: number;
+    memoryUsage?: number;
+    memoryPressure?: boolean;
+  };
+}
+
+// ===== ERROR BOUNDARY TYPES =====
+export interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: React.ErrorInfo;
+  errorId?: string;
+  retryCount: number;
+  lastErrorTime?: number;
+}
+
+export interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+  enableRetry?: boolean;
+  maxRetries?: number;
+  resetTimeoutMs?: number;
+  isolate?: boolean;
+  reportErrors?: boolean;
+}
+
+// ===== QUERY CLIENT TYPES =====
+export interface QueryErrorType {
+  message: string;
+  status?: number;
+  code?: string;
+}
+
+export interface QueryPerformanceMetrics {
+  queryCount: number;
+  averageResponseTime: number;
+  errorRate: number;
+  cacheHitRate: number;
+}
+
+// ===== NOTIFICATION TYPES =====
+export interface NotificationData {
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  duration?: number;
+  actions?: Array<{
+    label: string;
+    action: () => void;
+  }>;
+}
+
+export interface NotificationConfig {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  timestamp: string;
+  duration?: number;
+  actions?: Array<{
+    label: string;
+    action: () => void;
+  }>;
+}
+
+// ===== PROVIDER WRAPPER TYPES =====
+export interface ProvidersWrapperProps {
+  children: ReactNode;
+  enableDevtools?: boolean;
+  enablePerformanceMonitoring?: boolean;
+}
+
+// ===== FEATURE FLAGS TYPES =====
+export interface FeatureFlags {
+  aiFeatures: boolean;
+  smartReconciliation: boolean;
+  advancedAnalytics: boolean;
+  realTimeUpdates: boolean;
+  performanceMonitoring: boolean;
+}
+
+// ===== BUSINESS DOMAIN TYPES =====
+
+// Anagrafiche
+export interface Anagraphics {
+  id: number;
+  type: 'Cliente' | 'Fornitore' | 'Altro';
+  business_name?: string;
+  full_name?: string;
+  vat_number?: string;
+  tax_code?: string;
+  address?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  country?: string;
+  phone?: string;
+  email?: string;
+  pec?: string;
+  website?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Enhanced fields V4.0
+  client_score?: number;
+  payment_reliability?: number;
+  total_invoiced?: number;
+  last_activity?: string;
+  tags?: string[];
+}
+
+export interface AnagraphicsFilters {
+  search?: string;
+  type_filter?: string;
+  province_filter?: string;
+  page?: number;
+  size?: number;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  // Enhanced filters V4.0
+  min_client_score?: number;
+  has_email?: boolean;
+  has_pec?: boolean;
+  activity_period?: string;
+}
+
+// Fatture
 export interface Invoice {
   id: number;
   numero: string;
   data_emissione: string;
   data_scadenza?: string;
-  tipo_fattura: 'Attiva' | 'Passiva';
-  anagraphics_id: number;
-  anagraphics?: Anagraphics;
+  tipo_documento: string;
+  invoice_type: 'Attiva' | 'Passiva';
+  anagraphics_id?: number;
+  anagraphics_name?: string;
+  causale?: string;
+  imponibile: number;
+  iva: number;
   total_amount: number;
-  iva_amount?: number;
-  payment_status: string;
-  paid_amount?: number;
+  status_pagamento: string;
   note?: string;
-  file_path?: string;
-  created_at: string;
-  updated_at: string;
-  // Enhanced fields
-  lines?: InvoiceLine[];
-  reconciliation_links?: ReconciliationLink[];
-  aging_days?: number;
+  created_at?: string;
+  updated_at?: string;
+  // Enhanced fields V4.0
+  payment_prediction?: number;
   risk_score?: number;
+  reconciliation_status?: 'Pending' | 'Partial' | 'Complete';
+  ai_category?: string;
+  lines?: InvoiceLine[];
+  // Additional fields for compatibility
+  doc_number?: string;
+  doc_date?: string;
+  due_date?: string;
+  counterparty_name?: string;
+  payment_status?: string;
+  open_amount?: number;
+  days_overdue?: number;
 }
 
 export interface InvoiceLine {
@@ -45,169 +298,96 @@ export interface InvoiceLine {
   description: string;
   quantity: number;
   unit_price: number;
-  total_price: number;
-  vat_rate?: number;
-  vat_amount?: number;
+  vat_rate: number;
+  total_amount: number;
 }
 
-export interface BankTransaction {
-  id: number;
-  data_valuta: string;
-  data_contabile: string;
-  amount: number;
-  description: string;
-  reconciliation_status: string;
-  anagraphics_id_heuristic?: number;
-  anagraphics?: Anagraphics;
-  note?: string;
-  created_at: string;
-  updated_at: string;
-  // Enhanced fields V4.0
-  enhanced_data?: {
-    ai_confidence?: number;
-    pattern_match?: boolean;
-    similar_transactions?: number[];
-    smart_suggestions?: any[];
-  };
-  reconciliation_links?: ReconciliationLink[];
-  reliability_score?: number;
-  category?: string;
-  subcategory?: string;
-}
-
-export interface Anagraphics {
-  id: number;
-  type: 'Cliente' | 'Fornitore';
-  business_name?: string;
-  full_name?: string;
-  piva?: string;
-  codice_fiscale?: string;
-  address?: string;
-  city?: string;
-  province?: string;
-  cap?: string;
-  phone?: string;
-  email?: string;
-  pec?: string;
-  created_at: string;
-  updated_at: string;
-  // Enhanced fields
-  client_score?: number;
-  total_invoices?: number;
-  total_amount?: number;
-  payment_reliability?: number;
-  last_transaction_date?: string;
-}
-
-export interface ReconciliationLink {
-  id: number;
-  invoice_id: number;
-  transaction_id: number;
-  amount: number;
-  reconciliation_date: string;
-  user_id?: number;
-  ai_confidence?: number;
-  ai_validated?: boolean;
-  manual_override?: boolean;
-  notes?: string;
-}
-
-// ===== FILTER TYPES =====
-export interface PaginationParams {
-  page?: number;
-  size?: number;
-  limit?: number;
-  offset?: number;
-}
-
-export interface DateRangeFilter {
-  start_date?: string;
-  end_date?: string;
-}
-
-export interface InvoiceFilters extends PaginationParams, DateRangeFilter {
+export interface InvoiceFilters {
+  search?: string;
   type_filter?: 'Attiva' | 'Passiva';
   status_filter?: string;
-  anagraphics_id?: number;
-  search?: string;
-  min_amount?: number;
-  max_amount?: number;
+  anagraphics_filter?: number;
+  start_date?: string;
+  end_date?: string;
+  page?: number;
+  size?: number;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  // Enhanced filters V4.0
+  payment_status?: string;
+  amount_min?: number;
+  amount_max?: number;
+  overdue_only?: boolean;
 }
 
-export interface TransactionFilters extends PaginationParams, DateRangeFilter {
+// Transazioni Bancarie
+export interface BankTransaction {
+  id: number;
+  transaction_date: string;
+  value_date?: string;
+  description: string;
+  amount: number;
+  transaction_type: 'Entrata' | 'Uscita';
+  category?: string;
+  bank_reference?: string;
+  reconciliation_status: 'Da Riconciliare' | 'Riconciliata' | 'Parziale';
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Enhanced fields V4.0
+  ai_confidence?: number;
+  suggested_anagraphics_id?: number;
+  suggested_invoice_id?: number;
+  pattern_match_score?: number;
+  reconciliation_suggestions?: ReconciliationSuggestion[];
+  // Additional fields for compatibility
+  remaining_amount?: number;
+}
+
+export interface TransactionFilters {
+  search?: string;
   status_filter?: string;
-  search?: string;
-  min_amount?: number;
-  max_amount?: number;
-  anagraphics_id_heuristic?: number;
-  hide_pos?: boolean;
-  hide_worldline?: boolean;
-  hide_cash?: boolean;
-  hide_commissions?: boolean;
-  // V4.0 Enhanced
-  enhanced?: boolean;
-  include_summary?: boolean;
-  enable_ai_insights?: boolean;
-  cache_enabled?: boolean;
+  type_filter?: 'Entrata' | 'Uscita';
+  category_filter?: string;
+  start_date?: string;
+  end_date?: string;
+  amount_min?: number;
+  amount_max?: number;
+  page?: number;
+  size?: number;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  // Enhanced filters V4.0
+  unreconciled_only?: boolean;
+  has_suggestions?: boolean;
+  ai_confidence_min?: number;
 }
 
-export interface AnagraphicsFilters extends PaginationParams {
-  type_filter?: 'Cliente' | 'Fornitore';
-  search?: string;
-  city?: string;
-  province?: string;
-}
-
-// ===== ANALYTICS TYPES =====
-export interface AnalyticsRequest {
-  analysis_type: string;
-  parameters?: Record<string, any>;
-  cache_enabled?: boolean;
-  include_predictions?: boolean;
-  output_format?: 'json' | 'excel' | 'csv' | 'pdf';
-  priority?: 'low' | 'normal' | 'high' | 'urgent';
-}
-
-export interface DashboardData {
-  total_invoices: number;
-  total_transactions: number;
-  reconciled_amount: number;
-  pending_reconciliation: number;
-  kpis: {
-    revenue_trend: number;
-    reconciliation_rate: number;
-    average_processing_time: number;
-    ai_accuracy: number;
-  };
-  charts?: {
-    monthly_revenue: any[];
-    transaction_types: any[];
-    reconciliation_status: any[];
-  };
-  recent_activity?: any[];
-  alerts?: any[];
-}
-
-// ===== RECONCILIATION V4.0 TYPES =====
-export interface UltraReconciliationRequest {
-  operation_type: '1_to_1' | 'n_to_m' | 'smart_client' | 'auto' | 'ultra_smart';
+// Riconciliazione
+export interface ReconciliationSuggestion {
+  id: number;
+  transaction_id: number;
   invoice_id?: number;
-  transaction_id?: number;
-  anagraphics_id_filter?: number;
+  anagraphics_id?: number;
+  confidence_score: number;
+  match_type: 'Exact' | 'Partial' | 'AI_Suggested';
+  suggested_amount: number;
+  reasoning?: string;
+  ai_enhanced?: boolean;
+}
+
+export interface UltraReconciliationRequest {
+  operation_type: 'auto' | 'manual' | 'batch';
+  max_suggestions?: number;
+  confidence_threshold?: number;
   enable_ai_enhancement?: boolean;
   enable_smart_patterns?: boolean;
   enable_predictive_scoring?: boolean;
-  enable_parallel_processing?: boolean;
-  enable_caching?: boolean;
-  confidence_threshold?: number;
-  max_suggestions?: number;
-  max_combination_size?: number;
-  max_search_time_ms?: number;
-  exclude_invoice_ids?: number[];
-  start_date?: string;
-  end_date?: string;
-  priority?: 'low' | 'normal' | 'high' | 'urgent';
-  real_time?: boolean;
+  focus_anagraphics_id?: number;
+  focus_date_range?: {
+    start: string;
+    end: string;
+  };
 }
 
 export interface ManualMatchRequest {
@@ -216,9 +396,9 @@ export interface ManualMatchRequest {
   amount_to_match: number;
   enable_ai_validation?: boolean;
   enable_learning?: boolean;
-  force_match?: boolean;
   user_confidence?: number;
-  notes?: string;
+  user_notes?: string;
+  force_match?: boolean;
 }
 
 export interface BatchReconciliationRequest {
@@ -229,50 +409,42 @@ export interface BatchReconciliationRequest {
   }>;
   enable_ai_validation?: boolean;
   enable_parallel_processing?: boolean;
-  force_background?: boolean;
+  confidence_threshold?: number;
 }
 
-export interface ReconciliationSuggestion {
-  invoice_id: number;
-  transaction_id: number;
-  confidence_score: number;
-  amount: number;
-  match_type: 'exact' | 'partial' | 'multi';
-  ai_enhanced: boolean;
-  reasoning?: string;
-  risk_factors?: string[];
-}
-
-// ===== UI TYPES =====
-export interface NotificationConfig {
-  id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
-  title: string;
-  message: string;
-  duration?: number;
-  timestamp: string;
-  action?: {
-    label: string;
-    onClick: () => void;
+// Analytics
+export interface AnalyticsRequest {
+  analysis_type: string;
+  parameters?: Record<string, any>;
+  output_format?: 'json' | 'excel' | 'pdf';
+  include_ai_insights?: boolean;
+  date_range?: {
+    start: string;
+    end: string;
   };
-  persistent?: boolean;
-  dismissible?: boolean;
 }
 
-export interface LoadingState {
-  isLoading: boolean;
-  progress?: number;
+// API Response Types
+export interface APIResponse<T = any> {
+  success: boolean;
   message?: string;
+  data?: T;
+  error?: string;
+  timestamp?: string;
 }
 
-export interface ErrorState {
-  hasError: boolean;
-  error?: Error | string;
-  context?: string;
-  retryable?: boolean;
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  enhanced_data?: Record<string, any>;
 }
 
-// ===== HOOK RETURN TYPES =====
+// Hooks Types
 export interface UseApiResult<T> {
   data: T | null;
   loading: boolean;
@@ -287,303 +459,235 @@ export interface UseMutationResult<T, V = any> {
   reset: () => void;
 }
 
-export interface UseQueryResult<T> {
-  data: T | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-  isSuccess: boolean;
-  refetch: () => void;
-  isFetching: boolean;
+// Store Types
+export interface CachePreferences {
+  enabled: boolean;
+  defaultTTL: number;
+  smartInvalidation: boolean;
 }
 
-// ===== IMPORT/EXPORT TYPES =====
-export interface ImportResult {
-  processed: number;
-  success: number;
-  duplicates: number;
-  errors: number;
-  unsupported: number;
-  files: Array<{
-    name: string;
-    status: string;
-    message?: string;
+export interface PerformanceMetrics {
+  api_response_times?: number[];
+  cache_hit_rates?: number;
+  memory_usage?: number;
+  error_rates?: number;
+}
+
+// First Run Types
+export interface FirstRunState {
+  is_first_run: boolean;
+  setup_completed: boolean;
+  current_step?: string;
+  wizard_data?: Record<string, any>;
+}
+
+// UI Store Types
+export interface UISettings {
+  theme: Theme;
+  real_time_updates: boolean;
+  smart_reconciliation_enabled: boolean;
+  ai_features_enabled: boolean;
+  performance_monitoring_enabled: boolean;
+}
+
+// Export alias types for backward compatibility
+export type HealthCheckResponse = HealthCheckResult;
+export type SystemStatus = SystemHealthContextType;
+export type UserPreferences = User['preferences'];
+export type UserProfile = User['profile'];
+export type UserSettings = User['settings'];
+
+// Utility Types
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+export type RequiredFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
+
+export type OptionalFields<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+// Event Types
+export interface SystemEvent {
+  type: 'health_check' | 'error' | 'warning' | 'info';
+  timestamp: string;
+  data: any;
+  source: string;
+}
+
+// Configuration Types
+export interface ProviderConfig {
+  queryClient: {
+    defaultOptions: {
+      queries: {
+        staleTime: number;
+        gcTime: number;
+        retry: number;
+        refetchOnWindowFocus: boolean;
+      };
+      mutations: {
+        retry: number;
+      };
+    };
+  };
+  theme: {
+    defaultTheme: Theme;
+    storageKey: string;
+  };
+  auth: {
+    tokenStorageKey: string;
+    userDataStorageKey: string;
+    sessionCheckInterval: number;
+  };
+  performance: {
+    slowQueryThreshold: number;
+    criticalQueryThreshold: number;
+    healthCheckInterval: number;
+    memoryPressureThreshold: number;
+  };
+  notifications: {
+    defaultDuration: number;
+    position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+  };
+}
+
+// Badge Variant Types per UI
+export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'error' | 'info';
+
+// Payment Status Helper
+export interface PaymentStatusInfo {
+  label: string;
+  variant: BadgeVariant;
+  icon?: string;
+}
+
+// Dashboard KPI Types
+export interface KPIData {
+  total_receivables: number;
+  total_payables: number;
+  overdue_receivables_count: number;
+  overdue_receivables_amount: number;
+  overdue_payables_count: number;
+  overdue_payables_amount: number;
+  revenue_ytd: number;
+  revenue_prev_year_ytd: number;
+  revenue_yoy_change_ytd?: number;
+  gross_margin_ytd: number;
+  margin_percent_ytd?: number;
+  active_customers_month: number;
+  new_customers_month: number;
+}
+
+export interface DashboardData {
+  kpis: KPIData;
+  recent_invoices: Array<{
+    id: number;
+    type: string;
+    doc_number: string;
+    doc_date: string;
+    total_amount: number;
+    payment_status: string;
+    counterparty_name: string;
+    open_amount: number;
+  }>;
+  recent_transactions: Array<{
+    id: number;
+    transaction_date: string;
+    amount: number;
+    description: string;
+    reconciliation_status: string;
+    remaining_amount: number;
+  }>;
+  cash_flow_summary: Array<{
+    month: string;
+    total_inflows: number;
+    total_outflows: number;
+    net_cash_flow: number;
+  }>;
+  top_clients: Array<{
+    id: number;
+    denomination: string;
+    total_revenue: number;
+    num_invoices: number;
+    last_order_date: string;
+  }>;
+  overdue_invoices: Array<{
+    id: number;
+    doc_number: string;
+    doc_date: string;
+    due_date: string;
+    total_amount: number;
+    open_amount: number;
+    days_overdue: number;
+    counterparty_name: string;
   }>;
 }
 
-export interface ExportOptions {
-  format: 'excel' | 'csv' | 'json' | 'pdf';
-  filters?: Record<string, any>;
-  include_details?: boolean;
-  include_reconciliation?: boolean;
-  custom_fields?: string[];
-}
-
-// ===== SYNC TYPES =====
-export interface SyncStatus {
-  enabled: boolean;
-  service_available: boolean;
-  remote_file_id?: string;
-  last_sync_time?: string;
-  auto_sync_running: boolean;
-}
-
-export interface SyncResult {
-  success: boolean;
-  action?: string;
-  message: string;
-  timestamp?: string;
-}
-
-// ===== FORM TYPES =====
-export interface FormField {
-  name: string;
-  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox';
-  label: string;
-  required?: boolean;
-  validation?: (value: any) => string | null;
-  options?: Array<{ label: string; value: any }>;
-  placeholder?: string;
-  defaultValue?: any;
-}
-
-export interface FormErrors {
-  [key: string]: string | null;
-}
-
-// ===== UTILITY TYPES =====
-export type SortDirection = 'asc' | 'desc';
-
-export interface SortConfig {
-  field: string;
-  direction: SortDirection;
-}
-
-export interface FilterConfig {
-  field: string;
-  operator: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'startsWith' | 'endsWith';
-  value: any;
-}
-
-export type Theme = 'light' | 'dark' | 'system';
-
-export type Language = 'it' | 'en';
-
-// ===== FEATURES FLAGS =====
-export interface FeatureFlags {
-  ai_insights: boolean;
-  smart_reconciliation: boolean;
-  ultra_analytics: boolean;
-  enhanced_transactions: boolean;
-  predictive_scoring: boolean;
-  pattern_learning: boolean;
-  real_time_metrics: boolean;
-  advanced_export: boolean;
-  cloud_sync: boolean;
-  setup_wizard: boolean;
-}
-
-// ===== CHART TYPES =====
-export interface ChartDataPoint {
-  name: string;
-  value: number;
-  [key: string]: any;
-}
-
-export interface ChartConfig {
-  type: 'line' | 'area' | 'bar' | 'pie' | 'scatter' | 'composed';
-  data: ChartDataPoint[];
-  title?: string;
-  description?: string;
-  xKey: string;
-  yKeys: string[];
-  colors?: string[];
-  height?: number;
-  formatters?: Record<string, (value: any) => string>;
-}
-
-// ===== PERFORMANCE TYPES =====
-export interface PerformanceMetrics {
-  renderTime: number;
-  apiResponseTime: number;
-  cacheHitRate: number;
-  errorRate: number;
-  throughput: number;
-}
-
-// ===== SEARCH TYPES =====
-export interface SearchResult<T = any> {
-  items: T[];
-  total: number;
-  query: string;
-  filters?: Record<string, any>;
-  suggestions?: string[];
-}
-
-export interface SearchOptions {
-  query: string;
-  filters?: Record<string, any>;
-  sort?: SortConfig;
-  pagination?: PaginationParams;
-  fuzzy?: boolean;
-  highlight?: boolean;
-}
-
-// ===== AUDIT TYPES =====
-export interface AuditLog {
-  id: number;
-  user_id?: number;
-  action: string;
-  entity_type: string;
-  entity_id: number;
-  changes?: Record<string, any>;
-  timestamp: string;
-  ip_address?: string;
-  user_agent?: string;
-}
-
-// ===== BACKUP TYPES =====
-export interface BackupInfo {
-  id: string;
-  filename: string;
-  size: number;
-  created_at: string;
-  type: 'manual' | 'automatic';
-  status: 'completed' | 'in_progress' | 'failed';
-}
-
-// ===== VALIDATION TYPES =====
-export interface ValidationRule {
-  required?: boolean;
-  minLength?: number;
-  maxLength?: number;
-  pattern?: RegExp;
-  custom?: (value: any) => string | null;
+// Loading Component Types
+export interface LoadingComponentProps {
   message?: string;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
 }
 
-export interface ValidationSchema {
-  [key: string]: ValidationRule[];
-}
-
-// ===== WEBSOCKET TYPES =====
-export interface WebSocketMessage {
-  type: string;
-  payload: any;
-  timestamp: string;
-  id: string;
-}
-
-export interface RealTimeUpdate {
-  entity: string;
-  action: 'create' | 'update' | 'delete';
-  data: any;
-  timestamp: string;
-}
-
-// ===== TASK TYPES =====
-export interface Task {
-  id: string;
-  type: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress: number;
-  result?: any;
+// Form Types
+export interface FormFieldProps {
+  label?: string;
+  description?: string;
   error?: string;
-  created_at: string;
-  updated_at: string;
+  required?: boolean;
+  className?: string;
 }
 
-// ===== SYSTEM HEALTH TYPES =====
-export interface SystemHealth {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  version: string;
-  uptime: number;
-  components: {
-    database: 'up' | 'down';
-    api: 'up' | 'down';
-    cache: 'up' | 'down';
-    storage: 'up' | 'down';
-  };
-  metrics: {
-    memory_usage: number;
-    cpu_usage: number;
-    disk_usage: number;
-    response_time: number;
-  };
+// Table Types
+export interface TableColumn<T = any> {
+  key: string;
+  label: string;
+  sortable?: boolean;
+  render?: (value: any, item: T) => React.ReactNode;
+  className?: string;
 }
 
-// ===== CONFIGURATION TYPES =====
-export interface AppConfig {
-  api_url: string;
-  version: string;
-  environment: 'development' | 'staging' | 'production';
-  features: FeatureFlags;
-  limits: {
-    max_file_size: number;
-    max_batch_size: number;
-    rate_limit: number;
-  };
+export interface TableProps<T = any> {
+  columns: TableColumn<T>[];
+  data: T[];
+  loading?: boolean;
+  onSort?: (key: string, direction: 'asc' | 'desc') => void;
+  onRowClick?: (item: T) => void;
+  className?: string;
 }
 
-// ===== DEFAULT EXPORTS =====
+// Sidebar Types
+export interface NavigationItem {
+  title: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string | number;
+  description?: string;
+  children?: NavigationItem[];
+}
+
+// Filter Types
+export interface FilterOption {
+  value: string;
+  label: string;
+  count?: number;
+}
+
+export interface FilterGroup {
+  key: string;
+  label: string;
+  type: 'select' | 'multiselect' | 'daterange' | 'number';
+  options?: FilterOption[];
+  min?: number;
+  max?: number;
+}
+
+// Export everything needed for the application
 export default {};
 
-// ===== RE-EXPORTS FOR COMPATIBILITY =====
-export type {
-  // Core entities
-  Invoice as InvoiceType,
-  BankTransaction as TransactionType,
-  Anagraphics as AnagraphicsType,
-  
-  // API
-  APIResponse as ApiResponse,
-  
-  // Filters
-  InvoiceFilters as InvoiceFilter,
-  TransactionFilters as TransactionFilter,
-  AnagraphicsFilters as AnagraphicsFilter,
-  
-  // UI
-  NotificationConfig as Notification,
-  LoadingState as Loading,
-  ErrorState as Error,
-};
-
-// ===== UTILITY TYPE HELPERS =====
-export type Partial<T> = {
-  [P in keyof T]?: T[P];
-};
-
-export type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
-
-export type NonNullable<T> = T extends null | undefined ? never : T;
-
-export type KeyOf<T> = keyof T;
-
-export type ValueOf<T> = T[keyof T];
-
-// ===== BRANDED TYPES =====
-export type InvoiceId = number & { __brand: 'InvoiceId' };
-export type TransactionId = number & { __brand: 'TransactionId' };
-export type AnagraphicsId = number & { __brand: 'AnagraphicsId' };
-
-// ===== ENUM-LIKE TYPES =====
-export const InvoiceTypes = {
-  ACTIVE: 'Attiva' as const,
-  PASSIVE: 'Passiva' as const,
-} as const;
-
-export const AnagraphicsTypes = {
-  CLIENT: 'Cliente' as const,
-  SUPPLIER: 'Fornitore' as const,
-} as const;
-
-export const ReconciliationStatuses = {
-  UNRECONCILED: 'Da Riconciliare' as const,
-  RECONCILED: 'Riconciliato' as const,
-  PARTIAL: 'Parzialmente Riconciliato' as const,
-} as const;
-
-export type InvoiceType = typeof InvoiceTypes[keyof typeof InvoiceTypes];
-export type AnagraphicsType = typeof AnagraphicsTypes[keyof typeof AnagraphicsTypes];
-export type ReconciliationStatus = typeof ReconciliationStatuses[keyof typeof ReconciliationStatuses];
+// Export common type unions
+export type InvoiceType = 'Attiva' | 'Passiva';
+export type TransactionType = 'Entrata' | 'Uscita';
+export type ReconciliationStatus = 'Da Riconciliare' | 'Riconciliata' | 'Parziale';
+export type PaymentStatus = 'Pagata' | 'Non pagata' | 'Parziale' | 'Scaduta';
+export type AnagraphicsType = 'Cliente' | 'Fornitore' | 'Altro';
