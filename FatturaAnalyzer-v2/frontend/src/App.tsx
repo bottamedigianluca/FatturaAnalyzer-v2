@@ -24,52 +24,36 @@ const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(module
 // Creazione del client per React Query
 const queryClient = new QueryClient();
 
-// Componente per definire le route dell'applicazione
-// Questo componente verrà renderizzato all'interno del Layout
-function AppRoutes() {
-  return (
-    <Suspense fallback={<QueryLoadingFallback />}>
-      <Routes>
-        {/* La rotta di base reindirizza alla dashboard */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        
-        {/* Definizione di tutte le pagine dell'applicazione */}
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="invoices" element={<InvoicesPage />} />
-        <Route path="invoices/:id" element={<InvoiceDetailPage />} />
-        <Route path="transactions" element={<TransactionsPage />} />
-        <Route path="transactions/:id" element={<TransactionDetailPage />} />
-        <Route path="reconciliation" element={<ReconciliationPage />} />
-        <Route path="anagraphics" element={<AnagraphicsPage />} />
-        <Route path="anagraphics/:id" element={<AnagraphicsDetailPage />} />
-        <Route path="analytics" element={<AnalyticsPage />} />
-        <Route path="import" element={<ImportExportPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        
-        {/* Fallback per qualsiasi rotta non trovata, reindirizza alla dashboard */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </Suspense>
-  );
-}
-
-
 // Componente principale dell'applicazione
 function App() {
-  // Nota: In questa versione finale, abbiamo rimosso tutta la logica di 'first-run'
-  // da questo file. Diamo per scontato che il setup sia stato completato
-  // tramite lo script `fix_setup_complete.py`. Questo semplifica drasticamente
-  // il componente App e lo rende focalizzato solo sul rendering dell'applicazione funzionante.
-
   return (
     <QueryClientProvider client={queryClient}>
       <ProvidersWrapper>
         <BrowserRouter>
-          {/* Il Layout contiene la sidebar e l'header, e l'Outlet per le pagine */}
-          <Layout>
-            {/* AppRoutes contiene tutte le definizioni delle pagine */}
-            <AppRoutes />
-          </Layout>
+          <Suspense fallback={<FullPageLoading />}>
+            <Routes>
+              {/* La rotta base reindirizza alla dashboard */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              
+              {/* Tutte le route che utilizzano il Layout */}
+              <Route path="/" element={<Layout />}>
+                <Route path="dashboard" element={<DashboardPage />} />
+                <Route path="invoices" element={<InvoicesPage />} />
+                <Route path="invoices/:id" element={<InvoiceDetailPage />} />
+                <Route path="transactions" element={<TransactionsPage />} />
+                <Route path="transactions/:id" element={<TransactionDetailPage />} />
+                <Route path="reconciliation" element={<ReconciliationPage />} />
+                <Route path="anagraphics" element={<AnagraphicsPage />} />
+                <Route path="anagraphics/:id" element={<AnagraphicsDetailPage />} />
+                <Route path="analytics" element={<AnalyticsPage />} />
+                <Route path="import" element={<ImportExportPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
+              
+              {/* Fallback per qualsiasi rotta non trovata */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </Suspense>
         </BrowserRouter>
       </ProvidersWrapper>
       <Toaster position="top-right" richColors />
