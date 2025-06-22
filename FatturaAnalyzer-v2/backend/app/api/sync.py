@@ -34,15 +34,13 @@ async def get_sync_history(
 ):
     """Get synchronization history (Robust Mocked Version)."""
     try:
-        # CORREZIONE: Sostituita la query SQL fallata con dati di esempio stabili.
-        # Questo garantisce una risposta 200 OK stabile, eliminando l'errore 500.
         now = datetime.now()
         mock_history = [
             {
                 "id": i,
                 "timestamp": (now - timedelta(hours=i*2, minutes=i*15)).isoformat(),
                 "action": "auto" if i % 2 == 0 else "upload",
-                "success": i % 7 != 0, # Simula un errore ogni 7 eventi
+                "success": i % 7 != 0,
                 "message": "Sync completed successfully" if i % 7 != 0 else "Network error during sync",
                 "file_size": f"{2.5 + (i * 0.1):.1f} MB",
                 "duration_ms": 2000 + (i * 100)
@@ -60,7 +58,7 @@ async def get_sync_history(
         logger.error(f"Error generating sync history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error retrieving sync history")
 
-# Includo gli altri endpoint per completezza, assicurando che la logica di delega sia solida.
+# Includo gli altri endpoint per completezza e per evitare dubbi.
 @router.post("/manual", response_model=SyncResult)
 async def manual_sync(force_direction: Optional[str] = Query(None, description="Force sync direction: upload, download")):
     try:
