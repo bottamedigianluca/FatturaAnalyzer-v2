@@ -1,6 +1,13 @@
 /**
- * ULTRA API Client V4.0 for FatturaAnalyzer Backend - FIXED & OPTIMIZED
- * Completamente aggiornato con tutti i metodi HTTP e fallback robusti
+ * ENTERPRISE API Client V4.0 for FatturaAnalyzer Backend - PRODUCTION VERSION
+ * Versione definitiva per ambiente enterprise senza dati simulati
+ * 
+ * Features:
+ * - Metodi HTTP completi (GET, POST, PUT, DELETE, PATCH)
+ * - Sistema di fallback enterprise-grade senza mock data
+ * - Gestione errori professionale con messaggi chiari
+ * - Compatibilità con diverse versioni del backend
+ * - Fallimenti gestiti con messaggi informativi appropriati
  */
 
 import { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
@@ -182,7 +189,7 @@ class ApiClient {
     return searchParams.toString();
   }
 
-  // ===== HTTP HELPER METHODS - FIXED =====
+  // ===== HTTP HELPER METHODS =====
   
   async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
     const query = params ? this.buildQuery(params) : '';
@@ -243,72 +250,116 @@ class ApiClient {
     return this.request('/health');
   }
 
-  // ===== FIRST RUN & SETUP API COMPLETO =====
+  // ===== FIRST RUN & SETUP API =====
   
   async checkFirstRun(): Promise<APIResponse> {
     try {
       return await this.request('/api/first-run/check');
     } catch (error) {
-      // Fallback for older backend versions
+      // Prova endpoint alternativo
       try {
         return await this.request('/first-run/check');
       } catch (fallbackError) {
-        return {
-          success: false,
-          data: { is_first_run: false, setup_completed: true },
-          message: 'First run check fallback'
-        };
+        throw new Error('Impossibile verificare lo stato di prima configurazione. Verificare la connessione al backend.');
       }
     }
   }
 
   async startSetupWizard(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/start', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/wizard/start');
+    } catch (error) {
+      throw new Error('Impossibile avviare il wizard di configurazione. Funzionalità non disponibile.');
+    }
   }
 
   async setupDatabase(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/database-setup', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/wizard/database-setup');
+    } catch (error) {
+      throw new Error('Impossibile configurare il database. Funzionalità non disponibile.');
+    }
   }
 
   async completeSetupWizard(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/complete', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/wizard/complete');
+    } catch (error) {
+      throw new Error('Impossibile completare la configurazione. Funzionalità non disponibile.');
+    }
   }
 
   async getWizardStatus(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/status');
+    try {
+      return await this.request('/api/first-run/wizard/status');
+    } catch (error) {
+      throw new Error('Impossibile ottenere lo stato del wizard. Funzionalità non disponibile.');
+    }
   }
 
   async skipWizard(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/skip', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/wizard/skip');
+    } catch (error) {
+      throw new Error('Impossibile saltare il wizard. Funzionalità non disponibile.');
+    }
   }
 
   async getSystemInfo(): Promise<APIResponse> {
-    return this.request('/api/first-run/system/info');
+    try {
+      return await this.request('/api/first-run/system/info');
+    } catch (error) {
+      throw new Error('Impossibile ottenere informazioni di sistema. Funzionalità non disponibile.');
+    }
   }
 
   async testDatabaseConnection(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/test-database', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/wizard/test-database');
+    } catch (error) {
+      throw new Error('Impossibile testare la connessione al database. Funzionalità non disponibile.');
+    }
   }
 
   async generateSampleData(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/generate-sample-data', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/wizard/generate-sample-data');
+    } catch (error) {
+      throw new Error('Impossibile generare dati di esempio. Funzionalità non disponibile.');
+    }
   }
 
   async getWizardSteps(): Promise<APIResponse> {
-    return this.request('/api/first-run/wizard/steps');
+    try {
+      return await this.request('/api/first-run/wizard/steps');
+    } catch (error) {
+      throw new Error('Impossibile ottenere i passi del wizard. Funzionalità non disponibile.');
+    }
   }
 
   async getFirstRunHealth(): Promise<APIResponse> {
-    return this.request('/api/first-run/health');
+    try {
+      return await this.request('/api/first-run/health');
+    } catch (error) {
+      throw new Error('Impossibile verificare lo stato del sistema. Funzionalità non disponibile.');
+    }
   }
 
   async forceResetFirstRun(): Promise<APIResponse> {
-    return this.request('/api/first-run/force-reset', { method: 'POST' });
+    try {
+      return await this.post('/api/first-run/force-reset');
+    } catch (error) {
+      throw new Error('Impossibile resettare la configurazione. Funzionalità non disponibile.');
+    }
   }
 
   // Setup API
   async getSetupStatus(): Promise<APIResponse> {
-    return this.request('/api/setup/status');
+    try {
+      return await this.request('/api/setup/status');
+    } catch (error) {
+      throw new Error('Impossibile ottenere lo stato del setup. Funzionalità non disponibile.');
+    }
   }
 
   async extractCompanyDataFromInvoice(file: File, invoiceType: string): Promise<APIResponse> {
@@ -316,19 +367,35 @@ class ApiClient {
     formData.append('file', file);
     formData.append('invoice_type', invoiceType);
     
-    return this.post('/api/setup/extract-from-invoice', formData);
+    try {
+      return await this.post('/api/setup/extract-from-invoice', formData);
+    } catch (error) {
+      throw new Error('Impossibile estrarre dati aziendali dalla fattura. Funzionalità non disponibile.');
+    }
   }
 
   async completeSetup(setupData: any): Promise<APIResponse> {
-    return this.post('/api/setup/complete', setupData);
+    try {
+      return await this.post('/api/setup/complete', setupData);
+    } catch (error) {
+      throw new Error('Impossibile completare il setup. Funzionalità non disponibile.');
+    }
   }
 
   async validateCompanyData(companyData: any): Promise<APIResponse> {
-    return this.post('/api/setup/validate-company-data', companyData);
+    try {
+      return await this.post('/api/setup/validate-company-data', companyData);
+    } catch (error) {
+      throw new Error('Impossibile validare i dati aziendali. Funzionalità non disponibile.');
+    }
   }
 
   async getImportSuggestions(): Promise<APIResponse> {
-    return this.request('/api/setup/import-suggestions');
+    try {
+      return await this.request('/api/setup/import-suggestions');
+    } catch (error) {
+      throw new Error('Impossibile ottenere suggerimenti di importazione. Funzionalità non disponibile.');
+    }
   }
 
   async testXMLExtraction(xmlContent: string, invoiceType: string): Promise<APIResponse> {
@@ -336,128 +403,240 @@ class ApiClient {
     formData.append('xml_content', xmlContent);
     formData.append('invoice_type', invoiceType);
     
-    return this.post('/api/setup/test-xml-extraction', formData);
+    try {
+      return await this.post('/api/setup/test-xml-extraction', formData);
+    } catch (error) {
+      throw new Error('Impossibile testare l\'estrazione XML. Funzionalità non disponibile.');
+    }
   }
 
-  // ===== ANAGRAPHICS API ENHANCED =====
+  // ===== ANAGRAPHICS API =====
   
   async getAnagraphics(filters: AnagraphicsFilters = {}) {
-    const query = this.buildQuery(filters);
-    return this.request(`/api/anagraphics/${query ? '?' + query : ''}`);
+    try {
+      const query = this.buildQuery(filters);
+      return await this.request(`/api/anagraphics/${query ? '?' + query : ''}`);
+    } catch (error) {
+      throw new Error('Impossibile recuperare le anagrafiche. Verificare la connessione al backend.');
+    }
   }
 
   async getAnagraphicsById(id: number): Promise<Anagraphics> {
-    return this.request(`/api/anagraphics/${id}`);
+    try {
+      return await this.request(`/api/anagraphics/${id}`);
+    } catch (error) {
+      throw new Error('Anagrafica non trovata o non accessibile.');
+    }
   }
 
   async createAnagraphics(data: Partial<Anagraphics>): Promise<Anagraphics> {
-    return this.post('/api/anagraphics/', data);
+    try {
+      return await this.post('/api/anagraphics/', data);
+    } catch (error) {
+      throw new Error('Errore nella creazione dell\'anagrafica. Verificare i dati inseriti.');
+    }
   }
 
   async updateAnagraphics(id: number, data: Partial<Anagraphics>): Promise<Anagraphics> {
-    return this.put(`/api/anagraphics/${id}`, data);
+    try {
+      return await this.put(`/api/anagraphics/${id}`, data);
+    } catch (error) {
+      throw new Error('Errore nell\'aggiornamento dell\'anagrafica. Verificare i dati inseriti.');
+    }
   }
 
   async deleteAnagraphics(id: number): Promise<APIResponse> {
-    return this.delete(`/api/anagraphics/${id}`);
+    try {
+      return await this.delete(`/api/anagraphics/${id}`);
+    } catch (error) {
+      throw new Error('Errore nella cancellazione dell\'anagrafica. Operazione non consentita.');
+    }
   }
 
   async searchAnagraphics(query: string, type_filter?: string, limit: number = 10): Promise<APIResponse> {
-    const params = this.buildQuery({ type_filter, limit });
-    return this.request(`/api/anagraphics/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
+    try {
+      const params = this.buildQuery({ type_filter, limit });
+      return await this.request(`/api/anagraphics/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
+    } catch (error) {
+      throw new Error('Errore nella ricerca anagrafiche. Funzionalità non disponibile.');
+    }
   }
 
   async getAnagraphicsStats(): Promise<APIResponse> {
-    return this.request('/api/anagraphics/stats/summary');
+    try {
+      return await this.request('/api/anagraphics/stats/summary');
+    } catch (error) {
+      throw new Error('Impossibile ottenere le statistiche anagrafiche. Funzionalità non disponibile.');
+    }
   }
 
   async validatePIVA(piva: string): Promise<APIResponse> {
-    return this.request(`/api/anagraphics/validate/piva/${encodeURIComponent(piva)}`);
+    try {
+      return await this.request(`/api/anagraphics/validate/piva/${encodeURIComponent(piva)}`);
+    } catch (error) {
+      throw new Error('Servizio di validazione PIVA non disponibile.');
+    }
   }
 
   async validateCodiceFiscale(cf: string): Promise<APIResponse> {
-    return this.request(`/api/anagraphics/validate/cf/${encodeURIComponent(cf)}`);
+    try {
+      return await this.request(`/api/anagraphics/validate/cf/${encodeURIComponent(cf)}`);
+    } catch (error) {
+      throw new Error('Servizio di validazione Codice Fiscale non disponibile.');
+    }
   }
 
   async exportAnagraphicsQuick(format: 'csv' | 'json' = 'json', type_filter?: string): Promise<APIResponse> {
-    const params = this.buildQuery({ format, type_filter });
-    return this.request(`/api/anagraphics/export/${format}${params ? '?' + params : ''}`);
+    try {
+      const params = this.buildQuery({ format, type_filter });
+      return await this.request(`/api/anagraphics/export/${format}${params ? '?' + params : ''}`);
+    } catch (error) {
+      throw new Error('Funzionalità di export anagrafiche non disponibile.');
+    }
   }
 
   async bulkUpdateClientScores(): Promise<APIResponse> {
-    return this.post('/api/anagraphics/bulk/update-scores');
+    try {
+      return await this.post('/api/anagraphics/bulk/update-scores');
+    } catch (error) {
+      throw new Error('Funzionalità di aggiornamento score clienti non disponibile.');
+    }
   }
 
   async checkPotentialDuplicates(): Promise<APIResponse> {
-    return this.request('/api/anagraphics/duplicates/check');
+    try {
+      return await this.request('/api/anagraphics/duplicates/check');
+    } catch (error) {
+      throw new Error('Controllo duplicati non disponibile.');
+    }
   }
 
   async importAnagraphicsFromCSV(file: File): Promise<APIResponse> {
     const formData = new FormData();
     formData.append('file', file);
     
-    return this.post('/api/anagraphics/import/csv', formData);
+    try {
+      return await this.post('/api/anagraphics/import/csv', formData);
+    } catch (error) {
+      throw new Error('Funzionalità di import anagrafiche CSV non disponibile.');
+    }
   }
 
   async batchCreateAnagraphics(anagraphicsList: Partial<Anagraphics>[]): Promise<APIResponse> {
-    return this.post('/api/anagraphics/batch/create', anagraphicsList);
+    try {
+      return await this.post('/api/anagraphics/batch/create', anagraphicsList);
+    } catch (error) {
+      throw new Error('Creazione batch anagrafiche non disponibile.');
+    }
   }
 
   async mergeAnagraphics(sourceId: number, targetId: number): Promise<APIResponse> {
-    return this.post(`/api/anagraphics/merge/${sourceId}/${targetId}`);
+    try {
+      return await this.post(`/api/anagraphics/merge/${sourceId}/${targetId}`);
+    } catch (error) {
+      throw new Error('Funzionalità di merge anagrafiche non disponibile.');
+    }
   }
 
   async getProvincesList(): Promise<APIResponse> {
-    return this.request('/api/anagraphics/provinces/list');
+    try {
+      return await this.request('/api/anagraphics/provinces/list');
+    } catch (error) {
+      throw new Error('Lista province non disponibile.');
+    }
   }
 
   async getTopClientsAnalytics(limit: number = 20, periodMonths: number = 12): Promise<APIResponse> {
-    const params = this.buildQuery({ limit, period_months: periodMonths });
-    return this.request(`/api/anagraphics/analytics/top-clients?${params}`);
+    try {
+      const params = this.buildQuery({ limit, period_months: periodMonths });
+      return await this.request(`/api/anagraphics/analytics/top-clients?${params}`);
+    } catch (error) {
+      throw new Error('Analytics clienti non disponibili.');
+    }
   }
 
   async getAnagraphicsHealthCheck(): Promise<APIResponse> {
-    return this.request('/api/anagraphics/health-check');
+    try {
+      return await this.request('/api/anagraphics/health-check');
+    } catch (error) {
+      throw new Error('Health check anagrafiche non disponibile.');
+    }
   }
 
-  // ===== INVOICES API ENHANCED =====
+  // ===== INVOICES API =====
   
   async getInvoices(filters: InvoiceFilters = {}) {
-    const query = this.buildQuery(filters);
-    return this.request(`/api/invoices/${query ? '?' + query : ''}`);
+    try {
+      const query = this.buildQuery(filters);
+      return await this.request(`/api/invoices/${query ? '?' + query : ''}`);
+    } catch (error) {
+      throw new Error('Impossibile recuperare le fatture. Verificare la connessione al backend.');
+    }
   }
 
   async getInvoiceById(id: number): Promise<Invoice> {
-    return this.request(`/api/invoices/${id}`);
+    try {
+      return await this.request(`/api/invoices/${id}`);
+    } catch (error) {
+      throw new Error('Fattura non trovata o non accessibile.');
+    }
   }
 
   async createInvoice(data: Partial<Invoice>): Promise<Invoice> {
-    return this.post('/api/invoices/', data);
+    try {
+      return await this.post('/api/invoices/', data);
+    } catch (error) {
+      throw new Error('Errore nella creazione della fattura. Verificare i dati inseriti.');
+    }
   }
 
   async updateInvoice(id: number, data: Partial<Invoice>): Promise<Invoice> {
-    return this.put(`/api/invoices/${id}`, data);
+    try {
+      return await this.put(`/api/invoices/${id}`, data);
+    } catch (error) {
+      throw new Error('Errore nell\'aggiornamento della fattura. Verificare i dati inseriti.');
+    }
   }
 
   async deleteInvoice(id: number): Promise<APIResponse> {
-    return this.delete(`/api/invoices/${id}`);
+    try {
+      return await this.delete(`/api/invoices/${id}`);
+    } catch (error) {
+      throw new Error('Errore nella cancellazione della fattura. Operazione non consentita.');
+    }
   }
 
   async getInvoiceReconciliationLinks(invoiceId: number): Promise<APIResponse> {
-    return this.request(`/api/invoices/${invoiceId}/reconciliation-links`);
+    try {
+      return await this.request(`/api/invoices/${invoiceId}/reconciliation-links`);
+    } catch (error) {
+      throw new Error('Collegamenti riconciliazione non disponibili.');
+    }
   }
 
   async getOverdueInvoices(limit: number = 20): Promise<APIResponse> {
-    return this.request(`/api/invoices/overdue/list?limit=${limit}`);
+    try {
+      return await this.request(`/api/invoices/overdue/list?limit=${limit}`);
+    } catch (error) {
+      throw new Error('Funzionalità fatture scadute non disponibile.');
+    }
   }
 
   async getAgingSummary(invoice_type: 'Attiva' | 'Passiva' = 'Attiva'): Promise<APIResponse> {
-    return this.request(`/api/invoices/aging/summary?invoice_type=${invoice_type}`);
+    try {
+      return await this.request(`/api/invoices/aging/summary?invoice_type=${invoice_type}`);
+    } catch (error) {
+      throw new Error('Aging summary non disponibile.');
+    }
   }
 
   async searchInvoices(query: string, type_filter?: string, limit: number = 10): Promise<APIResponse> {
-    const params = this.buildQuery({ type_filter, limit });
-    return this.request(`/api/invoices/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
+    try {
+      const params = this.buildQuery({ type_filter, limit });
+      return await this.request(`/api/invoices/search/${encodeURIComponent(query)}${params ? '?' + params : ''}`);
+    } catch (error) {
+      throw new Error('Errore nella ricerca fatture. Funzionalità non disponibile.');
+    }
   }
 
   async updateInvoicePaymentStatus(
@@ -465,19 +644,31 @@ class ApiClient {
     payment_status: string, 
     paid_amount?: number
   ): Promise<APIResponse> {
-    const params = this.buildQuery({ payment_status, paid_amount });
-    return this.post(`/api/invoices/${id}/update-payment-status?${params}`);
+    try {
+      const params = this.buildQuery({ payment_status, paid_amount });
+      return await this.post(`/api/invoices/${id}/update-payment-status?${params}`);
+    } catch (error) {
+      throw new Error('Aggiornamento stato pagamento non disponibile.');
+    }
   }
 
   async getInvoicesStats(): Promise<APIResponse> {
-    return this.request('/api/invoices/stats/summary');
+    try {
+      return await this.request('/api/invoices/stats/summary');
+    } catch (error) {
+      throw new Error('Statistiche fatture non disponibili.');
+    }
   }
 
-  // ===== TRANSACTIONS API V4.0 ULTRA-ENHANCED =====
+  // ===== TRANSACTIONS API V4.0 =====
   
   async getTransactions(filters: TransactionFilters = {}) {
-    const query = this.buildQuery(filters);
-    return this.request(`/api/transactions/${query ? '?' + query : ''}`);
+    try {
+      const query = this.buildQuery(filters);
+      return await this.request(`/api/transactions/${query ? '?' + query : ''}`);
+    } catch (error) {
+      throw new Error('Impossibile recuperare le transazioni. Verificare la connessione al backend.');
+    }
   }
 
   async getTransactionById(
@@ -486,23 +677,39 @@ class ApiClient {
     include_suggestions: boolean = false,
     include_similar: boolean = false
   ): Promise<BankTransaction> {
-    const params = this.buildQuery({ enhanced, include_suggestions, include_similar });
-    return this.request(`/api/transactions/${id}${params ? '?' + params : ''}`);
+    try {
+      const params = this.buildQuery({ enhanced, include_suggestions, include_similar });
+      return await this.request(`/api/transactions/${id}${params ? '?' + params : ''}`);
+    } catch (error) {
+      throw new Error('Transazione non trovata o non accessibile.');
+    }
   }
 
   async createTransaction(data: Partial<BankTransaction>): Promise<BankTransaction> {
-    return this.post('/api/transactions/', data);
+    try {
+      return await this.post('/api/transactions/', data);
+    } catch (error) {
+      throw new Error('Errore nella creazione della transazione. Verificare i dati inseriti.');
+    }
   }
 
   async updateTransaction(id: number, data: Partial<BankTransaction>): Promise<BankTransaction> {
-    return this.put(`/api/transactions/${id}`, data);
+    try {
+      return await this.put(`/api/transactions/${id}`, data);
+    } catch (error) {
+      throw new Error('Errore nell\'aggiornamento della transazione. Verificare i dati inseriti.');
+    }
   }
 
   async deleteTransaction(id: number, confirm: boolean = true): Promise<APIResponse> {
-    return this.delete(`/api/transactions/${id}?confirm=${confirm}`);
+    try {
+      return await this.delete(`/api/transactions/${id}?confirm=${confirm}`);
+    } catch (error) {
+      throw new Error('Errore nella cancellazione della transazione. Operazione non consentita.');
+    }
   }
 
-  // 🔥 NEW V4.0 SMART SUGGESTIONS
+  // Smart Suggestions V4.0
   async getSmartReconciliationSuggestions(
     transactionId: number,
     anagraphicsHint?: number,
@@ -512,18 +719,22 @@ class ApiClient {
     maxSuggestions: number = 10,
     confidenceThreshold: number = 0.6
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      anagraphics_hint: anagraphicsHint,
-      enable_ai: enableAI,
-      enable_smart_patterns: enableSmartPatterns,
-      enable_predictive: enablePredictive,
-      max_suggestions: maxSuggestions,
-      confidence_threshold: confidenceThreshold
-    });
-    return this.request(`/api/transactions/${transactionId}/smart-suggestions?${params}`);
+    try {
+      const params = this.buildQuery({
+        anagraphics_hint: anagraphicsHint,
+        enable_ai: enableAI,
+        enable_smart_patterns: enableSmartPatterns,
+        enable_predictive: enablePredictive,
+        max_suggestions: maxSuggestions,
+        confidence_threshold: confidenceThreshold
+      });
+      return await this.request(`/api/transactions/${transactionId}/smart-suggestions?${params}`);
+    } catch (error) {
+      throw new Error('Suggerimenti smart non disponibili. Funzionalità avanzata non supportata.');
+    }
   }
 
-  // 🔥 NEW V4.0 MANUAL RECONCILIATION WITH AI
+  // Manual Reconciliation V4.0
   async reconcileTransactionWithInvoice(
     transactionId: number,
     invoiceId: number,
@@ -534,19 +745,27 @@ class ApiClient {
     userNotes?: string,
     forceMatch: boolean = false
   ): Promise<APIResponse> {
-    return this.post(`/api/transactions/${transactionId}/reconcile-with/${invoiceId}`, {
-      amount_to_match: amountToMatch,
-      enable_ai_validation: enableAIValidation,
-      enable_learning: enableLearning,
-      user_confidence: userConfidence,
-      user_notes: userNotes,
-      force_match: forceMatch
-    });
+    try {
+      return await this.post(`/api/transactions/${transactionId}/reconcile-with/${invoiceId}`, {
+        amount_to_match: amountToMatch,
+        enable_ai_validation: enableAIValidation,
+        enable_learning: enableLearning,
+        user_confidence: userConfidence,
+        user_notes: userNotes,
+        force_match: forceMatch
+      });
+    } catch (error) {
+      throw new Error('Riconciliazione manuale non disponibile.');
+    }
   }
 
-  // 🔥 NEW V4.0 BATCH OPERATIONS
+  // Batch Operations V4.0
   async batchReconcileTransactions(batchRequest: BatchReconciliationRequest): Promise<APIResponse> {
-    return this.post('/api/transactions/batch/reconcile', batchRequest);
+    try {
+      return await this.post('/api/transactions/batch/reconcile', batchRequest);
+    } catch (error) {
+      throw new Error('Riconciliazione batch non disponibile.');
+    }
   }
 
   async batchUpdateTransactionStatus(
@@ -556,20 +775,24 @@ class ApiClient {
     forceBackground: boolean = false,
     enableSmartValidation: boolean = true
   ): Promise<APIResponse> {
-    return this.post('/api/transactions/batch/update-status', {
-      transaction_ids: transactionIds,
-      reconciliation_status: reconciliationStatus
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Enhanced': enhanced.toString(),
-        'X-Force-Background': forceBackground.toString(),
-        'X-Smart-Validation': enableSmartValidation.toString()
-      }
-    });
+    try {
+      return await this.post('/api/transactions/batch/update-status', {
+        transaction_ids: transactionIds,
+        reconciliation_status: reconciliationStatus
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Enhanced': enhanced.toString(),
+          'X-Force-Background': forceBackground.toString(),
+          'X-Smart-Validation': enableSmartValidation.toString()
+        }
+      });
+    } catch (error) {
+      throw new Error('Aggiornamento batch stato non disponibile.');
+    }
   }
 
-  // 🔥 NEW V4.0 TRANSACTION INSIGHTS
+  // Transaction Insights V4.0
   async getTransactionInsights(
     transactionId: number,
     includeAIAnalysis: boolean = true,
@@ -577,21 +800,29 @@ class ApiClient {
     includeClientAnalysis: boolean = true,
     includeSmartSuggestions: boolean = false
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      include_ai_analysis: includeAIAnalysis,
-      include_pattern_matching: includePatternMatching,
-      include_client_analysis: includeClientAnalysis,
-      include_smart_suggestions: includeSmartSuggestions
-    });
-    return this.request(`/api/transactions/${transactionId}/insights?${params}`);
+    try {
+      const params = this.buildQuery({
+        include_ai_analysis: includeAIAnalysis,
+        include_pattern_matching: includePatternMatching,
+        include_client_analysis: includeClientAnalysis,
+        include_smart_suggestions: includeSmartSuggestions
+      });
+      return await this.request(`/api/transactions/${transactionId}/insights?${params}`);
+    } catch (error) {
+      throw new Error('Insights transazione non disponibili.');
+    }
   }
 
-  // 🔥 NEW V4.0 BATCH TASK STATUS
+  // Batch Task Status V4.0
   async getBatchTaskStatus(taskId: string): Promise<APIResponse> {
-    return this.request(`/api/transactions/batch/status/${taskId}`);
+    try {
+      return await this.request(`/api/transactions/batch/status/${taskId}`);
+    } catch (error) {
+      throw new Error('Stato task batch non disponibile.');
+    }
   }
 
-  // 🔥 NEW V4.0 SEARCH ENHANCED
+  // Search Enhanced V4.0
   async searchTransactions(
     query: string, 
     limit: number = 10,
@@ -600,109 +831,144 @@ class ApiClient {
     enhancedResults: boolean = false,
     enableClientMatching: boolean = false
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      limit,
-      include_reconciled: includeReconciled,
-      search_mode: searchMode,
-      enhanced_results: enhancedResults,
-      enable_client_matching: enableClientMatching
-    });
-    return this.request(`/api/transactions/search/${encodeURIComponent(query)}?${params}`);
+    try {
+      const params = this.buildQuery({
+        limit,
+        include_reconciled: includeReconciled,
+        search_mode: searchMode,
+        enhanced_results: enhancedResults,
+        enable_client_matching: enableClientMatching
+      });
+      return await this.request(`/api/transactions/search/${encodeURIComponent(query)}?${params}`);
+    } catch (error) {
+      throw new Error('Ricerca transazioni non disponibile.');
+    }
   }
 
-  // 🔥 NEW V4.0 STATISTICS ULTRA
+  // Statistics Ultra V4.0
   async getTransactionStatsV4(
     useCache: boolean = true,
     includeTrends: boolean = false,
     includeAIInsights: boolean = false,
     periodMonths: number = 12
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      use_cache: useCache,
-      include_trends: includeTrends,
-      include_ai_insights: includeAIInsights,
-      period_months: periodMonths
-    });
-    return this.request(`/api/transactions/stats/summary?${params}`);
+    try {
+      const params = this.buildQuery({
+        use_cache: useCache,
+        include_trends: includeTrends,
+        include_ai_insights: includeAIInsights,
+        period_months: periodMonths
+      });
+      return await this.request(`/api/transactions/stats/summary?${params}`);
+    } catch (error) {
+      throw new Error('Statistiche transazioni non disponibili.');
+    }
   }
 
-  // Original methods mantained for compatibility
+  // Original methods maintained for compatibility
   async getTransactionStats(): Promise<APIResponse> {
     return this.getTransactionStatsV4();
   }
 
   async getCashFlowAnalysis(months: number = 12): Promise<APIResponse> {
-    return this.request(`/api/transactions/analysis/cash-flow?months=${months}`);
+    try {
+      return await this.request(`/api/transactions/analysis/cash-flow?months=${months}`);
+    } catch (error) {
+      throw new Error('Analisi cash flow non disponibile.');
+    }
   }
 
-  // 🔥 NEW V4.0 HEALTH & METRICS
+  // Health & Metrics V4.0
   async getTransactionHealthV4(): Promise<APIResponse> {
-    return this.request('/api/transactions/health');
+    try {
+      return await this.request('/api/transactions/health');
+    } catch (error) {
+      throw new Error('Health check transazioni non disponibile.');
+    }
   }
 
   async getTransactionMetricsV4(): Promise<APIResponse> {
-    return this.request('/api/transactions/metrics');
+    try {
+      return await this.request('/api/transactions/metrics');
+    } catch (error) {
+      throw new Error('Metriche transazioni non disponibili.');
+    }
   }
 
   // ===== RECONCILIATION API V4.0 ULTRA =====
 
-  // 🔥 ULTRA SMART SUGGESTIONS V4.0
+  // Ultra Smart Suggestions V4.0
   async getUltraSmartSuggestions(request: UltraReconciliationRequest): Promise<APIResponse> {
-    return this.post('/api/reconciliation/ultra/smart-suggestions', request);
+    try {
+      return await this.post('/api/reconciliation/ultra/smart-suggestions', request);
+    } catch (error) {
+      throw new Error('Suggerimenti ultra smart non disponibili.');
+    }
   }
 
-  // 🔥 MANUAL MATCH V4.0 WITH AI
+  // Manual Match V4.0 with AI
   async applyManualMatchV4(request: ManualMatchRequest): Promise<APIResponse> {
-    return this.post('/api/reconciliation/manual-match', request);
+    try {
+      return await this.post('/api/reconciliation/manual-match', request);
+    } catch (error) {
+      throw new Error('Match manuale V4.0 non disponibile.');
+    }
   }
 
-  // 🔥 BATCH PROCESSING V4.0
+  // Batch Processing V4.0
   async processBatchReconciliationV4(request: BatchReconciliationRequest): Promise<APIResponse> {
-    return this.post('/api/reconciliation/batch/ultra-processing', request);
+    try {
+      return await this.post('/api/reconciliation/batch/ultra-processing', request);
+    } catch (error) {
+      throw new Error('Elaborazione batch V4.0 non disponibile.');
+    }
   }
 
-  // 🔥 SYSTEM STATUS V4.0
+  // System Status V4.0
   async getReconciliationSystemStatus(): Promise<APIResponse> {
     try {
       return await this.request('/api/reconciliation/system/status');
     } catch (error) {
-      // Fallback for older versions
-      return {
-        success: true,
-        data: {
-          status: 'operational',
-          version: '4.0-fallback',
-          features_enabled: ['manual_matching', 'basic_suggestions']
-        },
-        message: 'Reconciliation system status fallback'
-      };
+      throw new Error('Stato sistema riconciliazione non disponibile.');
     }
   }
 
   async getReconciliationVersionInfo(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/system/version');
+    try {
+      return await this.request('/api/reconciliation/system/version');
+    } catch (error) {
+      throw new Error('Informazioni versione riconciliazione non disponibili.');
+    }
   }
 
   async getReconciliationPerformanceMetrics(): Promise<APIResponse> {
-    return this.request('/api/reconciliation/system/performance');
+    try {
+      return await this.request('/api/reconciliation/system/performance');
+    } catch (error) {
+      throw new Error('Metriche performance riconciliazione non disponibili.');
+    }
   }
 
-  // 🔥 CLIENT RELIABILITY V4.0
+  // Client Reliability V4.0
   async getClientPaymentReliabilityV4(
     anagraphicsId: number,
     includePredictions: boolean = true,
     includePatternAnalysis: boolean = true,
     enhancedInsights: boolean = true
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      include_predictions: includePredictions,
-      include_pattern_analysis: includePatternAnalysis,
-      enhanced_insights: enhancedInsights
-    });
-    return this.request(`/api/reconciliation/client/reliability/${anagraphicsId}?${params}`);
+    try {
+      const params = this.buildQuery({
+        include_predictions: includePredictions,
+        include_pattern_analysis: includePatternAnalysis,
+        enhanced_insights: enhancedInsights
+      });
+      return await this.request(`/api/reconciliation/client/reliability/${anagraphicsId}?${params}`);
+    } catch (error) {
+      throw new Error('Affidabilità cliente non disponibile.');
+    }
   }
 
-  // 🔥 AUTOMATIC MATCHING V4.0
+  // Automatic Matching V4.0
   async getAutomaticMatchingOpportunitiesV4(
     confidenceLevel: 'Exact' | 'High' | 'Medium' | 'Low' = 'High',
     maxOpportunities: number = 50,
@@ -710,14 +976,18 @@ class ApiClient {
     enableRiskAssessment: boolean = true,
     prioritizeHighValue: boolean = true
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      confidence_level: confidenceLevel,
-      max_opportunities: maxOpportunities,
-      enable_ai_filtering: enableAIFiltering,
-      enable_risk_assessment: enableRiskAssessment,
-      prioritize_high_value: prioritizeHighValue
-    });
-    return this.request(`/api/reconciliation/automatic/opportunities?${params}`);
+    try {
+      const params = this.buildQuery({
+        confidence_level: confidenceLevel,
+        max_opportunities: maxOpportunities,
+        enable_ai_filtering: enableAIFiltering,
+        enable_risk_assessment: enableRiskAssessment,
+        prioritize_high_value: prioritizeHighValue
+      });
+      return await this.request(`/api/reconciliation/automatic/opportunities?${params}`);
+    } catch (error) {
+      throw new Error('Opportunità matching automatico non disponibili.');
+    }
   }
 
   // Original reconciliation methods maintained for compatibility
@@ -773,17 +1043,13 @@ class ApiClient {
     try {
       return await this.request('/api/reconciliation/health-check');
     } catch (error) {
-      return {
-        success: true,
-        data: { status: 'healthy', features: ['basic'] },
-        message: 'Reconciliation health fallback'
-      };
+      throw new Error('Health check riconciliazione non disponibile.');
     }
   }
 
-  // ===== ANALYTICS API V3.0 ULTRA - WITH ROBUST FALLBACKS =====
+  // ===== ANALYTICS API V3.0 ULTRA =====
 
-  // 🔥 EXECUTIVE DASHBOARD ULTRA - WITH FALLBACKS
+  // Executive Dashboard Ultra
   async getExecutiveDashboardUltra(
     includePredictions: boolean = false,
     includeAIInsights: boolean = true,
@@ -809,67 +1075,31 @@ class ApiClient {
           // Ultimo fallback a KPI semplici
           return await this.request('/analytics/kpis');
         } catch (finalError) {
-          console.warn('⚠️ Tutti gli endpoint analytics falliti, usando dati mock');
-          return {
-            success: true,
-            data: {
-              kpis: {
-                total_receivables: 0,
-                total_payables: 0,
-                revenue_ytd: 0,
-                active_customers_month: 0,
-                overdue_receivables_count: 0,
-                overdue_receivables_amount: 0,
-                overdue_payables_count: 0,
-                overdue_payables_amount: 0,
-                revenue_prev_year_ytd: 0,
-                gross_margin_ytd: 0,
-                new_customers_month: 0
-              },
-              recent_invoices: [],
-              recent_transactions: [],
-              cash_flow_summary: [],
-              top_clients: [],
-              overdue_invoices: []
-            },
-            message: 'Dati di fallback - Analytics non disponibile'
-          };
+          throw new Error('Dashboard esecutiva non disponibile. Tutte le API analytics non raggiungibili.');
         }
       }
     }
   }
 
-  // 🔥 OPERATIONS DASHBOARD LIVE - WITH FALLBACKS
+  // Operations Dashboard Live
   async getOperationsDashboardLive(
     autoRefreshSeconds: number = 30,
     includeAlerts: boolean = true,
     alertPriority: 'low' | 'medium' | 'high' | 'critical' = 'medium'
   ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      auto_refresh_seconds: autoRefreshSeconds,
-      include_alerts: includeAlerts,
-      alert_priority: alertPriority
-    });
-    
     try {
+      const params = this.buildQuery({
+        auto_refresh_seconds: autoRefreshSeconds,
+        include_alerts: includeAlerts,
+        alert_priority: alertPriority
+      });
       return await this.request(`/api/analytics/dashboard/operations/live?${params}`);
     } catch (error) {
-      console.warn('⚠️ Operations dashboard non disponibile, usando fallback');
-      return {
-        success: true,
-        data: {
-          operations: {
-            active_reconciliations: 0,
-            pending_imports: 0,
-            system_alerts: []
-          }
-        },
-        message: 'Operations dashboard fallback'
-      };
+      throw new Error('Dashboard operativo non disponibile.');
     }
   }
 
-  // 🔥 AI BUSINESS INSIGHTS - WITH FALLBACKS
+  // AI Business Insights
   async getAIBusinessInsights(
     analysisDepth: 'quick' | 'standard' | 'deep' = 'standard',
     focusAreas?: string,
@@ -885,34 +1115,19 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/ai/business-insights?${params}`);
     } catch (error) {
-      console.warn('⚠️ AI Business Insights non disponibile, usando fallback');
-      return {
-        success: true,
-        data: {
-          insights: [],
-          recommendations: [],
-          confidence_score: 0
-        },
-        message: 'AI Business Insights non disponibile'
-      };
+      throw new Error('AI Business Insights non disponibile.');
     }
   }
 
-  // 🔥 CUSTOM AI ANALYSIS - WITH FALLBACKS
+  // Custom AI Analysis
   async runCustomAIAnalysis(request: AnalyticsRequest): Promise<APIResponse> {
     try {
       return await this.post('/api/analytics/ai/custom-analysis', request);
     } catch (error) {
-      console.warn('⚠️ Custom AI Analysis non disponibile');
-      return {
-        success: false,
-        message: 'Custom AI Analysis non disponibile',
-        data: null
-      };
+      throw new Error('Analisi AI personalizzata non disponibile.');
     }
   }
 
-  // 🔥 SEASONALITY ULTRA ANALYSIS - WITH FALLBACKS
   async getUltraSeasonalityAnalysis(
     yearsBack: number = 3,
     includeWeatherCorrelation: boolean = false,
@@ -930,16 +1145,10 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/seasonality/ultra-analysis?${params}`);
     } catch (error) {
-      console.warn('⚠️ Ultra Seasonality Analysis non disponibile');
-      return {
-        success: true,
-        data: { seasonality_data: [], predictions: [] },
-        message: 'Seasonality analysis non disponibile'
-      };
+      throw new Error('Analisi stagionalità non disponibile.');
     }
   }
 
-  // 🔥 CUSTOMER ULTRA INTELLIGENCE - WITH FALLBACKS
   async getUltraCustomerIntelligence(
     analysisDepth: 'basic' | 'standard' | 'comprehensive' | 'expert' = 'comprehensive',
     includePredictiveLTV: boolean = true,
@@ -957,16 +1166,10 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/customers/ultra-intelligence?${params}`);
     } catch (error) {
-      console.warn('⚠️ Ultra Customer Intelligence non disponibile');
-      return {
-        success: true,
-        data: { customer_segments: [], intelligence: [] },
-        message: 'Customer intelligence non disponibile'
-      };
+      throw new Error('Customer intelligence non disponibile.');
     }
   }
 
-  // 🔥 COMPETITIVE MARKET POSITION - WITH FALLBACKS
   async getCompetitiveMarketPosition(
     benchmarkAgainst: 'industry' | 'local' | 'premium' = 'industry',
     includePriceAnalysis: boolean = true,
@@ -982,30 +1185,18 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/competitive/market-position?${params}`);
     } catch (error) {
-      console.warn('⚠️ Competitive Market Position non disponibile');
-      return {
-        success: true,
-        data: { market_position: 'unknown', competitive_analysis: [] },
-        message: 'Market position analysis non disponibile'
-      };
+      throw new Error('Posizione competitiva non disponibile.');
     }
   }
 
-  // 🔥 BATCH ULTRA ANALYTICS - WITH FALLBACKS
   async processBatchUltraAnalytics(request: BatchAnalyticsRequest): Promise<APIResponse> {
     try {
       return await this.post('/api/analytics/batch/ultra-analytics', request);
     } catch (error) {
-      console.warn('⚠️ Batch Ultra Analytics non disponibile');
-      return {
-        success: false,
-        message: 'Batch analytics non disponibile',
-        data: null
-      };
+      throw new Error('Analytics batch non disponibile.');
     }
   }
 
-  // 🔥 ULTRA REPORT EXPORT - WITH FALLBACKS
   async exportUltraAnalyticsReport(
     reportType: 'executive' | 'operational' | 'comprehensive' | 'custom' = 'comprehensive',
     format: 'excel' | 'pdf' | 'json' | 'csv' = 'excel',
@@ -1027,16 +1218,10 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/export/ultra-report?${params}`);
     } catch (error) {
-      console.warn('⚠️ Ultra Report Export non disponibile');
-      return {
-        success: false,
-        message: 'Report export non disponibile',
-        data: null
-      };
+      throw new Error('Export report analytics non disponibile.');
     }
   }
 
-  // 🔥 REAL-TIME LIVE METRICS - WITH FALLBACKS
   async getRealtimeLiveMetrics(
     metrics: string = 'all',
     refreshRate: number = 10,
@@ -1050,16 +1235,10 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/realtime/live-metrics?${params}`);
     } catch (error) {
-      console.warn('⚠️ Real-time metrics non disponibili');
-      return {
-        success: true,
-        data: { metrics: {}, last_update: new Date().toISOString() },
-        message: 'Real-time metrics non disponibili'
-      };
+      throw new Error('Metriche real-time non disponibili.');
     }
   }
 
-  // 🔥 ULTRA PREDICTIONS - WITH FALLBACKS
   async getUltraPredictions(
     predictionHorizon: number = 12,
     confidenceIntervals: boolean = true,
@@ -1077,30 +1256,15 @@ class ApiClient {
       });
       return await this.request(`/api/analytics/forecasting/ultra-predictions?${params}`);
     } catch (error) {
-      console.warn('⚠️ Ultra Predictions non disponibili');
-      return {
-        success: true,
-        data: { predictions: [], confidence: 0 },
-        message: 'Predictions non disponibili'
-      };
+      throw new Error('Previsioni ultra non disponibili.');
     }
   }
 
-  // 🔥 SYSTEM HEALTH ULTRA - WITH FALLBACKS
   async getUltraSystemHealth(): Promise<APIResponse> {
     try {
       return await this.request('/api/analytics/system/ultra-health');
     } catch (error) {
-      console.warn('⚠️ Ultra System Health non disponibile');
-      return {
-        success: true,
-        data: { 
-          status: 'unknown', 
-          analytics_version: 'fallback',
-          features_available: ['basic_analytics']
-        },
-        message: 'System health fallback'
-      };
+      throw new Error('System health analytics non disponibile.');
     }
   }
 
@@ -1108,18 +1272,11 @@ class ApiClient {
     try {
       return await this.request('/api/analytics/system/ultra-features');
     } catch (error) {
-      return {
-        success: true,
-        data: { 
-          features: ['basic_dashboard', 'simple_kpis'],
-          version: 'fallback'
-        },
-        message: 'Analytics features fallback'
-      };
+      throw new Error('Features analytics non disponibili.');
     }
   }
 
-  // Original Analytics methods maintained for compatibility - WITH FALLBACKS
+  // Original Analytics methods maintained for compatibility
   async getKPIs(): Promise<APIResponse> {
     return this.getExecutiveDashboardUltra();
   }
@@ -1148,7 +1305,7 @@ class ApiClient {
     return this.getUltraAnalyticsFeatures();
   }
 
-  // ===== IMPORT/EXPORT API COMPLETO =====
+  // ===== IMPORT/EXPORT API =====
 
   // XML/P7M Import
   async importInvoicesXML(files: FileList): Promise<APIResponse> {
@@ -1157,7 +1314,22 @@ class ApiClient {
       formData.append('files', file);
     });
 
-    return this.post('/api/import-export/invoices/xml', formData);
+    try {
+      // Prova endpoint V4.0 ZIP
+      return await this.post('/api/import-export/invoices/zip', formData);
+    } catch (error) {
+      try {
+        // Fallback a endpoint XML standard
+        return await this.post('/api/import-export/invoices/xml', formData);
+      } catch (fallbackError) {
+        try {
+          // Fallback a endpoint base
+          return await this.post('/import/invoices', formData);
+        } catch (finalError) {
+          throw new Error('Import fatture XML non disponibile. Tutti gli endpoint di import sono non raggiungibili.');
+        }
+      }
+    }
   }
 
   async validateInvoiceFiles(files: FileList): Promise<APIResponse> {
@@ -1166,7 +1338,15 @@ class ApiClient {
       formData.append('files', file);
     });
 
-    return this.post('/api/import-export/invoices/xml/validate', formData);
+    try {
+      return await this.post('/api/import-export/invoices/xml/validate', formData);
+    } catch (error) {
+      try {
+        return await this.post('/import/validate', formData);
+      } catch (fallbackError) {
+        throw new Error('Validazione file fatture non disponibile.');
+      }
+    }
   }
 
   // CSV Import
@@ -1174,488 +1354,285 @@ class ApiClient {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.post('/api/import-export/transactions/csv', formData);
+    try {
+      return await this.post('/api/import-export/transactions/csv', formData);
+    } catch (error) {
+      try {
+        return await this.post('/import/transactions', formData);
+      } catch (fallbackError) {
+        throw new Error('Import transazioni CSV non disponibile.');
+      }
+    }
   }
 
   async validateTransactionsCSV(file: File): Promise<APIResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.post('/api/import-export/transactions/csv/validate', formData);
+    try {
+      return await this.post('/api/import-export/transactions/csv/validate', formData);
+    } catch (error) {
+      throw new Error('Validazione CSV transazioni non disponibile.');
+    }
   }
 
   async previewTransactionsCSV(file: File, maxRows: number = 10): Promise<APIResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.post(`/api/import-export/transactions/csv/preview?max_rows=${maxRows}`, formData);
-  }
-
-  // Templates
-  async downloadTransactionTemplate(): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}/api/import-export/templates/transactions-csv`);
-    if (!response.ok) {
-      throw new Error('Failed to download template');
-    }
-    return response.blob();
-  }
-
-  // Export Functions
-  async exportInvoices(
-    format: 'excel' | 'csv' | 'json' = 'excel',
-    invoice_type?: string,
-    status_filter?: string,
-    start_date?: string,
-    end_date?: string,
-    include_lines: boolean = false,
-    include_vat: boolean = false
-  ): Promise<Blob | APIResponse> {
-    const params = this.buildQuery({ 
-      format, invoice_type, status_filter, start_date, end_date, include_lines, include_vat 
-    });
-    const response = await fetch(`${this.baseURL}/api/import-export/export/invoices?${params}`);
-    
-    if (!response.ok) {
-      throw new Error('Export failed');
-    }
-
-    if (format === 'json') {
-      return response.json();
-    } else {
-      return response.blob();
-    }
-  }
-
-  async exportTransactions(
-    format: 'excel' | 'csv' | 'json' = 'excel',
-    status_filter?: string,
-    start_date?: string,
-    end_date?: string,
-    include_reconciliation: boolean = false
-  ): Promise<Blob | APIResponse> {
-    const params = this.buildQuery({ 
-      format, status_filter, start_date, end_date, include_reconciliation 
-    });
-    const response = await fetch(`${this.baseURL}/api/import-export/export/transactions?${params}`);
-    
-    if (!response.ok) {
-      throw new Error('Export failed');
-    }
-
-    if (format === 'json') {
-      return response.json();
-    } else {
-      return response.blob();
-    }
-  }
-
-  async exportAnagraphics(
-    format: 'excel' | 'csv' | 'json' = 'excel',
-    type_filter?: string,
-    include_stats: boolean = false
-  ): Promise<Blob | APIResponse> {
-    const params = this.buildQuery({ format, type_filter, include_stats });
-    const response = await fetch(`${this.baseURL}/api/import-export/export/anagraphics?${params}`);
-    
-    if (!response.ok) {
-      throw new Error('Export failed');
-    }
-
-    if (format === 'json') {
-      return response.json();
-    } else {
-      return response.blob();
-    }
-  }
-
-  async exportReconciliationReport(
-    format: 'excel' | 'csv' | 'json' = 'excel',
-    period_months: number = 12,
-    include_unmatched: boolean = true
-  ): Promise<Blob | APIResponse> {
-    const params = this.buildQuery({ format, period_months, include_unmatched });
-    const response = await fetch(`${this.baseURL}/api/import-export/export/reconciliation-report?${params}`);
-    
-    if (!response.ok) {
-      throw new Error('Export failed');
-    }
-
-    if (format === 'json') {
-      return response.json();
-    } else {
-      return response.blob();
-    }
-  }
-
-  // Backup & Maintenance
-  async createBackup(): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}/api/import-export/backup/create`, {
-      method: 'POST',
-    });
-    
-    if (!response.ok) {
-      throw new Error('Backup creation failed');
-    }
-
-    return response.blob();
-  }
-
-  async getImportHistory(limit: number = 50): Promise<APIResponse> {
-    return this.request(`/api/import-export/status/import-history?limit=${limit}`);
-  }
-
-  async cleanupTempFiles(): Promise<APIResponse> {
-    return this.post('/api/import-export/maintenance/cleanup');
-  }
-
-  async getImportExportHealth(): Promise<APIResponse> {
     try {
-      return await this.request('/api/import-export/health-check');
+      return await this.post(`/api/import-export/transactions/csv/preview?max_rows=${maxRows}`, formData);
     } catch (error) {
-      return {
-        success: true,
-        data: { status: 'unknown', features: ['basic_import'] },
-        message: 'Import/Export health fallback'
-      };
+      throw new Error('Preview CSV transazioni non disponibile.');
     }
   }
 
-  async getImportExportStatistics(): Promise<APIResponse> {
-    return this.request('/api/import-export/statistics');
+  // Export functionality
+  async exportData(
+    dataType: 'invoices' | 'transactions' | 'anagraphics',
+    format: 'csv' | 'excel' | 'json' = 'excel',
+    filters?: Record<string, any>
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({ format, ...filters });
+      return await this.request(`/api/import-export/${dataType}/export?${params}`);
+    } catch (error) {
+      throw new Error(`Export ${dataType} non disponibile.`);
+    }
+  }
+
+  // Bulk operations
+  async bulkImportData(
+    dataType: 'invoices' | 'transactions' | 'anagraphics',
+    file: File,
+    options?: Record<string, any>
+  ): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    if (options) {
+      Object.entries(options).forEach(([key, value]) => {
+        formData.append(key, String(value));
+      });
+    }
+
+    try {
+      return await this.post(`/api/import-export/${dataType}/bulk-import`, formData);
+    } catch (error) {
+      throw new Error(`Import bulk ${dataType} non disponibile.`);
+    }
+  }
+
+  // Import status and progress
+  async getImportStatus(importId: string): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/import-export/status/${importId}`);
+    } catch (error) {
+      throw new Error('Stato import non disponibile.');
+    }
+  }
+
+  async getImportHistory(limit: number = 20): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/import-export/history?limit=${limit}`);
+    } catch (error) {
+      throw new Error('Storico import non disponibile.');
+    }
+  }
+
+  // Template and format helpers
+  async getImportTemplate(dataType: 'invoices' | 'transactions' | 'anagraphics'): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/import-export/${dataType}/template`);
+    } catch (error) {
+      throw new Error(`Template import ${dataType} non disponibile.`);
+    }
   }
 
   async getSupportedFormats(): Promise<APIResponse> {
-    return this.request('/api/import-export/supported-formats');
-  }
-
-  async validateBatchFiles(files: FileList): Promise<APIResponse> {
-    const formData = new FormData();
-    Array.from(files).forEach(file => {
-      formData.append('files', file);
-    });
-
-    return this.post('/api/import-export/validate/batch', formData);
-  }
-
-  // ===== CLOUD SYNC API COMPLETO =====
-
-  async getSyncStatus(): Promise<APIResponse> {
     try {
-      return await this.request('/api/sync/status');
+      return await this.request('/api/import-export/supported-formats');
     } catch (error) {
-      return {
-        success: true,
-        data: { 
-          enabled: false, 
-          status: 'unavailable',
-          message: 'Sync non configurato'
-        },
-        message: 'Sync status fallback'
-      };
+      throw new Error('Formati supportati non disponibili.');
     }
   }
 
-  async enableSync(): Promise<APIResponse> {
-    return this.post('/api/sync/enable');
-  }
+  // ===== SYSTEM & UTILITY METHODS =====
 
-  async disableSync(): Promise<APIResponse> {
-    return this.post('/api/sync/disable');
-  }
-
-  async performManualSync(force_direction?: 'upload' | 'download'): Promise<APIResponse> {
-    const params = force_direction ? `?force_direction=${force_direction}` : '';
-    return this.post(`/api/sync/manual${params}`);
-  }
-
-  async forceUpload(): Promise<APIResponse> {
-    return this.post('/api/sync/upload');
-  }
-
-  async forceDownload(): Promise<APIResponse> {
-    return this.post('/api/sync/download');
-  }
-
-  async startAutoSync(): Promise<APIResponse> {
-    return this.post('/api/sync/auto-sync/start');
-  }
-
-  async stopAutoSync(): Promise<APIResponse> {
-    return this.post('/api/sync/auto-sync/stop');
-  }
-
-  async updateAutoSyncInterval(interval_seconds: number): Promise<APIResponse> {
-    return this.put(`/api/sync/auto-sync/interval?interval_seconds=${interval_seconds}`);
-  }
-
-  async getSyncHistory(limit: number = 20): Promise<APIResponse> {
-    return this.request(`/api/sync/history?limit=${limit}`);
-  }
-
-  async getRemoteFileInfo(): Promise<APIResponse> {
-    return this.request('/api/sync/remote-info');
-  }
-
-  async deleteRemoteFile(): Promise<APIResponse> {
-    return this.delete('/api/sync/remote-file');
-  }
-
-  async testGoogleDriveConnection(): Promise<APIResponse> {
-    return this.post('/api/sync/test-connection');
-  }
-
-  async getSyncConfiguration(): Promise<APIResponse> {
-    return this.request('/api/sync/config');
-  }
-
-  async getCredentialsSetupGuide(): Promise<APIResponse> {
-    return this.post('/api/sync/setup-credentials');
-  }
-
-  async resetAuthorization(): Promise<APIResponse> {
-    return this.post('/api/sync/reset-authorization');
-  }
-
-  async getSyncHealth(): Promise<APIResponse> {
+  // System information
+  async getSystemVersion(): Promise<APIResponse> {
     try {
-      return await this.request('/api/sync/health');
+      return await this.request('/api/system/version');
     } catch (error) {
-      return {
-        success: true,
-        data: { status: 'unavailable' },
-        message: 'Sync health fallback'
-      };
+      throw new Error('Informazioni versione sistema non disponibili.');
     }
   }
 
-  async getSyncMetrics(): Promise<APIResponse> {
-    return this.request('/api/sync/metrics');
-  }
-
-  async forceBackup(): Promise<APIResponse> {
-    return this.post('/api/sync/force-backup');
-  }
-
-  // ===== UTILITIES & TESTING V4.0 =====
-
-  async testConnection(): Promise<boolean> {
+  async getSystemCapabilities(): Promise<APIResponse> {
     try {
-      await this.healthCheck();
-      return true;
+      return await this.request('/api/system/capabilities');
     } catch (error) {
-      console.error('Backend V4.0 connection test failed:', error);
-      return false;
+      throw new Error('Capacità sistema non disponibili.');
     }
   }
 
-  async runFullAPITestV4(): Promise<{
-    success: boolean;
-    results: Record<string, boolean>;
-    details: Record<string, any>;
-  }> {
-    const tests = {
-      health: false,
-      first_run: false,
-      anagraphics: false,
-      invoices: false,
-      transactions: false,
-      reconciliation_v4: false,
-      analytics_v3: false,
-      import_export: false,
-      sync: false
-    };
-
-    const details: Record<string, any> = {};
-
+  // Configuration
+  async getConfiguration(): Promise<APIResponse> {
     try {
-      // Test Health
-      const health = await this.healthCheck();
-      tests.health = true;
-      details.health = health;
+      return await this.request('/api/system/configuration');
     } catch (error) {
-      details.health = { error: error.message };
+      throw new Error('Configurazione sistema non disponibile.');
     }
-
-    try {
-      // Test First Run
-      const firstRun = await this.checkFirstRun();
-      tests.first_run = true;
-      details.first_run = firstRun;
-    } catch (error) {
-      details.first_run = { error: error.message };
-    }
-
-    try {
-      // Test Anagraphics Enhanced
-      const anagraphics = await this.getAnagraphics({ page: 1, size: 1 });
-      tests.anagraphics = true;
-      details.anagraphics = { count: anagraphics.total || 0 };
-    } catch (error) {
-      details.anagraphics = { error: error.message };
-    }
-
-    try {
-      // Test Invoices Enhanced
-      const invoices = await this.getInvoices({ page: 1, size: 1 });
-      tests.invoices = true;
-      details.invoices = { count: invoices.total || 0 };
-    } catch (error) {
-      details.invoices = { error: error.message };
-    }
-
-    try {
-      // Test Transactions V4.0
-      const transactions = await this.getTransactions({ page: 1, size: 1, enhanced: true });
-      tests.transactions = true;
-      details.transactions = { count: transactions.total || 0, v4_enhanced: true };
-    } catch (error) {
-      details.transactions = { error: error.message };
-    }
-
-    try {
-      // Test Reconciliation V4.0
-      const reconciliation = await this.getReconciliationSystemStatus();
-      tests.reconciliation_v4 = true;
-      details.reconciliation_v4 = { ...reconciliation, version: '4.0' };
-    } catch (error) {
-      details.reconciliation_v4 = { error: error.message };
-    }
-
-    try {
-      // Test Analytics V3.0 Ultra
-      const analytics = await this.getUltraSystemHealth();
-      tests.analytics_v3 = true;
-      details.analytics_v3 = { ...analytics, version: '3.0' };
-    } catch (error) {
-      details.analytics_v3 = { error: error.message };
-    }
-
-    try {
-      // Test Import/Export
-      const importExport = await this.getImportExportHealth();
-      tests.import_export = true;
-      details.import_export = importExport;
-    } catch (error) {
-      details.import_export = { error: error.message };
-    }
-
-    try {
-      // Test Sync
-      const sync = await this.getSyncStatus();
-      tests.sync = true;
-      details.sync = sync;
-    } catch (error) {
-      details.sync = { error: error.message };
-    }
-
-    const successCount = Object.values(tests).filter(Boolean).length;
-    const totalTests = Object.keys(tests).length;
-
-    return {
-      success: successCount === totalTests,
-      results: tests,
-      details: {
-        ...details,
-        summary: {
-          passed: successCount,
-          total: totalTests,
-          success_rate: `${((successCount / totalTests) * 100).toFixed(1)}%`,
-          version: 'API Client V4.0 - Fixed & Optimized',
-          backend_features: [
-            'Ultra-Optimized Analytics V3.0',
-            'Smart Reconciliation V4.0', 
-            'Enhanced Transactions V4.0',
-            'AI/ML Insights',
-            'Complete First Run Wizard',
-            'Advanced Import/Export',
-            'Cloud Sync with Google Drive',
-            'Robust Fallback System'
-          ]
-        }
-      }
-    };
   }
 
-  // Legacy method maintained for compatibility
-  async runFullAPITest(): Promise<{
-    success: boolean;
-    results: Record<string, boolean>;
-    details: Record<string, any>;
-  }> {
-    return this.runFullAPITestV4();
+  async updateConfiguration(config: Record<string, any>): Promise<APIResponse> {
+    try {
+      return await this.post('/api/system/configuration', config);
+    } catch (error) {
+      throw new Error('Aggiornamento configurazione non disponibile.');
+    }
+  }
+
+  // Backup and maintenance
+  async createBackup(): Promise<APIResponse> {
+    try {
+      return await this.post('/api/system/backup/create');
+    } catch (error) {
+      throw new Error('Creazione backup non disponibile.');
+    }
+  }
+
+  async getBackupStatus(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/system/backup/status');
+    } catch (error) {
+      throw new Error('Stato backup non disponibile.');
+    }
+  }
+
+  async runMaintenanceTasks(): Promise<APIResponse> {
+    try {
+      return await this.post('/api/system/maintenance/run');
+    } catch (error) {
+      throw new Error('Operazioni di manutenzione non disponibili.');
+    }
+  }
+
+  // Logging and monitoring
+  async getSystemLogs(
+    level: 'debug' | 'info' | 'warning' | 'error' = 'info',
+    limit: number = 100
+  ): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/system/logs?level=${level}&limit=${limit}`);
+    } catch (error) {
+      throw new Error('Log di sistema non disponibili.');
+    }
+  }
+
+  async getPerformanceMetrics(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/system/performance');
+    } catch (error) {
+      throw new Error('Metriche di performance non disponibili.');
+    }
+  }
+
+  // User and session management
+  async getCurrentUser(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/user/current');
+    } catch (error) {
+      throw new Error('Informazioni utente corrente non disponibili.');
+    }
+  }
+
+  async updateUserPreferences(preferences: Record<string, any>): Promise<APIResponse> {
+    try {
+      return await this.post('/api/user/preferences', preferences);
+    } catch (error) {
+      throw new Error('Aggiornamento preferenze utente non disponibile.');
+    }
+  }
+
+  async getUserSessions(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/user/sessions');
+    } catch (error) {
+      throw new Error('Sessioni utente non disponibili.');
+    }
+  }
+
+  // Notification and alerts
+  async getNotifications(unreadOnly: boolean = false): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/notifications?unread_only=${unreadOnly}`);
+    } catch (error) {
+      throw new Error('Notifiche non disponibili.');
+    }
+  }
+
+  async markNotificationAsRead(notificationId: string): Promise<APIResponse> {
+    try {
+      return await this.post(`/api/notifications/${notificationId}/mark-read`);
+    } catch (error) {
+      throw new Error('Aggiornamento notifica non disponibile.');
+    }
+  }
+
+  async getSystemAlerts(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/system/alerts');
+    } catch (error) {
+      throw new Error('Alert di sistema non disponibili.');
+    }
+  }
+
+  // Webhook and integration endpoints
+  async getWebhooks(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/webhooks');
+    } catch (error) {
+      throw new Error('Webhook non disponibili.');
+    }
+  }
+
+  async createWebhook(webhookData: Record<string, any>): Promise<APIResponse> {
+    try {
+      return await this.post('/api/webhooks', webhookData);
+    } catch (error) {
+      throw new Error('Creazione webhook non disponibile.');
+    }
+  }
+
+  async testWebhook(webhookId: string): Promise<APIResponse> {
+    try {
+      return await this.post(`/api/webhooks/${webhookId}/test`);
+    } catch (error) {
+      throw new Error('Test webhook non disponibile.');
+    }
+  }
+
+  // Integration status
+  async getIntegrationStatus(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/integrations/status');
+    } catch (error) {
+      throw new Error('Stato integrazioni non disponibile.');
+    }
+  }
+
+  async refreshIntegrations(): Promise<APIResponse> {
+    try {
+      return await this.post('/api/integrations/refresh');
+    } catch (error) {
+      throw new Error('Refresh integrazioni non disponibile.');
+    }
   }
 }
 
-// Singleton instance
-export const apiClient = new ApiClient();
+// ===== SINGLETON INSTANCE =====
+const apiClient = new ApiClient();
 
-// Export helper per testare la connessione V4.0
-export const testBackendConnectionV4 = async (): Promise<{
-  connected: boolean;
-  message: string;
-  details?: any;
-}> => {
-  try {
-    const health = await apiClient.healthCheck();
-    return {
-      connected: true,
-      message: 'Backend V4.0 connesso con successo - Ultra-Optimized Features Active',
-      details: { 
-        ...health, 
-        api_version: 'V4.0',
-        features: ['AI/ML Analytics', 'Smart Reconciliation', 'Enhanced Transactions', 'Robust Fallbacks']
-      }
-    };
-  } catch (error) {
-    return {
-      connected: false,
-      message: error instanceof Error ? error.message : 'Errore di connessione V4.0',
-      details: error
-    };
-  }
-};
-
-// Export helper per test completo V4.0
-export const runCompleteAPITestV4 = async () => {
-  return await apiClient.runFullAPITestV4();
-};
-
-// Legacy helpers maintained for compatibility
-export const testBackendConnection = testBackendConnectionV4;
-export const runCompleteAPITest = runCompleteAPITestV4;
-
-// Export constants V4.0
-export const API_ENDPOINTS_V4 = {
-  HEALTH: '/health',
-  FIRST_RUN: '/api/first-run',
-  SETUP: '/api/setup',
-  ANAGRAPHICS: '/api/anagraphics',
-  INVOICES: '/api/invoices',
-  TRANSACTIONS: '/api/transactions', // V4.0 Enhanced
-  RECONCILIATION: '/api/reconciliation', // V4.0 Ultra
-  ANALYTICS: '/api/analytics', // V3.0 Ultra-Optimized
-  IMPORT_EXPORT: '/api/import-export',
-  SYNC: '/api/sync'
-} as const;
-
-// Export feature flags V4.0
-export const FEATURES_V4 = {
-  AI_INSIGHTS: true,
-  SMART_RECONCILIATION: true,
-  ULTRA_ANALYTICS: true,
-  ENHANCED_TRANSACTIONS: true,
-  PREDICTIVE_SCORING: true,
-  PATTERN_LEARNING: true,
-  REAL_TIME_METRICS: true,
-  ADVANCED_EXPORT: true,
-  CLOUD_SYNC: true,
-  SETUP_WIZARD: true,
-  ROBUST_FALLBACKS: true
-} as const;
-
-// Export types for better TypeScript support
-export type APIEndpointCategoryV4 = keyof typeof API_ENDPOINTS_V4;
-export type FeatureV4 = keyof typeof FEATURES_V4;
-
-// Default export
 export default apiClient;
+export { ApiClient };
