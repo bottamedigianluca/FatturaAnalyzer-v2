@@ -7,7 +7,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -48,9 +48,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Gestisce gli eventi di avvio e spegnimento dell'applicazione."""
     logger.info("🚀 Starting FatturaAnalyzer API v2...")
-    # Logica di avvio...
     yield
-    # Logica di spegnimento...
     logger.info("👋 Shutting down FatturaAnalyzer API...")
 
 app = FastAPI(
@@ -66,7 +64,6 @@ app = FastAPI(
 app.add_middleware(ErrorHandlerMiddleware)
 
 # 2. Middleware CORS (subito dopo gli errori)
-# CORREZIONE: Configurazioni CORS più permissive per lo sviluppo locale
 allowed_origins = [
     "http://localhost:1420",      
     "http://127.0.0.1:1420",
@@ -92,7 +89,6 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Inclusione dei router API
-# CORREZIONE: Assicuriamo che tutti i router siano inclusi correttamente
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(first_run.router, prefix="/api/first-run", tags=["First Run"])
 app.include_router(setup.router, prefix="/api/setup", tags=["Setup"])
