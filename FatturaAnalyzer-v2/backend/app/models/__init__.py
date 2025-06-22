@@ -2,12 +2,10 @@
 Pydantic models for FastAPI request/response validation
 VERSIONE ENTERPRISE - Centralizza i modelli base per prevenire importazioni circolari.
 """
-from datetime import date, datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, Any
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict
 
-# --- Configurazione Base per tutti i modelli ---
 class BaseConfig:
     model_config = ConfigDict(
         from_attributes=True,
@@ -16,7 +14,6 @@ class BaseConfig:
         str_strip_whitespace=True
     )
 
-# --- ENUM Comuni a tutta l'applicazione ---
 class AnagraphicsType(str, Enum):
     CLIENTE = "Cliente"
     FORNITORE = "Fornitore"
@@ -40,7 +37,6 @@ class ReconciliationStatus(str, Enum):
     RICONCILIATO_ECCESSO = "Riconciliato Eccesso"
     IGNORATO = "Ignorato"
     
-# --- Modelli di Risposta Standard ---
 class APIResponse(BaseModel, BaseConfig):
     success: bool
     message: str
@@ -51,13 +47,7 @@ class ErrorResponse(BaseModel, BaseConfig):
     error: str
     message: str
 
-# Esporta tutto per un facile accesso da altri moduli
 __all__ = [
-    "BaseConfig",
-    "AnagraphicsType",
-    "InvoiceType",
-    "PaymentStatus",
-    "ReconciliationStatus",
-    "APIResponse",
-    "ErrorResponse",
+    "BaseConfig", "AnagraphicsType", "InvoiceType", "PaymentStatus",
+    "ReconciliationStatus", "APIResponse", "ErrorResponse"
 ]
