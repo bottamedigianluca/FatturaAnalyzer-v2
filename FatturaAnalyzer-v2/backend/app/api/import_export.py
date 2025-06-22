@@ -21,8 +21,8 @@ from app.models import ImportResult, APIResponse
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Funzioni helper robuste
 class ZIPValidationResult:
-    """Data class for ZIP archive validation results."""
     def __init__(self):
         self.validation_status: str = 'unknown'
         self.can_import: bool = False
@@ -57,8 +57,10 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
         result.validation_status = 'invalid'
     return result
 
+# ============ ENDPOINT CORRETTI E IMPLEMENTATI ============
+
 @router.post("/validate-zip", response_model=APIResponse)
-async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP archive to validate")):
+async def validate_zip_endpoint(file: UploadFile = File(...)):
     """Validates the structure and content of a ZIP archive before import."""
     if not file.filename or not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
@@ -93,13 +95,15 @@ async def import_invoices_from_zip(file: UploadFile = File(...)):
             return ImportResult(**result)
         except Exception as e:
             logger.error(f"Error processing ZIP archive in /invoices/zip: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Error processing ZIP archive: {e}")
+            raise HTTPException(status_code=500, detail=f"Error processing ZIP archive: {str(e)}")
 
 @router.get("/templates/transactions-csv")
 async def download_transaction_template():
     """Downloads a CSV template for bank transactions."""
     template_content = await importer_adapter.create_csv_template_async()
     return Response(content=template_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=template_transazioni.csv"})
+
+# ========= ENDPOINT REALI PER FUNZIONALITÀ RICHIESTE DAL FRONTEND =========
 
 @router.get("/statistics", response_model=APIResponse)
 async def get_import_statistics():
