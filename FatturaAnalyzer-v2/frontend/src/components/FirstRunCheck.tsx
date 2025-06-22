@@ -1,4 +1,4 @@
-// src/components/common/FirstRunCheck.tsx - VERSIONE CORRETTA
+// src/components/FirstRunCheck.tsx - VERSIONE CORRETTA
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -41,6 +41,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/services/api';
 import { useUIStore } from '@/store';
+import { cn } from '@/lib/utils';
 
 interface FirstRunStatus {
   is_first_run: boolean;
@@ -59,7 +60,19 @@ interface SetupStep {
   optional: boolean;
 }
 
-export function FirstRunCheck({ children }: { children: React.ReactNode }) {
+interface FirstRunCheckProps {
+  children?: React.ReactNode;
+  onSetupNeeded?: () => void;
+  onSetupComplete?: () => void;
+  onConnectionError?: () => void;
+}
+
+export function FirstRunCheck({ 
+  children,
+  onSetupNeeded,
+  onSetupComplete,
+  onConnectionError 
+}: FirstRunCheckProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [showWizard, setShowWizard] = useState(false);
   const [setupProgress, setSetupProgress] = useState(0);
@@ -85,11 +98,13 @@ export function FirstRunCheck({ children }: { children: React.ReactNode }) {
         if (response?.data?.is_first_run) {
           console.log('🎯 First run detected, showing setup wizard');
           setShowWizard(true);
+          onSetupNeeded?.();
         }
         
         return response;
       } catch (error) {
         console.error('❌ First run check failed:', error);
+        onConnectionError?.();
         // In caso di errore, assumiamo che non sia first run per evitare loop
         return {
           data: {
@@ -210,6 +225,8 @@ export function FirstRunCheck({ children }: { children: React.ReactNode }) {
         message: 'FatturaAnalyzer V4.0 è pronto per l\'utilizzo enterprise',
         duration: 5000,
       });
+
+      onSetupComplete?.();
     },
     onError: (error: Error) => {
       console.error('❌ Setup completion failed:', error);
@@ -232,11 +249,14 @@ export function FirstRunCheck({ children }: { children: React.ReactNode }) {
         title: 'Setup Saltato',
         message: 'Potrai configurare il sistema in seguito',
       });
+
+      onSetupComplete?.();
     },
     onError: (error: Error) => {
       console.error('❌ Skip setup failed:', error);
       // In caso di errore nello skip, forziamo la chiusura
       setShowWizard(false);
+      onSetupComplete?.();
     },
   });
 
@@ -271,6 +291,7 @@ export function FirstRunCheck({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('❌ Skip failed, forcing close:', error);
       setShowWizard(false);
+      onSetupComplete?.();
     }
   };
 
