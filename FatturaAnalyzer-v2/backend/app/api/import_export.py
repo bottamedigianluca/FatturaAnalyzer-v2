@@ -8,7 +8,7 @@ import tempfile
 import time
 import shutil
 import zipfile
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Response
 from fastapi.responses import StreamingResponse
@@ -22,22 +22,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class ZIPValidationResult:
-    """Results from ZIP archive validation"""
+    """Data class for ZIP archive validation results."""
     def __init__(self):
-        self.validation_status = 'unknown'
-        self.can_import = False
-        self.validation_details = {
-            'zip_valid': False,
-            'file_count': 0,
-            'total_size_mb': 0,
-            'file_breakdown': {},
-            'warnings': [],
-            'errors': []
+        self.validation_status: str = 'unknown'
+        self.can_import: bool = False
+        self.validation_details: Dict[str, Any] = {
+            'zip_valid': False, 'file_count': 0, 'total_size_mb': 0,
+            'file_breakdown': {}, 'warnings': [], 'errors': []
         }
-        self.recommendations = []
+        self.recommendations: List[str] = []
 
 def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = None) -> ZIPValidationResult:
-    """Validate ZIP archive structure for enterprise import (more robust)"""
+    """Robust validation for ZIP archive structure."""
     result = ZIPValidationResult()
     try:
         if not zipfile.is_zipfile(zip_path):
@@ -52,11 +48,11 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
             total_size = sum(file_info.file_size for file_info in file_list)
             result.validation_details['total_size_mb'] = round(total_size / (1024 * 1024), 2)
             
-            file_breakdown = {}
+            file_breakdown: Dict[str, int] = {}
             valid_files_count = 0
             
             for file_info in file_list:
-                ext = Path(file_info.filename).suffix.lower() if Path(file_info.filename).suffix else '.none'
+                ext = Path(file_info.filename).suffix.lower() or '.none'
                 file_breakdown[ext] = file_breakdown.get(ext, 0) + 1
                 
                 all_expected_types = expected_types or ['.xml', '.p7m', '.csv', '.txt']
@@ -71,9 +67,9 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
                 result.validation_details['errors'].append(f"Too many files ({len(file_list)}). Maximum 10000 files allowed")
 
             if valid_files_count == 0 and file_list:
-                result.validation_details['warnings'].append(f"No files with expected extensions ({expected_types or 'any'}) found in archive.")
+                result.validation_details['warnings'].append(f"No files with expected extensions ({expected_types or 'any'}) found.")
             
-            if len(result.validation_details['errors']) == 0:
+            if not result.validation_details['errors']:
                 result.validation_status = 'valid'
                 result.can_import = True
                 result.recommendations.append(f"Found {valid_files_count} potentially valid files.")
@@ -82,7 +78,7 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
                 result.can_import = False
 
     except zipfile.BadZipFile:
-        result.validation_details['errors'].append("Invalid or corrupted ZIP file")
+        result.validation_details['errors'].append("Invalid or corrupted ZIP file.")
         result.validation_status = 'invalid'
     except Exception as e:
         result.validation_details['errors'].append(f"ZIP validation error: {str(e)}")
@@ -90,10 +86,12 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
     
     return result
 
+# ============ ENDPOINT CORRETTI E IMPLEMENTATI ============
+
 @router.post("/validate-zip", response_model=APIResponse)
 async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP archive to validate")):
     """Validates the structure and content of a ZIP archive before import."""
-    if not file.filename.lower().endswith('.zip'):
+    if not file.filename or not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
@@ -111,31 +109,22 @@ async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP ar
         os.unlink(temp_zip_path)
 
 @router.post("/invoices/zip", response_model=ImportResult)
-async def import_invoices_from_zip(
-    file: UploadFile = File(..., description="ZIP archive containing XML/P7M invoice files"),
-    validate_before_import: bool = Query(True, description="Validate ZIP before processing"),
-):
+async def import_invoices_from_zip(file: UploadFile = File(...)):
     """Import invoices from a ZIP archive."""
-    if not file.filename.lower().endswith('.zip'):
+    if not file.filename or not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
         
     with tempfile.TemporaryDirectory() as temp_dir:
-        content = await file.read()
-        await file.seek(0)
         temp_zip_path = os.path.join(temp_dir, file.filename)
         with open(temp_zip_path, "wb") as temp_file:
-            temp_file.write(content)
+            shutil.copyfileobj(file.file, temp_file)
         
-        if validate_before_import:
-            validation_result = validate_zip_structure(temp_zip_path, expected_types=['.xml', '.p7m'])
-            if not validation_result.can_import:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "message": "ZIP validation failed",
-                        "details": validation_result.validation_details
-                    }
-                )
+        validation_result = validate_zip_structure(temp_zip_path, expected_types=['.xml', '.p7m'])
+        if not validation_result.can_import:
+            raise HTTPException(status_code=400, detail={
+                "message": "ZIP validation failed",
+                "details": validation_result.validation_details
+            })
 
         result = await importer_adapter.import_from_source_async(temp_zip_path)
         return ImportResult(**result)
@@ -147,22 +136,26 @@ async def download_transaction_template():
     template_content = await importer_adapter.create_csv_template_async()
     return Response(content=template_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=template_transazioni.csv"})
 
+# ========= ENDPOINT REALI PER FUNZIONALITÀ RICHIESTE DAL FRONTEND =========
+
 @router.get("/statistics", response_model=APIResponse)
 async def get_import_statistics():
     """Retrieves real import statistics from the database."""
     try:
-        invoices_stats = await db_adapter.execute_query_async("SELECT COUNT(*) as total, COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as last_30 FROM Invoices")
-        transactions_stats = await db_adapter.execute_query_async("SELECT COUNT(*) as total, COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as last_30 FROM BankTransactions")
-        last_import = await db_adapter.execute_query_async("SELECT MAX(created_at) as last_ts FROM Invoices UNION SELECT MAX(created_at) FROM BankTransactions ORDER BY last_ts DESC LIMIT 1")
+        invoices_stats_query = "SELECT COUNT(*) as total, COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as last_30 FROM Invoices"
+        transactions_stats_query = "SELECT COUNT(*) as total, COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as last_30 FROM BankTransactions"
+        
+        invoices_stats = await db_adapter.execute_query_async(invoices_stats_query)
+        transactions_stats = await db_adapter.execute_query_async(transactions_stats_query)
         
         stats = {
             "invoices": {"total_invoices": invoices_stats[0]['total'], "last_30_days": invoices_stats[0]['last_30']},
             "transactions": {"total_transactions": transactions_stats[0]['total'], "last_30_days": transactions_stats[0]['last_30']},
-            "last_updated": last_import[0]['last_ts'] if last_import and last_import[0]['last_ts'] else None
+            "last_updated": datetime.now().isoformat()
         }
         return APIResponse(success=True, data=stats)
     except Exception as e:
-        logger.error(f"Failed to get import statistics: {e}")
+        logger.error(f"Failed to get import statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Could not retrieve import statistics.")
 
 @router.get("/health/enterprise", response_model=APIResponse)
@@ -170,14 +163,15 @@ async def get_import_health():
     """Checks the health of the import/export subsystem."""
     health_status = {"status": "healthy", "import_adapter": "operational", "temp_storage": "operational", "issues": []}
     try:
-        if not os.path.exists('temp'):
-            os.makedirs('temp')
-        with tempfile.NamedTemporaryFile(dir='temp') as tempf:
-            tempf.write(b'health_check')
+        temp_dir = 'temp'
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+        if not os.access(temp_dir, os.W_OK):
+             raise PermissionError("Temp directory is not writable.")
     except Exception as e:
         health_status["status"] = "degraded"
         health_status["temp_storage"] = "critical"
-        health_status["issues"].append(f"Temp storage not writable: {e}")
+        health_status["issues"].append(f"Temp storage check failed: {e}")
     
     return APIResponse(success=True, data=health_status)
 
@@ -190,16 +184,8 @@ async def get_supported_formats():
             "transactions": ["csv", "zip"],
             "mixed": ["zip"]
         },
-        "enterprise_features": [
-            "batch_zip_import", 
-            "auto_validation", 
-            "background_processing"
-        ],
-        "limits_and_constraints": {
-            "max_zip_size_mb": 500, 
-            "max_files_per_zip": 10000,
-            "max_single_file_size_mb": 50
-        }
+        "enterprise_features": ["batch_zip_import", "auto_validation"],
+        "limits_and_constraints": {"max_zip_size_mb": 500, "max_files_per_zip": 10000}
     }
     return APIResponse(success=True, data=data)
 
