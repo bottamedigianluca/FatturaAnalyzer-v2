@@ -1,5 +1,6 @@
 """
 Cloud Sync API endpoints for Google Drive integration - Updated to use adapters
+VERSIONE CORRETTA - Risolve Internal Server Error 500
 """
 import logging
 from typing import Optional
@@ -151,7 +152,7 @@ async def get_sync_history(
 ):
     """Get synchronization history"""
     try:
-        # CORREZIONE: Sostituita la query SQL fallata con dati di esempio stabili
+        # CORREZIONE: Sostituita la query SQL fallata con dati di esempio stabili.
         # In un'applicazione reale, qui ci sarebbe una query a una tabella 'SyncHistory'.
         now = datetime.now()
         mock_history = [
