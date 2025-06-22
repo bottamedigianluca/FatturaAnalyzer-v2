@@ -8,7 +8,7 @@ import tempfile
 import time
 import shutil
 import zipfile
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Response
 from fastapi.responses import StreamingResponse
@@ -90,15 +90,12 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
     
     return result
 
-# ============ ENDPOINT CORRETTI E IMPLEMENTATI ============
-
 @router.post("/validate-zip", response_model=APIResponse)
 async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP archive to validate")):
     """Validates the structure and content of a ZIP archive before import."""
     if not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
     
-    # Salva il file temporaneamente per validarlo
     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
         shutil.copyfileobj(file.file, temp_zip)
         temp_zip_path = temp_zip.name
@@ -144,26 +141,11 @@ async def import_invoices_from_zip(
         return ImportResult(**result)
 
 
-@router.post("/transactions/csv-zip", response_model=ImportResult)
-async def import_transactions_from_csv_zip(file: UploadFile = File(...)):
-    """Import bank transactions from a ZIP archive of CSVs."""
-    if not file.filename.lower().endswith('.zip'):
-            raise HTTPException(status_code=400, detail="File must be a ZIP archive")
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_zip_path = os.path.join(temp_dir, file.filename)
-        with open(temp_zip_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        result = await importer_adapter.import_from_source_async(temp_zip_path)
-        return ImportResult(**result)
-
-
 @router.get("/templates/transactions-csv")
 async def download_transaction_template():
     """Downloads a CSV template for bank transactions."""
     template_content = await importer_adapter.create_csv_template_async()
     return Response(content=template_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=template_transazioni.csv"})
-
-# ========= ENDPOINT REALI PER FUNZIONALITÀ RICHIESTE DAL FRONTEND =========
 
 @router.get("/statistics", response_model=APIResponse)
 async def get_import_statistics():
@@ -211,10 +193,12 @@ async def get_supported_formats():
         "enterprise_features": [
             "batch_zip_import", 
             "auto_validation", 
+            "background_processing"
         ],
         "limits_and_constraints": {
             "max_zip_size_mb": 500, 
             "max_files_per_zip": 10000,
+            "max_single_file_size_mb": 50
         }
     }
     return APIResponse(success=True, data=data)
@@ -223,7 +207,7 @@ async def get_supported_formats():
 async def get_export_presets():
     """Returns a list of predefined export configurations."""
     presets = [
-        {"id": "monthly_summary", "name": "Riepilogo Finanziario Mensile", "entity": "invoices", "format": "excel"},
+        {"id": "monthly_financial_summary", "name": "Riepilogo Finanziario Mensile", "entity": "invoices", "format": "excel"},
         {"id": "yearly_client_report", "name": "Report Clienti Annuale", "entity": "anagraphics", "format": "pdf"},
         {"id": "unreconciled_transactions", "name": "Transazioni non Riconciliate", "entity": "transactions", "format": "csv"}
     ]
