@@ -16,29 +16,22 @@ from fastapi.responses import JSONResponse
 backend_path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_path))
 
+# Importa le impostazioni DOPO aver impostato il path.
+# Ora `settings` è un oggetto già validato e pronto all'uso.
 from app.config import settings
 from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.api import (
-    anagraphics,
-    analytics,
-    invoices,
-    transactions,
-    reconciliation,
-    import_export,
-    sync,
-    setup,
-    first_run,
-    health,
-    system
+    anagraphics, analytics, invoices, transactions, reconciliation,
+    import_export, sync, setup, first_run, health, system
 )
 
-# Configurazione robusta del logging
-os.makedirs('logs', exist_ok=True)
+# Configurazione del logging basata sulle impostazioni caricate
+os.makedirs(Path(settings.LOG_FILE).parent, exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO,
+    level=settings.LOG_LEVEL.upper(),
     format='%(asctime)s - %(name)s - [%(levelname)s] - %(message)s',
     handlers=[
-        logging.FileHandler(backend_path / 'logs' / 'fattura_analyzer_api.log'),
+        logging.FileHandler(settings.LOG_FILE),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -65,17 +58,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 1. Middleware per la gestione degli errori (deve essere il più esterno per catturare tutto)
+# 1. Middleware per la gestione degli errori
 app.add_middleware(ErrorHandlerMiddleware)
 
 # 2. Middleware CORS
 allowed_origins = [
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    "http://localhost:1420", "http://127.0.0.1:1420",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
     "tauri://localhost",
 ]
 if settings.DEBUG:
@@ -112,10 +102,9 @@ logger.info("✅ All API routers included successfully.")
 async def root():
     """Endpoint principale per verificare che l'API sia online."""
     return JSONResponse(content={
-        "message": "FatturaAnalyzer API v2 is running",
+        "message": f"FatturaAnalyzer API v2 is running in {settings.ENVIRONMENT} mode",
         "version": "2.0.0",
-        "docs_url": app.docs_url,
-        "health_check": "/health"
+        "docs_url": app.docs_url
     })
 
 if __name__ == "__main__":
