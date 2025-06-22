@@ -1,83 +1,81 @@
 """
-Configuration management per FastAPI - VERSIONE ENTERPRISE ROBUSTA
-Legge sia da .env (con priorità) che da config.ini, garantendo che tutte
-le impostazioni siano disponibili e prevenendo AttributeError.
+Configuration Management - VERSIONE ENTERPRISE CON PYDANTIC
+Questo modulo fornisce un sistema di configurazione robusto, validato e immutabile,
+utilizzando Pydantic per leggere le impostazioni da un file .env.
+È il cuore della configurazione dell'applicazione.
 """
 import os
-import configparser
 from pathlib import Path
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, validator
 
-# Carica le variabili d'ambiente dal file .env nella root del backend
-# Questo assicura che os.getenv() funzioni come previsto.
+# Trova la root del backend in modo affidabile, partendo da questo file
+# Questo permette di trovare il file .env in qualsiasi contesto (run, test, etc.)
 backend_root = Path(__file__).resolve().parent.parent
-dotenv_path = backend_root / '.env'
-load_dotenv(dotenv_path=dotenv_path)
 
-class Settings:
-    """Configurazioni unificate per l'applicazione FastAPI."""
+class AppSettings(BaseSettings):
+    """
+    Definisce e valida tutte le impostazioni dell'applicazione.
+    Pydantic leggerà automaticamente le variabili da un file .env e dall'ambiente di sistema.
+    """
+    # Configurazione per Pydantic
+    model_config = SettingsConfigDict(
+        env_file=str(backend_root / '.env'),
+        env_file_encoding='utf-8',
+        extra='ignore'  # Ignora variabili d'ambiente extra non definite qui
+    )
+
+    # Application Environment
+    ENVIRONMENT: str = Field(default="development", description="Application environment: development, production, test")
+    DEBUG: bool = Field(default=True, description="Enable debug mode")
+
+    # Server Configuration
+    HOST: str = Field(default="127.0.0.1", description="Server host")
+    PORT: int = Field(default=8000, description="Server port")
+
+    # Database Configuration
+    DATABASE_PATH: str = Field(default="data/database.db", description="Path to the SQLite database file")
+
+    # Company Information (letto da .env per essere facilmente configurabile)
+    COMPANY_NAME: str = Field(default="La Tua Azienda Srl", description="Company's legal name")
+    COMPANY_VAT: str = Field(default="", description="Company's VAT number (Partita IVA)")
+    COMPANY_CF: str = Field(default="", description="Company's fiscal code (Codice Fiscale)")
     
-    def __init__(self):
-        # 1. Carica da .env (ha la priorità per lo sviluppo)
-        self.ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-        self.DEBUG: bool = os.getenv("DEBUG", "true").lower() in ("true", "1", "yes")
-        self.HOST: str = os.getenv("HOST", "127.0.0.1")
-        self.PORT: int = int(os.getenv("PORT", 8000))
-        self.DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/database.db")
-        
-        # 2. Carica da config.ini per compatibilità e valori di base
-        self._load_from_ini()
+    @validator('COMPANY_VAT')
+    def validate_company_vat(cls, v):
+        if not v:
+            raise ValueError("COMPANY_VAT must be set in the .env file for the application to work correctly.")
+        return v
 
-        # 3. Imposta altre configurazioni da .env, con fallback
-        self.MAX_UPLOAD_SIZE: int = int(os.getenv("MAX_UPLOAD_SIZE", 100))
-        self.PAGINATION_SIZE: int = int(os.getenv("PAGINATION_SIZE", 50))
-        self.SYNC_ENABLED: bool = os.getenv("SYNC_ENABLED", "false").lower() in ("true", "1", "yes")
-        self.GOOGLE_CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
-        
-        # Valori che potrebbero non essere in .env e presi solo da config.ini
-        # Se non sono stati caricati da _load_from_ini(), imposta un default sicuro.
-        if not hasattr(self, 'COMPANY_NAME'):
-            self.COMPANY_NAME: str = "Azienda non configurata"
-        if not hasattr(self, 'COMPANY_VAT'):
-            self.COMPANY_VAT: str = ""
-        if not hasattr(self, 'COMPANY_CF'):
-            self.COMPANY_CF: str = ""
+    # API Configuration
+    MAX_UPLOAD_SIZE: int = Field(default=100, description="Maximum upload size in MB")
+    PAGINATION_SIZE: int = Field(default=50, description="Default pagination size")
 
-    def _load_from_ini(self):
-        """Carica la configurazione da config.ini, ma non sovrascrive i valori già presi da .env"""
-        config = configparser.ConfigParser()
-        config_path = backend_root / 'config.ini'
+    # Security
+    LOCAL_API_KEY: str = Field(default="your-secure-api-key-here", description="API key for local/secure access")
+    SECRET_KEY: str = Field(default="your-secret-key-for-jwt-tokens", description="Secret key for JWT tokens")
+    
+    # Google Drive Sync Configuration
+    GOOGLE_CREDENTIALS_FILE: str = Field(default="google_credentials.json")
+    SYNC_ENABLED: bool = Field(default=False)
 
-        if not config_path.exists():
-            logger.warning(f"File config.ini non trovato in {config_path}. L'app si baserà solo su .env e valori di default.")
-            return
-
-        try:
-            config.read(config_path, encoding='utf-8')
-            logger.info(f"📄 Loaded config.ini from: {config_path}")
-
-            # Carica solo se non già impostato da .env
-            if self.DATABASE_PATH == "data/database.db": # Default value from .env
-                self.DATABASE_PATH = config.get('Paths', 'DatabaseFile', fallback=self.DATABASE_PATH)
-
-            self.COMPANY_NAME = config.get('Azienda', 'RagioneSociale', fallback='Azienda Demo')
-            self.COMPANY_VAT = config.get('Azienda', 'PartitaIVA', fallback='')
-            self.COMPANY_CF = config.get('Azienda', 'CodiceFiscale', fallback='')
-            
-        except Exception as e:
-            logger.error(f"⚠️ Error reading config.ini from {config_path}: {e}")
+    # Logging Configuration
+    LOG_LEVEL: str = Field(default="INFO")
+    LOG_FILE: str = Field(default="logs/fattura_analyzer_api.log")
 
     def get_database_path(self) -> str:
         """Restituisce il percorso completo e assoluto del database."""
         db_path_obj = Path(self.DATABASE_PATH)
         if db_path_obj.is_absolute():
             return str(db_path_obj)
-        # Se il percorso è relativo, lo consideriamo relativo alla root del backend
         return str(backend_root / self.DATABASE_PATH)
 
-# Istanza singola delle impostazioni, importata da tutto il resto dell'applicazione
-settings = Settings()
-
-# Setup del logger dopo che la configurazione è stata caricata
-import logging
-logger = logging.getLogger(__name__)
+# Istanza singola e immutabile delle impostazioni, caricata una sola volta all'avvio.
+# Qualsiasi modulo che importa `settings` avrà accesso a questi valori validati.
+try:
+    settings = AppSettings()
+except Exception as e:
+    print(f"FATAL ERROR: Could not initialize settings. Check your .env file. Error: {e}")
+    # In un ambiente di produzione, si potrebbe voler uscire
+    # sys.exit(1)
+    raise e
