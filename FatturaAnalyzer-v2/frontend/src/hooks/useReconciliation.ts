@@ -1,16 +1,9 @@
-/**
- * Reconciliation Hooks V4.0 - VERSIONE CORRETTA PER ENTERPRISE
- * Hook per gestione riconciliazione con API backend reali
- * CORREZIONI: Import/Export, Error Handling, Type Safety
- */
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiClient } from '@/services/api';
 import { useUIStore } from '@/store';
 import { useState, useCallback } from 'react';
 
-// ===== QUERY KEYS =====
 export const RECONCILIATION_QUERY_KEYS = {
   RECONCILIATION: ['reconciliation'] as const,
   SUGGESTIONS: ['reconciliation', 'suggestions'] as const,
@@ -20,18 +13,17 @@ export const RECONCILIATION_QUERY_KEYS = {
   HEALTH: ['reconciliation', 'health'] as const,
   OPPORTUNITIES: ['reconciliation', 'opportunities'] as const,
   CLIENT_RELIABILITY: ['reconciliation', 'client-reliability'] as const,
-} as const;
+};
 
-// ===== INTERFACES =====
 export interface ManualMatchRequest {
   invoice_id: number;
   transaction_id: number;
   amount_to_match: number;
   enable_ai_validation?: boolean;
   enable_learning?: boolean;
+  force_match?: boolean;
   user_confidence?: number;
   notes?: string;
-  force_match?: boolean;
 }
 
 export interface BatchReconciliationRequest {
@@ -69,11 +61,6 @@ export interface SystemStatus {
   ai_health: number;
 }
 
-// ===== CORE HOOKS =====
-
-/**
- * Hook per reconciliation suggestions con API reali
- */
 export const useReconciliationSuggestions = (options: {
   maxSuggestions?: number;
   confidenceThreshold?: number;
@@ -86,7 +73,6 @@ export const useReconciliationSuggestions = (options: {
     enable_ml_boost = true,
     enable_semantic_analysis = true,
   } = options;
-
   return useQuery({
     queryKey: [...RECONCILIATION_QUERY_KEYS.SUGGESTIONS, options],
     queryFn: async (): Promise<{ suggestions: ReconciliationSuggestion[] }> => {
@@ -104,19 +90,15 @@ export const useReconciliationSuggestions = (options: {
         throw new Error('Errore nel caricamento dei suggerimenti di riconciliazione');
       }
     },
-    staleTime: 180000, // 3 minutes
+    staleTime: 180000, 
     retry: 2,
     retryDelay: 1000,
   });
 };
 
-/**
- * Hook per manual reconciliation con API reali
- */
 export const usePerformReconciliation = () => {
   const queryClient = useQueryClient();
   const { addNotification } = useUIStore();
-  
   return useMutation({
     mutationFn: async (request: ManualMatchRequest) => {
       try {
@@ -127,11 +109,9 @@ export const usePerformReconciliation = () => {
       }
     },
     onSuccess: (data, variables) => {
-      // Invalida cache correlate
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: RECONCILIATION_QUERY_KEYS.RECONCILIATION });
-      
       addNotification({
         type: 'success',
         title: 'Riconciliazione Completata',
@@ -151,13 +131,9 @@ export const usePerformReconciliation = () => {
   });
 };
 
-/**
- * Hook per batch reconciliation con API reali
- */
 export const useBatchReconciliation = () => {
   const queryClient = useQueryClient();
   const { addNotification } = useUIStore();
-  
   return useMutation({
     mutationFn: async (request: BatchReconciliationRequest) => {
       try {
@@ -171,7 +147,6 @@ export const useBatchReconciliation = () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: RECONCILIATION_QUERY_KEYS.RECONCILIATION });
-      
       addNotification({
         type: 'success',
         title: 'Batch Reconciliation Completato',
@@ -189,13 +164,9 @@ export const useBatchReconciliation = () => {
   });
 };
 
-/**
- * Hook per auto reconciliation con API reali
- */
 export const useAutoReconciliation = () => {
   const queryClient = useQueryClient();
   const { addNotification } = useUIStore();
-  
   return useMutation({
     mutationFn: async (options: {
       confidence_threshold?: number;
@@ -210,25 +181,20 @@ export const useAutoReconciliation = () => {
           true,
           true
         );
-        
-        if (!opportunities?.opportunities || opportunities.opportunities.length === 0) {
+        if (!opportunities?.data?.opportunities || opportunities.data.opportunities.length === 0) {
           return { processed_count: 0, message: 'Nessuna opportunità di auto-reconciliation trovata' };
         }
-        
-        const highConfidenceOpportunities = opportunities.opportunities.filter(
+        const highConfidenceOpportunities = opportunities.data.opportunities.filter(
           (opp: any) => opp.confidence_score >= (options.confidence_threshold || 0.9)
         );
-        
         if (highConfidenceOpportunities.length === 0) {
           return { processed_count: 0, message: 'Nessuna opportunità ad alta confidenza trovata' };
         }
-        
         const reconciliations = highConfidenceOpportunities.map((opp: any) => ({
           invoice_id: opp.invoice_id,
           transaction_id: opp.transaction_id,
           amount: opp.amount,
         }));
-        
         return await apiClient.processBatchReconciliationV4({
           reconciliation_pairs: reconciliations,
           enable_ai_validation: true,
@@ -243,7 +209,6 @@ export const useAutoReconciliation = () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: RECONCILIATION_QUERY_KEYS.RECONCILIATION });
-      
       addNotification({
         type: 'success',
         title: 'Auto-Reconciliation Completata',
@@ -261,72 +226,68 @@ export const useAutoReconciliation = () => {
   });
 };
 
-/**
- * Hook per reconciliation analytics con API reali
- */
 export const useReconciliationAnalytics = () => {
-  return useQuery({
-    queryKey: ['reconciliation', 'analytics'],
-    queryFn: async (): Promise<ReconciliationPerformance & { system_status: SystemStatus }> => {
-      try {
-        const [performance, systemStatus] = await Promise.all([
-          apiClient.getReconciliationPerformanceMetrics(),
-          apiClient.getReconciliationSystemStatus(),
-        ]);
-        
-        return {
-          success_rate: performance?.success_rate || 0,
-          ai_accuracy: performance?.ai_accuracy || 0,
-          total_reconciliations: performance?.total_reconciliations || 0,
-          time_saved_hours: performance?.time_saved_hours || 0,
-          average_confidence: performance?.average_confidence || 0,
-          system_status: systemStatus,
-        };
-      } catch (error) {
-        console.error('Reconciliation analytics error:', error);
-        return {
-          success_rate: 0,
-          ai_accuracy: 0,
-          total_reconciliations: 0,
-          time_saved_hours: 0,
-          average_confidence: 0,
-          system_status: { system_healthy: false, overall_health: 0, api_health: 0, ai_health: 0 },
-        };
-      }
-    },
-    staleTime: 300000, // 5 minutes
-    retry: 2,
-  });
+    return useQuery({
+      queryKey: ['reconciliation', 'analytics'],
+      queryFn: async (): Promise<ReconciliationPerformance & { system_status: SystemStatus }> => {
+        try {
+          // CORREZIONE: Chiamo i due endpoint reali e combino i risultati
+          const [performanceRes, systemStatus] = await Promise.all([
+            apiClient.getReconciliationPerformanceMetrics(),
+            apiClient.getReconciliationSystemStatus(),
+          ]);
+          
+          const performance = performanceRes?.data || {};
+
+          return {
+            success_rate: performance.success_rate || 0,
+            ai_accuracy: performance.ai_accuracy || 0,
+            total_reconciliations: performance.total_reconciliations || 0,
+            time_saved_hours: performance.time_saved_hours || 0,
+            average_confidence: performance.average_confidence || 0,
+            system_status: systemStatus || { system_healthy: false, overall_health: 0, api_health: 0, ai_health: 0 },
+          };
+        } catch (error) {
+          console.error('Reconciliation analytics error:', error);
+          return {
+            success_rate: 0,
+            ai_accuracy: 0,
+            total_reconciliations: 0,
+            time_saved_hours: 0,
+            average_confidence: 0,
+            system_status: { system_healthy: false, overall_health: 0, api_health: 0, ai_health: 0 },
+          };
+        }
+      },
+      staleTime: 300000, 
+      retry: 2,
+    });
 };
 
-/**
- * Hook per system status con API reali
- */
 export const useReconciliationSystemStatus = () => {
-  return useQuery({
-    queryKey: RECONCILIATION_QUERY_KEYS.SYSTEM_STATUS,
-    queryFn: async (): Promise<SystemStatus> => {
-      try {
-        return await apiClient.getReconciliationSystemStatus();
-      } catch (error) {
-        console.error('System status error:', error);
-        return {
-          system_healthy: false,
-          overall_health: 0,
-          api_health: 0,
-          ai_health: 0,
-        };
-      }
-    },
-    staleTime: 120000, // 2 minutes
-    refetchInterval: 300000, // 5 minutes
-    retry: 1,
-  });
+    return useQuery({
+      queryKey: RECONCILIATION_QUERY_KEYS.SYSTEM_STATUS,
+      queryFn: async (): Promise<SystemStatus> => {
+        try {
+          const response = await apiClient.getReconciliationSystemStatus();
+          return response;
+        } catch (error) {
+          console.error('System status error:', error);
+          return {
+            system_healthy: false,
+            overall_health: 0,
+            api_health: 0,
+            ai_health: 0,
+          };
+        }
+      },
+      staleTime: 120000, 
+      refetchInterval: 300000, 
+      retry: 1,
+    });
 };
 
-/**
- * Hook per validation di reconciliation matches
- */
+
 export const useValidateReconciliationMatch = () => {
   return useMutation({
     mutationFn: async (params: {
@@ -335,165 +296,117 @@ export const useValidateReconciliationMatch = () => {
       amount: number;
       neural_analysis?: boolean;
     }) => {
-      // Implementazione placeholder - sostituire con API reale quando disponibile
-      return { validation_passed: true, confidence: 0.95 };
+      // Questa è una chiamata simulata dato che l'endpoint non sembra esistere, ma è presente negli hook
+      console.warn("Hook 'useValidateReconciliationMatch' sta usando una chiamata simulata.");
+      return Promise.resolve({ data: { validation_passed: true, confidence: 0.95 } });
     },
   });
 };
 
-/**
- * Hook composito per workflow completo reconciliation
- */
 export const useDragDropReconciliation = () => {
   const [draggedItem, setDraggedItem] = useState<any>(null);
   const [dropTarget, setDropTarget] = useState<any>(null);
   const performReconciliation = usePerformReconciliation();
-  
+
   const handleDragStart = useCallback((type: 'invoice' | 'transaction', data: any) => {
     setDraggedItem({ type, data });
   }, []);
-  
+
   const handleDragOver = useCallback((type: 'invoice' | 'transaction', id: number) => {
     if (draggedItem && draggedItem.type !== type) {
       setDropTarget({ type, id });
     }
   }, [draggedItem]);
-  
+
   const handleDrop = useCallback(async (confidence?: number) => {
     if (!draggedItem || !dropTarget) return;
-    
+
     const isInvoiceToTransaction = draggedItem.type === 'invoice' && dropTarget.type === 'transaction';
     const isTransactionToInvoice = draggedItem.type === 'transaction' && dropTarget.type === 'invoice';
-    
+
     if (isInvoiceToTransaction || isTransactionToInvoice) {
       const invoiceId = isInvoiceToTransaction ? draggedItem.data.id : dropTarget.id;
       const transactionId = isTransactionToInvoice ? draggedItem.data.id : dropTarget.id;
-      const amount = isInvoiceToTransaction 
-        ? draggedItem.data.total_amount 
-        : Math.abs(draggedItem.data.amount);
-      
+      const amount = Math.min(
+        Math.abs(draggedItem.data.total_amount || draggedItem.data.amount),
+        Math.abs(dropTarget.data.total_amount || dropTarget.data.amount)
+      );
+
       await performReconciliation.mutateAsync({
         invoice_id: invoiceId,
         transaction_id: transactionId,
         amount_to_match: amount,
-        enable_ai_validation: true,
+        user_confidence: confidence || 0.95, // Se l'utente fa drag&drop, la confidenza è alta
         enable_learning: true,
-        user_confidence: confidence,
       });
     }
-    
     setDraggedItem(null);
     setDropTarget(null);
   }, [draggedItem, dropTarget, performReconciliation]);
-  
-  const clearDragState = useCallback(() => {
-    setDraggedItem(null);
-    setDropTarget(null);
-  }, []);
-  
+
   return {
     draggedItem,
     dropTarget,
     handleDragStart,
     handleDragOver,
     handleDrop,
-    clearDragState,
-    isReconciling: performReconciliation.isPending,
   };
 };
 
-// ===== LEGACY COMPATIBILITY =====
-export const useManualReconciliation = usePerformReconciliation;
-export const useSuggestions = useReconciliationSuggestions;
-export const useAnalytics = useReconciliationAnalytics;
-export const useStatus = useReconciliationSystemStatus;
-
-// ===== DEFAULT EXPORT =====
-export default {
-  useReconciliationSuggestions,
-  usePerformReconciliation,
-  useBatchReconciliation,
-  useAutoReconciliation,
-  useReconciliationAnalytics,
-  useReconciliationSystemStatus,
-  useValidateReconciliationMatch,
-  useDragDropReconciliation,
+export const useUndoReconciliation = () => {
+    const queryClient = useQueryClient();
+    const { addNotification } = useUIStore();
+    return useMutation({
+        mutationFn: async (request: { link_id: number, learn_from_undo?: boolean }) => {
+            const response = await apiClient.undoReconciliation(request.link_id, request.learn_from_undo);
+            if (!response.success) {
+                throw new Error(response.message || 'Errore durante l\'annullamento');
+            }
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+            queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
+            addNotification({
+                type: 'info',
+                title: 'Riconciliazione Annullata',
+                message: 'Il collegamento è stato rimosso',
+            });
+        },
+        onError: (error: Error) => {
+            addNotification({
+                type: 'error',
+                title: 'Errore Annullamento',
+                message: error.message,
+            });
+        },
+    });
 };
 
-// ===== ADDITIONAL HOOKS PER COMPLETEZZA =====
-
-/**
- * Hook per ML model training - placeholder per backend futuro
- */
 export const useMLModelTraining = () => {
-  const { addNotification } = useUIStore();
-  
-  return useMutation({
-    mutationFn: async () => {
-      addNotification({
-        type: 'info',
-        title: 'Training ML',
-        message: 'Funzionalità di training del modello ML non ancora implementata nel backend',
-      });
-      
-      return {
-        training_completed: false,
-        message: 'Training ML non ancora disponibile'
-      };
-    },
-    onError: (error: Error) => {
-      addNotification({
-        type: 'error',
-        title: 'Errore Training ML',
-        message: error.message || 'Errore nel training del modello ML',
-      });
-      toast.error('Errore nel training del modello ML');
-    },
-  });
-};
-
-/**
- * Hook per reconciliation workflow management
- */
-export const useReconciliationWorkflow = () => {
-  const [selectedInvoices, setSelectedInvoices] = useState<any[]>([]);
-  const [selectedTransactions, setSelectedTransactions] = useState<any[]>([]);
-  
-  const batchProcessing = useBatchReconciliation();
-  const dragDropReconciliation = useDragDropReconciliation();
-  
-  const clearSelection = useCallback(() => {
-    setSelectedInvoices([]);
-    setSelectedTransactions([]);
-  }, []);
-  
-  const applyBestMatches = useCallback(async (confidenceThreshold = 0.8) => {
-    if (selectedInvoices.length > 0 && selectedTransactions.length > 0) {
-      const reconciliations = selectedInvoices.slice(0, selectedTransactions.length).map((invoice, index) => ({
-        invoice_id: invoice.id,
-        transaction_id: selectedTransactions[index].id,
-        amount: invoice.total_amount,
-      }));
-      
-      await batchProcessing.mutateAsync({
-        reconciliation_pairs: reconciliations,
-        enable_ai_validation: true,
-        enable_parallel_processing: true,
-      });
-      clearSelection();
-    }
-  }, [selectedInvoices, selectedTransactions, batchProcessing, clearSelection]);
-  
-  return {
-    selectedInvoices,
-    selectedTransactions,
-    setSelectedInvoices,
-    setSelectedTransactions,
-    batchProcessing,
-    dragDropReconciliation,
-    applyBestMatches,
-    clearSelection,
-    isProcessing: batchProcessing.isPending,
-    hasSelections: selectedInvoices.length > 0 || selectedTransactions.length > 0,
-  };
+    const { addNotification } = useUIStore();
+    return useMutation({
+      mutationFn: async (params: { training_data_size: number, quantum_optimization: boolean, neural_enhancement: boolean }) => {
+        const response = await apiClient.triggerMLModelTraining(params.training_data_size, params.quantum_optimization, params.neural_enhancement);
+        if (!response.success) {
+          throw new Error(response.message || 'Errore training modello');
+        }
+        return response.data;
+      },
+      onSuccess: (data) => {
+        addNotification({
+          type: 'success',
+          title: 'Training Modello AI Completato',
+          message: data.message || `Accuratezza migliorata a ${data.new_accuracy_score.toFixed(2)}%`,
+        });
+      },
+      onError: (error: Error) => {
+        addNotification({
+          type: 'error',
+          title: 'Errore Training AI',
+          message: error.message,
+        });
+      },
+    });
 };
