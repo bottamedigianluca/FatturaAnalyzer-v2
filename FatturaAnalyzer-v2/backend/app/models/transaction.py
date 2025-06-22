@@ -1,6 +1,7 @@
 # app/models/transaction.py
 """
-Modelli Pydantic specifici per le transazioni bancarie
+Modelli Pydantic specifici per le transazioni bancarie - VERSIONE CORRETTA
+Fix critico per errore HTTP 422 durante compatibilità V4.0
 """
 
 from datetime import date, datetime
@@ -200,8 +201,13 @@ class TransactionAnalytics(BaseModel, BaseConfig):
     cash_flow_analysis: Dict[str, Any] = Field(default={}, description="Analisi cash flow")
 
 
+# ===== FIX CRITICO: TransactionFilter COMPLETO =====
 class TransactionFilter(BaseModel, BaseConfig):
-    """Filtri per ricerca transazioni"""
+    """
+    Filtri per ricerca transazioni - VERSIONE CORRETTA V4.0
+    Include TUTTI i campi utilizzati dall'API frontend per evitare errori HTTP 422
+    """
+    # Filtri base dal modello originale
     date_from: Optional[date] = None
     date_to: Optional[date] = None
     amount_min: Optional[float] = None
@@ -217,6 +223,45 @@ class TransactionFilter(BaseModel, BaseConfig):
     hide_worldline: bool = Field(default=False, description="Nascondi Worldline")
     hide_cash: bool = Field(default=False, description="Nascondi contanti")
     hide_commissions: bool = Field(default=False, description="Nascondi commissioni")
+    
+    # ===== CAMPI V4.0 AGGIUNTI PER COMPATIBILITÀ =====
+    # Questi campi sono utilizzati dall'API V4.0 e causavano l'errore HTTP 422
+    enhanced: Optional[bool] = Field(default=False, description="Return enhanced response format with AI insights")
+    include_summary: Optional[bool] = Field(default=False, description="Include summary statistics")
+    enable_ai_insights: Optional[bool] = Field(default=False, description="Include AI insights for each transaction")
+    cache_enabled: Optional[bool] = Field(default=True, description="Enable intelligent caching")
+    
+    # Campi da TransactionFilters frontend aggiuntivi
+    search: Optional[str] = Field(None, min_length=2, max_length=200, description="Search in description")
+    start_date: Optional[date] = Field(None, description="Filter by start date")
+    end_date: Optional[date] = Field(None, description="Filter by end date")
+    status_filter: Optional[ReconciliationStatus] = Field(None, description="Filter by reconciliation status")
+    anagraphics_id_heuristic: Optional[int] = Field(None, gt=0, description="Filter by likely anagraphics ID")
+    
+    # Validatori per garantire coerenza
+    @validator('end_date')
+    def end_date_after_start(cls, v, values):
+        if v and values.get('start_date') and v < values['start_date']:
+            raise ValueError('end_date must be after start_date')
+        return v
+    
+    @validator('date_to')
+    def date_to_after_date_from(cls, v, values):
+        if v and values.get('date_from') and v < values['date_from']:
+            raise ValueError('date_to must be after date_from')
+        return v
+    
+    @validator('max_amount')
+    def max_greater_than_min(cls, v, values):
+        if v and values.get('min_amount') and v < values['min_amount']:
+            raise ValueError('max_amount must be greater than min_amount')
+        return v
+    
+    @validator('search')
+    def validate_search_length(cls, v):
+        if v and len(v.strip()) < 2:
+            raise ValueError('Search query must be at least 2 characters')
+        return v.strip() if v else v
 
 
 class TransactionBulkOperation(BaseModel, BaseConfig):
@@ -227,7 +272,7 @@ class TransactionBulkOperation(BaseModel, BaseConfig):
 
 
 class BankStatementImport(BaseModel, BaseConfig):
-    """Importazione estratto conto"""
+    """Importazione estratto conto con supporto ZIP"""
     file_name: str
     bank_account_id: int
     statement_date: date
@@ -238,6 +283,11 @@ class BankStatementImport(BaseModel, BaseConfig):
     import_errors: List[str] = Field(default=[])
     duplicates_found: int = Field(default=0)
     new_transactions: int = Field(default=0)
+    
+    # Supporto ZIP per file multipli
+    is_zip_archive: bool = Field(default=False, description="File ZIP contenente più estratti")
+    zip_files_processed: List[str] = Field(default=[], description="File processati dallo ZIP")
+    zip_extraction_errors: List[str] = Field(default=[], description="Errori estrazione ZIP")
 
 
 # Export all transaction models
