@@ -1,6 +1,6 @@
 """
 FatturaAnalyzer v2 - FastAPI Backend
-Main application entry point con CORS corretto e configurazione completa - VERSIONE ENTERPRISE STABILE
+Main application entry point - VERSIONE ENTERPRISE STABILE E COMPLETA
 """
 import logging
 import os
@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-# Assicura che i moduli del progetto siano nel path
-backend_path = Path(__file__).parent.parent
+# Assicura che la root del backend sia nel sys.path
+# Questo è fondamentale per far funzionare gli import in modo consistente
+backend_path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_path))
 
 from app.config import settings
@@ -32,13 +33,13 @@ from app.api import (
     system
 )
 
-# Configurazione del logging
+# Configurazione robusta del logging
 os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - [%(levelname)s] - %(message)s',
     handlers=[
-        logging.FileHandler('logs/fattura_analyzer_api.log'),
+        logging.FileHandler(backend_path / 'logs' / 'fattura_analyzer_api.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -47,9 +48,14 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestisce gli eventi di avvio e spegnimento dell'applicazione."""
-    logger.info("🚀 Starting FatturaAnalyzer API v2...")
+    logger.info("==================================================")
+    logger.info("🚀 Starting FatturaAnalyzer API v2 - Enterprise Edition")
+    logger.info(f"Running in {settings.ENVIRONMENT.upper()} mode")
+    logger.info("==================================================")
     yield
+    logger.info("==================================================")
     logger.info("👋 Shutting down FatturaAnalyzer API...")
+    logger.info("==================================================")
 
 app = FastAPI(
     title="FatturaAnalyzer API v2",
@@ -60,11 +66,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 1. Middleware per la gestione degli errori (deve essere il più esterno)
+# 1. Middleware per la gestione degli errori (deve essere il più esterno per catturare tutto)
 app.add_middleware(ErrorHandlerMiddleware)
 
-# 2. Middleware CORS
-# Questa configurazione è robusta e adatta sia allo sviluppo che alla produzione.
+# 2. Middleware CORS (subito dopo, per gestire le policy di accesso)
 allowed_origins = [
     "http://localhost:1420",
     "http://127.0.0.1:1420",
@@ -86,7 +91,7 @@ app.add_middleware(
     allow_headers=["*"],  # Permette tutti gli header
 )
 
-# 3. Altri middleware
+# 3. Middleware per la compressione GZip
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # 4. Inclusione dei router API
