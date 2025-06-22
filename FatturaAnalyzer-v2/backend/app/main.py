@@ -1,6 +1,6 @@
 """
 FatturaAnalyzer v2 - FastAPI Backend
-Main application entry point con CORS corretto e configurazione completa
+Main application entry point con CORS corretto e configurazione completa - VERSIONE ENTERPRISE STABILE
 """
 import logging
 import os
@@ -60,35 +60,38 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 1. Middleware per la gestione degli errori (il più esterno)
+# 1. Middleware per la gestione degli errori (deve essere il più esterno)
 app.add_middleware(ErrorHandlerMiddleware)
 
-# 2. Middleware CORS (subito dopo gli errori)
+# 2. Middleware CORS
+# Questa configurazione è robusta e adatta sia allo sviluppo che alla produzione.
 allowed_origins = [
-    "http://localhost:1420",      
+    "http://localhost:1420",
     "http://127.0.0.1:1420",
-    "http://localhost:3000",      
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:5173",      
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
     "tauri://localhost",
 ]
 if settings.DEBUG:
-    logger.warning("⚠️ MODALITÀ DEBUG: CORS permissivo attivo per tutti gli origins")
+    logger.warning("⚠️ DEBUG MODE: Allowing all origins for CORS.")
     allowed_origins.append("*")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Permette tutti i metodi, inclusi POST
-    allow_headers=["*"],
+    allow_methods=["*"],  # Permette tutti i metodi: GET, POST, PUT, DELETE, etc.
+    allow_headers=["*"],  # Permette tutti gli header
 )
 
 # 3. Altri middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Inclusione dei router API
+# 4. Inclusione dei router API
+# Questo è il cuore dell'applicazione: ogni file in /api viene registrato qui.
+logger.info("Including API routers...")
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(first_run.router, prefix="/api/first-run", tags=["First Run"])
 app.include_router(setup.router, prefix="/api/setup", tags=["Setup"])
@@ -100,16 +103,19 @@ app.include_router(import_export.router, prefix="/api/import-export", tags=["Imp
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(sync.router, prefix="/api/sync", tags=["Cloud Sync"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
-
+logger.info("✅ All API routers included successfully.")
 
 @app.get("/")
 async def root():
+    """Endpoint principale per verificare che l'API sia online."""
     return JSONResponse(content={
         "message": "FatturaAnalyzer API v2 is running",
         "version": "2.0.0",
-        "docs": "/api/docs"
+        "docs_url": app.docs_url,
+        "health_check": "/health"
     })
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=settings.HOST, port=settings.PORT)
+    logger.info(f"Starting Uvicorn server on {settings.HOST}:{settings.PORT}")
+    uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)
