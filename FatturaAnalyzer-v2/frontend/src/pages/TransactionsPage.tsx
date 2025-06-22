@@ -76,7 +76,7 @@ import {
 } from '@/hooks/useTransactions';
 
 import {
-  useImportTransactionsCSV,
+  useImportTransactionsCSVZIP,
   useExportData as useExportTransactions,
   useDownloadTransactionTemplate
 } from '@/hooks/useImportExport';
