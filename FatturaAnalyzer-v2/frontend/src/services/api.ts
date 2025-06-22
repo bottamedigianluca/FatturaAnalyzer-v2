@@ -246,8 +246,36 @@ class ApiClient {
   }
 
   // ===== HEALTH CHECK =====
-  async healthCheck(): Promise<{ status: string; version: string }> {
-    return this.request('/health');
+  async healthCheck(): Promise<{ 
+    status: string; 
+    version: string; 
+    database?: string;
+    core_integration?: string;
+    first_run_required?: boolean;
+  }> {
+    try {
+      const response = await this.request('/health');
+      
+      // Adatta la response per compatibilità con SystemHealthProvider
+      return {
+        status: response.status || 'unknown',
+        version: response.version || '4.0',
+        database: response.database_status || response.database || 'connected',
+        core_integration: response.core_integration_status || response.core_integration || 'operational',
+        first_run_required: response.first_run_required || false,
+        ...response // Include tutti gli altri campi se presenti
+      };
+    } catch (error) {
+      // In caso di errore, restituisci uno stato di fallimento
+      console.error('Health check failed:', error);
+      return {
+        status: 'unhealthy',
+        version: '4.0',
+        database: 'disconnected',
+        core_integration: 'failed',
+        first_run_required: false
+      };
+    }
   }
 
   // ===== FIRST RUN & SETUP API =====
@@ -1635,4 +1663,4 @@ class ApiClient {
 const apiClient = new ApiClient();
 
 export default apiClient;
-export { ApiClient };
+export { apiClient, ApiClient };
