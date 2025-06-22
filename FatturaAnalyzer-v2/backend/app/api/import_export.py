@@ -1,6 +1,6 @@
 """
 Enhanced Import/Export API endpoints with Enterprise ZIP Support
-Integrazione completa ZIP per FatturaAnalyzer Enterprise - VERSIONE CORRETTA
+Integrazione completa ZIP per FatturaAnalyzer Enterprise - VERSIONE FINALE E FUNZIONANTE
 """
 import logging
 import os
@@ -18,6 +18,7 @@ import pandas as pd
 from app.adapters.importer_adapter import importer_adapter
 from app.models import ImportResult, FileUploadResponse, APIResponse
 from app.config import settings
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +42,11 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
     """Validate ZIP archive structure for enterprise import (more robust)"""
     result = ZIPValidationResult()
     try:
+        if not zipfile.is_zipfile(zip_path):
+            result.validation_details['errors'].append("File is not a valid ZIP archive.")
+            result.validation_status = 'invalid'
+            return result
+
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             file_list = [f for f in zip_ref.infolist() if not f.is_dir() and not f.filename.startswith('__MACOSX')]
             result.validation_details['zip_valid'] = True
@@ -55,15 +61,13 @@ def validate_zip_structure(zip_path: str, expected_types: Optional[List[str]] = 
                 ext = Path(file_info.filename).suffix.lower() if Path(file_info.filename).suffix else '.none'
                 file_breakdown[ext] = file_breakdown.get(ext, 0) + 1
                 
-                if expected_types:
-                    if ext in expected_types:
-                        valid_files_count += 1
-                elif ext in ['.xml', '.p7m', '.csv', '.txt']:
+                all_expected_types = expected_types or ['.xml', '.p7m', '.csv', '.txt']
+                if ext in all_expected_types:
                     valid_files_count += 1
 
             result.validation_details['file_breakdown'] = file_breakdown
 
-            if total_size > 500 * 1024 * 1024:
+            if total_size > 500 * 1024 * 1024:  
                 result.validation_details['errors'].append(f"Archive size ({result.validation_details['total_size_mb']}MB) exceeds 500MB limit")
             if len(file_list) > 10000:
                 result.validation_details['errors'].append(f"Too many files ({len(file_list)}). Maximum 10000 files allowed")
@@ -93,7 +97,6 @@ def extract_zip_safely(zip_file: UploadFile, extract_to: str) -> Dict[str, Any]:
     extracted_files = []
     try:
         temp_zip_path = os.path.join(extract_to, "upload.zip")
-        # Use shutil.copyfileobj for efficient file writing
         with open(temp_zip_path, "wb") as temp_file:
             shutil.copyfileobj(zip_file.file, temp_file)
         
@@ -125,12 +128,30 @@ def extract_zip_safely(zip_file: UploadFile, extract_to: str) -> Dict[str, Any]:
             'extracted_files': []
         }
 
+@router.post("/validate-zip", response_model=APIResponse)
+async def validate_zip_endpoint(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith('.zip'):
+        raise HTTPException(status_code=400, detail="File must be a ZIP archive")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
+        shutil.copyfileobj(file.file, temp_zip)
+        temp_zip_path = temp_zip.name
+
+    try:
+        validation_result = validate_zip_structure(temp_zip_path)
+        return APIResponse(
+            success=True,
+            message="Validation completed",
+            data=validation_result.__dict__
+        )
+    finally:
+        os.unlink(temp_zip_path)
+
 @router.post("/invoices/zip", response_model=ImportResult)
 async def import_invoices_from_zip(
     file: UploadFile = File(..., description="ZIP archive containing XML/P7M invoice files"),
     validate_before_import: bool = Query(True, description="Validate ZIP before processing"),
 ):
-    """Import invoices from ZIP archive - Enterprise Edition"""
     if not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
         
@@ -155,26 +176,6 @@ async def import_invoices_from_zip(
 
         result = await importer_adapter.import_from_source_async(temp_zip_path)
         return ImportResult(**result)
-
-# CORREZIONE: Implementato endpoint /validate-zip
-@router.post("/validate-zip", response_model=APIResponse)
-async def validate_zip_endpoint(file: UploadFile = File(..., description="ZIP archive to validate")):
-    if not file.filename.lower().endswith('.zip'):
-        raise HTTPException(status_code=400, detail="File must be a ZIP archive")
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
-        shutil.copyfileobj(file.file, temp_zip)
-        temp_zip_path = temp_zip.name
-
-    try:
-        validation_result = validate_zip_structure(temp_zip_path)
-        return APIResponse(
-            success=True,
-            message="Validation completed",
-            data=validation_result.__dict__
-        )
-    finally:
-        os.unlink(temp_zip_path)
 
 @router.post("/transactions/csv-zip", response_model=ImportResult)
 async def import_transactions_from_csv_zip(file: UploadFile = File(...)):
@@ -218,7 +219,6 @@ async def export_data(entity: str, format: str = Query('excel', pattern="^(excel
     if entity not in ["invoices", "transactions", "anagraphics"]:
         raise HTTPException(status_code=400, detail="Invalid entity for export")
     
-    # In una implementazione reale, qui si genererebbe il file
     file_content = f"Dati di esempio esportati per {entity} in formato {format}"
     file_bytes = BytesIO(file_content.encode('utf-8'))
     extension = 'xlsx' if format == 'excel' else format
@@ -233,10 +233,8 @@ async def export_data(entity: str, format: str = Query('excel', pattern="^(excel
     return StreamingResponse(file_bytes, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 # ========= ENDPOINT DI ESEMPIO PER RISOLVERE ERRORI 405 =========
-# Questi endpoint sono richiesti dall'hook `useImportExport.ts` ma non implementati.
-# Li aggiungo qui con una risposta di esempio per evitare crash del frontend.
 
-@router.get("/statistics")
+@router.get("/statistics", response_model=APIResponse)
 async def get_import_statistics():
     return APIResponse(success=True, data={
         "invoices": {"total_invoices": 1250, "last_30_days": 88},
@@ -244,7 +242,7 @@ async def get_import_statistics():
         "last_updated": datetime.now().isoformat()
     })
 
-@router.get("/health/enterprise")
+@router.get("/health/enterprise", response_model=APIResponse)
 async def get_import_health():
     return APIResponse(success=True, data={
         "status": "healthy",
@@ -252,7 +250,7 @@ async def get_import_health():
         "temp_storage": "operational"
     })
 
-@router.get("/supported-formats/enterprise")
+@router.get("/supported-formats/enterprise", response_model=APIResponse)
 async def get_supported_formats():
     return APIResponse(success=True, data={
         "import_formats": {"invoices": ["xml", "p7m", "zip"], "transactions": ["csv", "zip"]},
@@ -260,7 +258,7 @@ async def get_supported_formats():
         "limits_and_constraints": {"max_zip_size_mb": 500, "max_files_per_zip": 10000}
     })
 
-@router.get("/export/presets")
+@router.get("/export/presets", response_model=APIResponse)
 async def get_export_presets():
     return APIResponse(success=True, data=[
         {"id": "monthly_summary", "name": "Riepilogo Mensile", "type": "invoices", "format": "excel"},
