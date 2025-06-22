@@ -2,7 +2,7 @@
 
 // Questo è il barrel file completo per i componenti UI.
 // Include tutti i componenti necessari all'applicazione.
-
+export * from "./upload"; // Aggiungi questa riga
 export { Alert, AlertTitle, AlertDescription } from "./alert";
 export { Badge, badgeVariants } from "./badge";
 export type { BadgeProps } from "./badge";
