@@ -1,7 +1,7 @@
-# app/models/transaction.py
+# backend/app/models/transaction.py - CORREZIONE CRITICA
 """
 Modelli Pydantic specifici per le transazioni bancarie - VERSIONE CORRETTA
-Fix critico per errore HTTP 422 durante compatibilità V4.0
+Fix per errore HTTP 422 durante chiamate API V4.0
 """
 
 from datetime import date, datetime
@@ -207,7 +207,7 @@ class TransactionFilter(BaseModel, BaseConfig):
     Filtri per ricerca transazioni - VERSIONE CORRETTA V4.0
     Include TUTTI i campi utilizzati dall'API frontend per evitare errori HTTP 422
     """
-    # Filtri base dal modello originale
+    # Filtri base del modello originale
     date_from: Optional[date] = None
     date_to: Optional[date] = None
     amount_min: Optional[float] = None
@@ -231,7 +231,7 @@ class TransactionFilter(BaseModel, BaseConfig):
     enable_ai_insights: Optional[bool] = Field(default=False, description="Include AI insights for each transaction")
     cache_enabled: Optional[bool] = Field(default=True, description="Enable intelligent caching")
     
-    # Campi da TransactionFilters frontend aggiuntivi
+    # Campi aggiuntivi dal frontend per compatibilità completa
     search: Optional[str] = Field(None, min_length=2, max_length=200, description="Search in description")
     start_date: Optional[date] = Field(None, description="Filter by start date")
     end_date: Optional[date] = Field(None, description="Filter by end date")
