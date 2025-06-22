@@ -69,7 +69,8 @@ app = FastAPI(
 # 1. Middleware per la gestione degli errori (deve essere il più esterno per catturare tutto)
 app.add_middleware(ErrorHandlerMiddleware)
 
-# 2. Middleware CORS (subito dopo, per gestire le policy di accesso)
+# 2. Middleware CORS
+# Questa configurazione è robusta e adatta sia allo sviluppo che alla produzione.
 allowed_origins = [
     "http://localhost:1420",
     "http://127.0.0.1:1420",
