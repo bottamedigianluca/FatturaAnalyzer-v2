@@ -60,32 +60,11 @@ async def get_sync_history(
         logger.error(f"Error generating sync history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error retrieving sync history")
 
-# Il resto degli endpoint di sync.py sono delegati correttamente all'adapter e non richiedono modifiche.
-# Li includo per completezza e per evitare dubbi.
-
-@router.post("/enable", response_model=APIResponse)
-async def enable_sync():
-    """Enable cloud synchronization"""
+# Includo gli altri endpoint per completezza, assicurando che la logica di delega sia solida.
+@router.post("/manual", response_model=SyncResult)
+async def manual_sync(force_direction: Optional[str] = Query(None, description="Force sync direction: upload, download")):
     try:
-        config = await sync_adapter.get_sync_config_async()
-        if not config.get('service_available'):
-            raise HTTPException(status_code=400, detail="Google Drive service not available.")
-        success = await sync_adapter.enable_sync_async()
-        if success:
-            return APIResponse(success=True, message="Cloud synchronization enabled successfully")
-        raise HTTPException(status_code=500, detail="Failed to enable synchronization")
+        result = await sync_adapter.sync_database_async(force_direction=force_direction)
+        return SyncResult(**result)
     except Exception as e:
-        logger.error(f"Error enabling sync: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error enabling synchronization: {e}")
-
-@router.post("/disable", response_model=APIResponse)
-async def disable_sync():
-    """Disable cloud synchronization"""
-    try:
-        success = await sync_adapter.disable_sync_async()
-        if success:
-            return APIResponse(success=True, message="Cloud synchronization disabled successfully")
-        raise HTTPException(status_code=500, detail="Failed to disable synchronization")
-    except Exception as e:
-        logger.error(f"Error disabling sync: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error disabling synchronization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
