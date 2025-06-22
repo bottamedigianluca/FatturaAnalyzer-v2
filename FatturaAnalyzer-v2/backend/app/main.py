@@ -13,7 +13,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 # Assicura che la root del backend sia nel sys.path
-# Questo è fondamentale per far funzionare gli import in modo consistente
 backend_path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_path))
 
@@ -70,7 +69,6 @@ app = FastAPI(
 app.add_middleware(ErrorHandlerMiddleware)
 
 # 2. Middleware CORS
-# Questa configurazione è robusta e adatta sia allo sviluppo che alla produzione.
 allowed_origins = [
     "http://localhost:1420",
     "http://127.0.0.1:1420",
@@ -88,15 +86,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Permette tutti i metodi: GET, POST, PUT, DELETE, etc.
-    allow_headers=["*"],  # Permette tutti gli header
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 3. Middleware per la compressione GZip
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # 4. Inclusione dei router API
-# Questo è il cuore dell'applicazione: ogni file in /api viene registrato qui.
 logger.info("Including API routers...")
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(first_run.router, prefix="/api/first-run", tags=["First Run"])
