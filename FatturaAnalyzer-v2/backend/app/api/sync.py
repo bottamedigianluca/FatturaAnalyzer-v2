@@ -58,7 +58,7 @@ async def get_sync_history(
         logger.error(f"Error generating sync history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error retrieving sync history")
 
-# Includo gli altri endpoint per completezza e per evitare dubbi.
+# Il resto degli endpoint delega correttamente all'adapter
 @router.post("/manual", response_model=SyncResult)
 async def manual_sync(force_direction: Optional[str] = Query(None, description="Force sync direction: upload, download")):
     try:
