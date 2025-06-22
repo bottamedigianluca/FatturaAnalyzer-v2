@@ -1,171 +1,83 @@
 """
-Configuration management per FastAPI che usa il core esistente
+Configuration management per FastAPI - VERSIONE ENTERPRISE ROBUSTA
+Legge sia da .env (con priorità) che da config.ini, garantendo che tutte
+le impostazioni siano disponibili e prevenendo AttributeError.
 """
-
 import os
 import configparser
 from pathlib import Path
-from typing import Optional
+from dotenv import load_dotenv
+
+# Carica le variabili d'ambiente dal file .env nella root del backend
+# Questo assicura che os.getenv() funzioni come previsto.
+backend_root = Path(__file__).resolve().parent.parent
+dotenv_path = backend_root / '.env'
+load_dotenv(dotenv_path=dotenv_path)
 
 class Settings:
-    """Configurazioni FastAPI che integrano con il core esistente"""
+    """Configurazioni unificate per l'applicazione FastAPI."""
     
     def __init__(self):
-        self.load_config()
-    
-    def load_config(self):
-        """Carica configurazione dal core esistente"""
+        # 1. Carica da .env (ha la priorità per lo sviluppo)
+        self.ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+        self.DEBUG: bool = os.getenv("DEBUG", "true").lower() in ("true", "1", "yes")
+        self.HOST: str = os.getenv("HOST", "127.0.0.1")
+        self.PORT: int = int(os.getenv("PORT", 8000))
+        self.DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/database.db")
         
-        # Settings FastAPI
-        self.DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-        self.HOST = os.getenv("HOST", "127.0.0.1")
-        self.PORT = int(os.getenv("PORT", "8000"))
-        
-        # Usa la configurazione del core esistente
-        self._load_from_core_config()
-        
-        # API settings
-        self.MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", "100"))  # MB
-        self.PAGINATION_SIZE = int(os.getenv("PAGINATION_SIZE", "50"))
-    
-    def _safe_getboolean(self, config, section, key, fallback=False):
-        """Ottiene valore booleano in modo sicuro, gestendo commenti inline"""
-        try:
-            value = config.get(section, key, fallback=str(fallback))
-            # Rimuovi commenti inline (tutto dopo ; o #)
-            if ';' in value:
-                value = value.split(';')[0]
-            if '#' in value:
-                value = value.split('#')[0]
-            # Pulisci spazi
-            value = value.strip().lower()
-            
-            # Converte a booleano
-            if value in ('true', '1', 'yes', 'on'):
-                return True
-            elif value in ('false', '0', 'no', 'off'):
-                return False
-            else:
-                print(f"⚠️ Invalid boolean value '{value}' for [{section}]{key}, using default {fallback}")
-                return fallback
-        except Exception as e:
-            print(f"⚠️ Error reading [{section}]{key}: {e}, using default {fallback}")
-            return fallback
-    
-    def _safe_get(self, config, section, key, fallback=""):
-        """Ottiene valore in modo sicuro"""
-        try:
-            return config.get(section, key, fallback=fallback)
-        except Exception:
-            return fallback
-    
-    def _load_from_core_config(self):
-        """Carica configurazione dal config.ini del core esistente"""
-        
-        # Trova il percorso del config.ini del core
-        config_paths = [
-            "config.ini",
-            "../config.ini", 
-            "../../config.ini",
-            os.path.expanduser("~/.fattura_analyzer/config.ini")
-        ]
-        
-        config = configparser.ConfigParser()
-        config_found = False
-        
-        for config_path in config_paths:
-            if os.path.exists(config_path):
-                try:
-                    config.read(config_path, encoding='utf-8')
-                    print(f"📄 Loaded config from: {config_path}")
-                    config_found = True
-                    break
-                except Exception as e:
-                    print(f"⚠️ Error reading config from {config_path}: {e}")
-                    continue
-        
-        if not config_found:
-            print("⚠️ No config.ini found, using defaults")
-        
-        # Database settings (dal core)
-        if config.has_section('Paths'):
-            self.DATABASE_PATH = self._safe_get(config, 'Paths', 'DatabaseFile', 'database.db')
-        else:
-            self.DATABASE_PATH = 'database.db'
-        
-        # Company settings (dal core)
-        if config.has_section('Azienda'):
-            self.COMPANY_NAME = self._safe_get(config, 'Azienda', 'RagioneSociale', '')
-            self.COMPANY_VAT = self._safe_get(config, 'Azienda', 'PartitaIVA', '')
-            self.COMPANY_CF = self._safe_get(config, 'Azienda', 'CodiceFiscale', '')
-        else:
-            self.COMPANY_NAME = ''
-            self.COMPANY_VAT = ''
-            self.COMPANY_CF = ''
-        
-        # Cloud sync settings (dal core) - con parsing sicuro
-        if config.has_section('CloudSync'):
-            self.SYNC_ENABLED = self._safe_getboolean(config, 'CloudSync', 'enabled', False)
-            self.GOOGLE_CREDENTIALS_FILE = self._safe_get(config, 'CloudSync', 'credentials_file', 'google_credentials.json')
-        else:
-            self.SYNC_ENABLED = False
-            self.GOOGLE_CREDENTIALS_FILE = 'google_credentials.json'
-    
-    @property
-    def company_data(self) -> dict:
-        """Dati azienda per il processing delle fatture (compatibile con core)"""
-        return {
-            'name': self.COMPANY_NAME,
-            'piva': self.COMPANY_VAT, 
-            'cf': self.COMPANY_CF
-        }
-    
-    def get_database_path(self) -> str:
-        """Percorso database (usa la logica del core)"""
-        if os.path.isabs(self.DATABASE_PATH):
-            return self.DATABASE_PATH
-        else:
-            # Relativo al progetto root
-            project_root = Path(__file__).parent.parent.parent
-            return str(project_root / self.DATABASE_PATH)
+        # 2. Carica da config.ini per compatibilità e valori di base
+        self._load_from_ini()
 
-# Istanza settings globale
+        # 3. Imposta altre configurazioni da .env, con fallback
+        self.MAX_UPLOAD_SIZE: int = int(os.getenv("MAX_UPLOAD_SIZE", 100))
+        self.PAGINATION_SIZE: int = int(os.getenv("PAGINATION_SIZE", 50))
+        self.SYNC_ENABLED: bool = os.getenv("SYNC_ENABLED", "false").lower() in ("true", "1", "yes")
+        self.GOOGLE_CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
+        
+        # Valori che potrebbero non essere in .env e presi solo da config.ini
+        # Se non sono stati caricati da _load_from_ini(), imposta un default sicuro.
+        if not hasattr(self, 'COMPANY_NAME'):
+            self.COMPANY_NAME: str = "Azienda non configurata"
+        if not hasattr(self, 'COMPANY_VAT'):
+            self.COMPANY_VAT: str = ""
+        if not hasattr(self, 'COMPANY_CF'):
+            self.COMPANY_CF: str = ""
+
+    def _load_from_ini(self):
+        """Carica la configurazione da config.ini, ma non sovrascrive i valori già presi da .env"""
+        config = configparser.ConfigParser()
+        config_path = backend_root / 'config.ini'
+
+        if not config_path.exists():
+            logger.warning(f"File config.ini non trovato in {config_path}. L'app si baserà solo su .env e valori di default.")
+            return
+
+        try:
+            config.read(config_path, encoding='utf-8')
+            logger.info(f"📄 Loaded config.ini from: {config_path}")
+
+            # Carica solo se non già impostato da .env
+            if self.DATABASE_PATH == "data/database.db": # Default value from .env
+                self.DATABASE_PATH = config.get('Paths', 'DatabaseFile', fallback=self.DATABASE_PATH)
+
+            self.COMPANY_NAME = config.get('Azienda', 'RagioneSociale', fallback='Azienda Demo')
+            self.COMPANY_VAT = config.get('Azienda', 'PartitaIVA', fallback='')
+            self.COMPANY_CF = config.get('Azienda', 'CodiceFiscale', fallback='')
+            
+        except Exception as e:
+            logger.error(f"⚠️ Error reading config.ini from {config_path}: {e}")
+
+    def get_database_path(self) -> str:
+        """Restituisce il percorso completo e assoluto del database."""
+        db_path_obj = Path(self.DATABASE_PATH)
+        if db_path_obj.is_absolute():
+            return str(db_path_obj)
+        # Se il percorso è relativo, lo consideriamo relativo alla root del backend
+        return str(backend_root / self.DATABASE_PATH)
+
+# Istanza singola delle impostazioni, importata da tutto il resto dell'applicazione
 settings = Settings()
 
-# Configurazioni per diversi ambienti
-class DevelopmentConfig(Settings):
-    """Configurazione sviluppo"""
-    def __init__(self):
-        super().__init__()
-        self.DEBUG = True
-        self.HOST = "127.0.0.1"
-        self.PORT = 8000
-
-class ProductionConfig(Settings):
-    """Configurazione produzione"""
-    def __init__(self):
-        super().__init__()
-        self.DEBUG = False
-        self.HOST = "127.0.0.1"
-        self.PORT = 8000
-
-class TestConfig(Settings):
-    """Configurazione test"""
-    def __init__(self):
-        super().__init__()
-        self.DEBUG = True
-        self.DATABASE_PATH = ":memory:"  # In-memory per test
-
-def get_config(env: str = None) -> Settings:
-    """Ottiene configurazione basata su ambiente"""
-    env = env or os.getenv("ENVIRONMENT", "development")
-    
-    if env == "production":
-        return ProductionConfig()
-    elif env == "test":
-        return TestConfig()
-    else:
-        return DevelopmentConfig()
-
-# Export
-__all__ = ["settings", "get_config"]
+# Setup del logger dopo che la configurazione è stata caricata
+import logging
+logger = logging.getLogger(__name__)
