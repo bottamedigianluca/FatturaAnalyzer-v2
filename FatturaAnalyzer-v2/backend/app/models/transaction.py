@@ -219,10 +219,10 @@ class TransactionFilter(BaseModel, BaseConfig):
             raise ValueError('date_to must be after date_from')
         return v
     
-    @validator('max_amount')
-    def max_greater_than_min(cls, v, values):
-        if v and values.get('min_amount') and v < values['min_amount']:
-            raise ValueError('max_amount must be greater than min_amount')
+    @validator('amount_max')
+    def amount_max_greater_than_min(cls, v, values):
+        if v and values.get('amount_min') and v < values['amount_min']:
+            raise ValueError('amount_max must be greater than amount_min')
         return v
 
     @validator('search')
