@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/status")
+@router.get("/")
 async def get_detailed_health_status():
     """Health check dettagliato con stato configurazione"""
     try:
