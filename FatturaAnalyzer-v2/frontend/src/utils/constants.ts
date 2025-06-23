@@ -11,7 +11,7 @@
 
 // ===== API & CONFIGURATION V4.0 =====
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000',
+  BASE_URL: import.meta.env.VITE_API_URL || '',
   VERSION: 'V4.0',
   TIMEOUT: 45000, // Aumentato per operazioni AI complesse
   RETRY_ATTEMPTS: 5, // Più resiliente
