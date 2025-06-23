@@ -1,4 +1,4 @@
-# core/parser_xml.py - Versione migliorata per gestire meglio le fatture passive
+# core/parser_xml.py - Versione corretta per gestire meglio le variazioni XML
 
 from lxml import etree
 import logging
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def xpath_get_text_robust(element, queries, default="", normalize_space=True, log_attempts=False):
     """
     Versione robusta che prova multiple query XPath per lo stesso dato.
-    Utile quando i fornitori usano strutture XML diverse.
+    Gestisce meglio i namespace e le variazioni strutturali.
     """
     if element is None:
         return default
@@ -79,7 +79,6 @@ def xpath_find_all(element, query):
 def xpath_get_decimal_robust(element, queries, default_str='0.0', log_attempts=False):
     """
     Versione robusta per estrazione valori decimali con multiple query.
-    Gestisce meglio i formati numerici diversi dei vari fornitori.
     """
     text = xpath_get_text_robust(element, queries, default="", log_attempts=log_attempts)
     cleaned_text = text.strip()
@@ -105,8 +104,7 @@ def xpath_get_decimal_robust(element, queries, default_str='0.0', log_attempts=F
 
 def clean_amount_string(amount_str):
     """
-    Pulisce stringhe di importo gestendo diversi formati europei/italiani.
-    Es: "1.234,56" -> "1234.56", "1,234.56" -> "1234.56", "1 234,56" -> "1234.56"
+    Pulisce stringhe di importo gestendo diversi formati.
     """
     if not amount_str:
         return "0.0"
@@ -116,7 +114,6 @@ def clean_amount_string(amount_str):
     
     # Gestisci formato italiano (1.234,56) vs americano (1,234.56)
     if ',' in cleaned and '.' in cleaned:
-        # Se abbiamo sia virgola che punto, determina quale è il separatore decimale
         comma_pos = cleaned.rfind(',')
         dot_pos = cleaned.rfind('.')
         
@@ -138,21 +135,20 @@ def clean_amount_string(amount_str):
     
     return cleaned if cleaned else "0.0"
 
-# === FUNZIONI DI ESTRAZIONE ANAGRAFICHE MIGLIORATE ===
+# === ESTRAZIONE ANAGRAFICHE MIGLIORATA ===
 def extract_anagraphics_robust(node, entity_type):
     """
-    Estrazione anagrafica più robusta che gestisce variazioni nella struttura XML
-    di diversi fornitori.
+    Estrazione anagrafica robusta che gestisce le variazioni strutturali.
+    CORRETTO: Gestisce meglio i casi come Polifunghi che hanno NumeroCivico separato.
     """
     anag_data = {}
     if node is None: 
         return anag_data
 
-    # Prova diversi percorsi per DatiAnagrafici
+    # Prova diversi percorsi per DatiAnagrafici (più specifici per evitare conflitti)
     dati_anag_queries = [
-        ".//*[local-name()='DatiAnagrafici']",
-        "./*[local-name()='DatiAnagrafici']",
-        ".//*[contains(local-name(), 'DatiAnag')]"
+        "./*[local-name()='DatiAnagrafici']",  # Diretto
+        ".//*[local-name()='DatiAnagrafici'][1]",  # Primo trovato
     ]
     
     dati_anag_node = None
@@ -162,33 +158,28 @@ def extract_anagraphics_robust(node, entity_type):
             break
     
     if dati_anag_node is not None:
-        # Estrazione P.IVA con percorsi multipli
+        # Estrazione P.IVA - PIÙ SPECIFICA
         piva_queries = [
-            ".//*[local-name()='IdFiscaleIVA']/*[local-name()='IdCodice']/text()",
             "./*[local-name()='IdFiscaleIVA']/*[local-name()='IdCodice']/text()",
-            ".//*[local-name()='IdCodice']/text()",
-            "./*[local-name()='IdCodice']/text()"
+            ".//*[local-name()='IdFiscaleIVA']/*[local-name()='IdCodice']/text()",
         ]
         anag_data['piva'] = xpath_get_text_robust(dati_anag_node, piva_queries, log_attempts=True)
         
-        # Paese P.IVA
+        # Paese P.IVA - PIÙ SPECIFICA
         paese_queries = [
-            ".//*[local-name()='IdFiscaleIVA']/*[local-name()='IdPaese']/text()",
             "./*[local-name()='IdFiscaleIVA']/*[local-name()='IdPaese']/text()",
-            ".//*[local-name()='IdPaese']/text()",
-            "./*[local-name()='IdPaese']/text()"
+            ".//*[local-name()='IdFiscaleIVA']/*[local-name()='IdPaese']/text()",
         ]
         anag_data['piva_paese'] = xpath_get_text_robust(dati_anag_node, paese_queries, default='IT')
 
-        # Codice Fiscale
+        # Codice Fiscale - PIÙ SPECIFICA
         cf_queries = [
-            ".//*[local-name()='CodiceFiscale']/text()",
             "./*[local-name()='CodiceFiscale']/text()",
-            ".//*[contains(local-name(), 'CodiceFisc')]/text()"
+            ".//*[local-name()='CodiceFiscale']/text()",
         ]
         anag_data['cf'] = xpath_get_text_robust(dati_anag_node, cf_queries, log_attempts=True)
 
-        # Logica di fallback P.IVA/CF migliorata
+        # Logica di fallback P.IVA/CF
         piva_val = anag_data.get('piva', '').strip()
         cf_val = anag_data.get('cf', '').strip()
         
@@ -197,26 +188,22 @@ def extract_anagraphics_robust(node, entity_type):
         elif piva_val and not cf_val and len(piva_val) == 16: 
             anag_data['cf'] = piva_val
 
-        # Denominazione con percorsi multipli
+        # Denominazione - PIÙ SPECIFICA
         denominazione_queries = [
-            ".//*[local-name()='Anagrafica']/*[local-name()='Denominazione']/text()",
             "./*[local-name()='Anagrafica']/*[local-name()='Denominazione']/text()",
-            ".//*[local-name()='Denominazione']/text()",
-            "./*[local-name()='Denominazione']/text()"
+            ".//*[local-name()='Anagrafica']/*[local-name()='Denominazione']/text()",
         ]
         anag_data['denomination'] = xpath_get_text_robust(dati_anag_node, denominazione_queries, log_attempts=True)
         
         # Se denominazione vuota, prova con Nome/Cognome
         if not anag_data.get('denomination'):
             nome_queries = [
-                ".//*[local-name()='Anagrafica']/*[local-name()='Nome']/text()",
                 "./*[local-name()='Anagrafica']/*[local-name()='Nome']/text()",
-                ".//*[local-name()='Nome']/text()"
+                ".//*[local-name()='Anagrafica']/*[local-name()='Nome']/text()",
             ]
             cognome_queries = [
-                ".//*[local-name()='Anagrafica']/*[local-name()='Cognome']/text()",
                 "./*[local-name()='Anagrafica']/*[local-name()='Cognome']/text()",
-                ".//*[local-name()='Cognome']/text()"
+                ".//*[local-name()='Anagrafica']/*[local-name()='Cognome']/text()",
             ]
             
             nome = xpath_get_text_robust(dati_anag_node, nome_queries)
@@ -231,17 +218,15 @@ def extract_anagraphics_robust(node, entity_type):
         # Regime fiscale per cedente
         if entity_type == 'Cedente':
             regime_queries = [
-                ".//*[local-name()='RegimeFiscale']/text()",
                 "./*[local-name()='RegimeFiscale']/text()",
-                ".//*[contains(local-name(), 'Regime')]/text()"
+                ".//*[local-name()='RegimeFiscale']/text()",
             ]
             anag_data['regime_fiscale'] = xpath_get_text_robust(dati_anag_node, regime_queries)
 
-    # Estrazione indirizzo con percorsi multipli
+    # Estrazione indirizzo - PIÙ SPECIFICA per gestire NumeroCivico separato
     sede_queries = [
-        ".//*[local-name()='Sede']",
-        "./*[local-name()='Sede']",
-        ".//*[contains(local-name(), 'Sede')]"
+        "./*[local-name()='Sede']",  # Diretto
+        ".//*[local-name()='Sede'][1]",  # Primo trovato
     ]
     
     sede_node = None
@@ -251,41 +236,60 @@ def extract_anagraphics_robust(node, entity_type):
             break
     
     if sede_node is not None:
+        # Indirizzo base
         address_queries = [
+            "./*[local-name()='Indirizzo']/text()",
             ".//*[local-name()='Indirizzo']/text()",
-            "./*[local-name()='Indirizzo']/text()"
         ]
-        anag_data['address'] = xpath_get_text_robust(sede_node, address_queries)
+        base_address = xpath_get_text_robust(sede_node, address_queries)
         
+        # NUOVO: Numero civico separato (come in Polifunghi)
+        civic_queries = [
+            "./*[local-name()='NumeroCivico']/text()",
+            ".//*[local-name()='NumeroCivico']/text()",
+        ]
+        civic_number = xpath_get_text_robust(sede_node, civic_queries)
+        
+        # Combina indirizzo e numero civico se entrambi presenti
+        if base_address and civic_number:
+            anag_data['address'] = f"{base_address}, {civic_number}"
+        elif base_address:
+            anag_data['address'] = base_address
+        elif civic_number:
+            anag_data['address'] = civic_number
+        else:
+            anag_data['address'] = ""
+        
+        # Altri campi indirizzo
         cap_queries = [
+            "./*[local-name()='CAP']/text()",
             ".//*[local-name()='CAP']/text()",
-            "./*[local-name()='CAP']/text()"
         ]
         anag_data['cap'] = xpath_get_text_robust(sede_node, cap_queries)
         
         city_queries = [
+            "./*[local-name()='Comune']/text()",
             ".//*[local-name()='Comune']/text()",
-            "./*[local-name()='Comune']/text()"
         ]
         anag_data['city'] = xpath_get_text_robust(sede_node, city_queries)
         
         province_queries = [
+            "./*[local-name()='Provincia']/text()",
             ".//*[local-name()='Provincia']/text()",
-            "./*[local-name()='Provincia']/text()"
         ]
         anag_data['province'] = xpath_get_text_robust(sede_node, province_queries)
         
         country_queries = [
+            "./*[local-name()='Nazione']/text()",
             ".//*[local-name()='Nazione']/text()",
-            "./*[local-name()='Nazione']/text()"
         ]
         anag_data['country'] = xpath_get_text_robust(sede_node, country_queries, default='IT')
 
     # Contatti per cedente
     if entity_type == 'Cedente':
         contatti_queries = [
-            ".//*[local-name()='Contatti']",
-            "./*[local-name()='Contatti']"
+            "./*[local-name()='Contatti']",
+            ".//*[local-name()='Contatti'][1]",
         ]
         
         contatti_node = None
@@ -296,66 +300,59 @@ def extract_anagraphics_robust(node, entity_type):
         
         if contatti_node is not None:
             email_queries = [
+                "./*[local-name()='Email']/text()",
                 ".//*[local-name()='Email']/text()",
-                "./*[local-name()='Email']/text()"
             ]
             anag_data['email'] = xpath_get_text_robust(contatti_node, email_queries)
             
             phone_queries = [
+                "./*[local-name()='Telefono']/text()",
                 ".//*[local-name()='Telefono']/text()",
-                "./*[local-name()='Telefono']/text()"
             ]
             anag_data['phone'] = xpath_get_text_robust(contatti_node, phone_queries)
     
     return anag_data
 
-# === ESTRAZIONE DATI GENERALI DOCUMENTO MIGLIORATA ===
+# === ESTRAZIONE DATI GENERALI DOCUMENTO ===
 def extract_general_document_data_robust(dati_generali_doc_node, base_filename):
     """
-    Estrazione dati generali documento più robusta per gestire
-    variazioni strutturali dei diversi fornitori.
+    Estrazione dati generali documento più robusta.
     """
     if dati_generali_doc_node is None:
         raise ValueError("Blocco DatiGeneraliDocumento non trovato.")
     
-    # Tipo documento con percorsi multipli
+    # Tipo documento
     doc_type_queries = [
-        ".//*[local-name()='TipoDocumento']/text()",
         "./*[local-name()='TipoDocumento']/text()",
-        ".//*[contains(local-name(), 'TipoDoc')]/text()"
+        ".//*[local-name()='TipoDocumento']/text()",
     ]
     doc_type = xpath_get_text_robust(dati_generali_doc_node, doc_type_queries, log_attempts=True)
     
     # Divisa
     currency_queries = [
+        "./*[local-name()='Divisa']/text()",
         ".//*[local-name()='Divisa']/text()",
-        "./*[local-name()='Divisa']/text()"
     ]
     doc_currency = xpath_get_text_robust(dati_generali_doc_node, currency_queries, default='EUR')
     
     # Data documento
     date_queries = [
-        ".//*[local-name()='Data']/text()",
         "./*[local-name()='Data']/text()",
-        ".//*[contains(local-name(), 'DataDoc')]/text()"
+        ".//*[local-name()='Data']/text()",
     ]
     doc_date_str = xpath_get_text_robust(dati_generali_doc_node, date_queries, log_attempts=True)
     
     # Numero documento
     number_queries = [
-        ".//*[local-name()='Numero']/text()",
         "./*[local-name()='Numero']/text()",
-        ".//*[contains(local-name(), 'NumDoc')]/text()",
-        ".//*[contains(local-name(), 'NumeroDoc')]/text()"
+        ".//*[local-name()='Numero']/text()",
     ]
     doc_number = xpath_get_text_robust(dati_generali_doc_node, number_queries, log_attempts=True)
     
-    # Importo totale documento con percorsi multipli
+    # Importo totale documento
     total_amount_queries = [
-        ".//*[local-name()='ImportoTotaleDocumento']/text()",
         "./*[local-name()='ImportoTotaleDocumento']/text()",
-        ".//*[contains(local-name(), 'ImportoTotale')]/text()",
-        ".//*[contains(local-name(), 'TotaleDoc')]/text()"
+        ".//*[local-name()='ImportoTotaleDocumento']/text()",
     ]
     doc_total_amount = xpath_get_decimal_robust(
         dati_generali_doc_node, 
@@ -368,18 +365,6 @@ def extract_general_document_data_robust(dati_generali_doc_node, base_filename):
     if not doc_date_str or not doc_number:
         raise ValueError(f"Data ('{doc_date_str}') o Numero ('{doc_number}') Documento mancanti in {base_filename}.")
     
-    # Validazione formato data
-    try:
-        datetime.strptime(doc_date_str, '%Y-%m-%d')
-    except ValueError:
-        try:
-            # Prova altri formati comuni
-            for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%Y/%m/%d']:
-                datetime.strptime(doc_date_str, fmt)
-                break
-        except ValueError:
-            logger.warning(f"Formato data documento non standard: '{doc_date_str}' in {base_filename}")
-    
     return {
         'doc_type': doc_type,
         'currency': doc_currency,
@@ -388,11 +373,10 @@ def extract_general_document_data_robust(dati_generali_doc_node, base_filename):
         'total_amount': doc_total_amount
     }
 
-# === ESTRAZIONE RIGHE DOCUMENTO MIGLIORATA ===
+# === ESTRAZIONE RIGHE DOCUMENTO ===
 def extract_document_lines_robust(dati_beni_servizi_node, base_filename):
     """
-    Estrazione righe documento più robusta per gestire
-    variazioni strutturali nei DettaglioLinee.
+    Estrazione righe documento più robusta.
     """
     lines_data = []
     
@@ -400,12 +384,10 @@ def extract_document_lines_robust(dati_beni_servizi_node, base_filename):
         logger.warning(f"Blocco DatiBeniServizi non trovato in {base_filename}")
         return lines_data
     
-    # Cerca DettaglioLinee con percorsi multipli
+    # Cerca DettaglioLinee - PIÙ SPECIFICO
     line_queries = [
-        ".//*[local-name()='DettaglioLinee']",
-        "./*[local-name()='DettaglioLinee']",
-        ".//*[contains(local-name(), 'DettaglioLinee')]",
-        ".//*[contains(local-name(), 'Linea')]"
+        "./*[local-name()='DettaglioLinee']",  # Diretto
+        ".//*[local-name()='DettaglioLinee']",  # Anywhere in subtree
     ]
     
     line_nodes = []
@@ -420,9 +402,8 @@ def extract_document_lines_robust(dati_beni_servizi_node, base_filename):
         try:
             # Numero linea
             line_num_queries = [
-                ".//*[local-name()='NumeroLinea']/text()",
                 "./*[local-name()='NumeroLinea']/text()",
-                ".//*[contains(local-name(), 'NumLinea')]/text()"
+                ".//*[local-name()='NumeroLinea']/text()",
             ]
             line_num_text = xpath_get_text_robust(line_node, line_num_queries, default=str(idx + 1))
             
@@ -431,72 +412,59 @@ def extract_document_lines_robust(dati_beni_servizi_node, base_filename):
             except ValueError:
                 line_num = idx + 1
 
-            # Codice articolo
+            # Codice articolo - MIGLIORATO per gestire multiple strutture
             item_code_queries = [
-                ".//*[local-name()='CodiceArticolo']/*[local-name()='CodiceValore']/text()",
                 "./*[local-name()='CodiceArticolo']/*[local-name()='CodiceValore']/text()",
-                ".//*[local-name()='CodiceValore']/text()"
+                ".//*[local-name()='CodiceArticolo']/*[local-name()='CodiceValore']/text()",
             ]
             item_code = xpath_get_text_robust(line_node, item_code_queries)
             
             # Tipo codice articolo
             item_type_queries = [
-                ".//*[local-name()='CodiceArticolo']/*[local-name()='CodiceTipo']/text()",
                 "./*[local-name()='CodiceArticolo']/*[local-name()='CodiceTipo']/text()",
-                ".//*[local-name()='CodiceTipo']/text()"
+                ".//*[local-name()='CodiceArticolo']/*[local-name()='CodiceTipo']/text()",
             ]
             item_type = xpath_get_text_robust(line_node, item_type_queries)
             
             # Descrizione
             description_queries = [
-                ".//*[local-name()='Descrizione']/text()",
                 "./*[local-name()='Descrizione']/text()",
-                ".//*[contains(local-name(), 'Desc')]/text()"
+                ".//*[local-name()='Descrizione']/text()",
             ]
             description = xpath_get_text_robust(line_node, description_queries, log_attempts=True)
             
             # Unità di misura
             unit_measure_queries = [
-                ".//*[local-name()='UnitaMisura']/text()",
                 "./*[local-name()='UnitaMisura']/text()",
-                ".//*[contains(local-name(), 'Unita')]/text()"
+                ".//*[local-name()='UnitaMisura']/text()",
             ]
             unit_measure = xpath_get_text_robust(line_node, unit_measure_queries)
             
             # Quantità
             quantity_queries = [
-                ".//*[local-name()='Quantita']/text()",
                 "./*[local-name()='Quantita']/text()",
-                ".//*[contains(local-name(), 'Qta')]/text()",
-                ".//*[contains(local-name(), 'Qty')]/text()"
+                ".//*[local-name()='Quantita']/text()",
             ]
             quantity = xpath_get_decimal_robust(line_node, quantity_queries, default_str='NaN', log_attempts=True)
             
             # Prezzo unitario
             unit_price_queries = [
-                ".//*[local-name()='PrezzoUnitario']/text()",
                 "./*[local-name()='PrezzoUnitario']/text()",
-                ".//*[contains(local-name(), 'PrezzoUnit')]/text()",
-                ".//*[contains(local-name(), 'Prezzo')]/text()"
+                ".//*[local-name()='PrezzoUnitario']/text()",
             ]
             unit_price = xpath_get_decimal_robust(line_node, unit_price_queries, default_str='0.0', log_attempts=True)
             
             # Prezzo totale riga
             total_price_queries = [
-                ".//*[local-name()='PrezzoTotale']/text()",
                 "./*[local-name()='PrezzoTotale']/text()",
-                ".//*[contains(local-name(), 'PrezzoTot')]/text()",
-                ".//*[contains(local-name(), 'ImportoLinea')]/text()",
-                ".//*[contains(local-name(), 'TotaleLinea')]/text()"
+                ".//*[local-name()='PrezzoTotale']/text()",
             ]
             total_price = xpath_get_decimal_robust(line_node, total_price_queries, default_str='0.0', log_attempts=True)
             
             # Aliquota IVA
             vat_rate_queries = [
-                ".//*[local-name()='AliquotaIVA']/text()",
                 "./*[local-name()='AliquotaIVA']/text()",
-                ".//*[contains(local-name(), 'Aliquota')]/text()",
-                ".//*[contains(local-name(), 'IVA')]/text()"
+                ".//*[local-name()='AliquotaIVA']/text()",
             ]
             vat_rate = xpath_get_decimal_robust(line_node, vat_rate_queries, default_str='0.0', log_attempts=True)
             
@@ -504,7 +472,7 @@ def extract_document_lines_robust(dati_beni_servizi_node, base_filename):
             if not quantity.is_finite():
                 quantity = None
             
-            # Calcolo automatico prezzo totale se mancante ma abbiamo quantità e prezzo unitario
+            # Calcolo automatico prezzo totale se mancante
             if total_price == Decimal('0.0') and quantity and unit_price and quantity.is_finite():
                 calculated_total = quantize(quantity * unit_price)
                 logger.info(f"Calcolato prezzo totale riga {line_num}: {quantity} x {unit_price} = {calculated_total}")
@@ -530,7 +498,7 @@ def extract_document_lines_robust(dati_beni_servizi_node, base_filename):
     
     return lines_data
 
-# === ESTRAZIONE RIEPILOGO IVA MIGLIORATA ===
+# === ESTRAZIONE RIEPILOGO IVA ===
 def extract_vat_summary_robust(dati_beni_servizi_node, base_filename):
     """
     Estrazione riepilogo IVA più robusta.
@@ -540,11 +508,10 @@ def extract_vat_summary_robust(dati_beni_servizi_node, base_filename):
     if dati_beni_servizi_node is None:
         return vat_summary_data
     
-    # Cerca DatiRiepilogo con percorsi multipli
+    # Cerca DatiRiepilogo - PIÙ SPECIFICO
     riepilogo_queries = [
-        ".//*[local-name()='DatiRiepilogo']",
-        "./*[local-name()='DatiRiepilogo']",
-        ".//*[contains(local-name(), 'Riepilogo')]"
+        "./*[local-name()='DatiRiepilogo']",  # Diretto
+        ".//*[local-name()='DatiRiepilogo']",  # Anywhere
     ]
     
     riepilogo_nodes = []
@@ -559,35 +526,29 @@ def extract_vat_summary_robust(dati_beni_servizi_node, base_filename):
         try:
             # Aliquota IVA
             vat_rate_queries = [
-                ".//*[local-name()='AliquotaIVA']/text()",
                 "./*[local-name()='AliquotaIVA']/text()",
-                ".//*[contains(local-name(), 'Aliquota')]/text()"
+                ".//*[local-name()='AliquotaIVA']/text()",
             ]
             vat_rate = xpath_get_decimal_robust(riep_node, vat_rate_queries, '0.0', log_attempts=True)
             
             # Imponibile
             taxable_queries = [
-                ".//*[local-name()='ImponibileImporto']/text()",
                 "./*[local-name()='ImponibileImporto']/text()",
-                ".//*[contains(local-name(), 'Imponibile')]/text()",
-                ".//*[contains(local-name(), 'TaxableAmount')]/text()"
+                ".//*[local-name()='ImponibileImporto']/text()",
             ]
             taxable_amount = xpath_get_decimal_robust(riep_node, taxable_queries, '0.0', log_attempts=True)
             
             # Imposta
             vat_amount_queries = [
-                ".//*[local-name()='Imposta']/text()",
                 "./*[local-name()='Imposta']/text()",
-                ".//*[contains(local-name(), 'ImportoIVA')]/text()",
-                ".//*[contains(local-name(), 'TaxAmount')]/text()"
+                ".//*[local-name()='Imposta']/text()",
             ]
             vat_amount = xpath_get_decimal_robust(riep_node, vat_amount_queries, '0.0', log_attempts=True)
             
             # Esigibilità IVA
             esigibilita_queries = [
-                ".//*[local-name()='EsigibilitaIVA']/text()",
                 "./*[local-name()='EsigibilitaIVA']/text()",
-                ".//*[contains(local-name(), 'Esigibilita')]/text()"
+                ".//*[local-name()='EsigibilitaIVA']/text()",
             ]
             esigibilita = xpath_get_text_robust(riep_node, esigibilita_queries)
             
@@ -606,29 +567,33 @@ def extract_vat_summary_robust(dati_beni_servizi_node, base_filename):
     
     return vat_summary_data
 
-# === FUNZIONE PRINCIPALE PARSE_FATTURA_XML MIGLIORATA ===
+# === FUNZIONE PRINCIPALE PARSE_FATTURA_XML CORRETTA ===
 def parse_fattura_xml(xml_filepath, my_company_data=None):
     """
-    Parser XML migliorato per gestire meglio le variazioni strutturali
-    delle fatture passive di diversi fornitori.
+    Parser XML corretto per gestire meglio le variazioni strutturali.
+    CORREZIONI PRINCIPALI:
+    1. Percorsi XPath più specifici per evitare conflitti
+    2. Gestione NumeroCivico separato
+    3. Migliore gestione namespace
+    4. Debug più dettagliato
     """
     base_filename = os.path.basename(xml_filepath)
-    logger.info(f"Parsing XML migliorato: {base_filename}")
+    logger.info(f"Parsing XML corretto: {base_filename}")
     
     if my_company_data is None:
         logger.error(f"Dati azienda mancanti per parse_fattura_xml ({base_filename}).")
         return {'error': "Dati azienda mancanti", 'source_file': xml_filepath}
 
     try:
-        # Parser XML più permissivo per gestire XML malformati
+        # Parser XML più permissivo
         parser = etree.XMLParser(
-            recover=True,           # Recupera da errori XML
+            recover=True,
             remove_blank_text=True,
             remove_comments=True,
             remove_pis=True,
             no_network=True,
             huge_tree=True,
-            encoding='utf-8'        # Forza encoding
+            encoding='utf-8'
         )
         
         tree = etree.parse(xml_filepath, parser)
@@ -636,30 +601,33 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
         
         if root is None:
             raise ValueError("Root element non trovato.")
+        
+        # Debug: stampa il namespace root per capire la struttura
+        logger.debug(f"Root tag: {root.tag}, namespace: {root.nsmap}")
 
-        # Trova i nodi principali con ricerca più robusta
+        # Trova i nodi principali - PIÙ SPECIFICI
         header_queries = [
             "//*[local-name()='FatturaElettronicaHeader']",
             "//*[contains(local-name(), 'Header')]",
-            "//*[contains(local-name(), 'Intestazione')]"
         ]
         
         body_queries = [
             "//*[local-name()='FatturaElettronicaBody']",
             "//*[contains(local-name(), 'Body')]",
-            "//*[contains(local-name(), 'Corpo')]"
         ]
         
         header_node = None
         for query in header_queries:
             header_node = xpath_find_first(root, query)
             if header_node is not None:
+                logger.debug(f"Header trovato con query: {query}")
                 break
         
         body_node = None
         for query in body_queries:
             body_node = xpath_find_first(root, query)
             if body_node is not None:
+                logger.debug(f"Body trovato con query: {query}")
                 break
         
         if header_node is None:
@@ -683,34 +651,32 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
             'error': None
         }
 
-        # === ESTRAZIONE ANAGRAFICHE MIGLIORATE ===
+        # === ESTRAZIONE ANAGRAFICHE - PIÙ SPECIFICHE ===
         
-        # Cedente con percorsi multipli
+        # Cedente - PIÙ SPECIFICO
         cedente_queries = [
-            ".//*[local-name()='CedentePrestatore']",
-            "./*[local-name()='CedentePrestatore']",
-            ".//*[contains(local-name(), 'Cedente')]",
-            ".//*[contains(local-name(), 'Prestatore')]"
+            "./*[local-name()='CedentePrestatore']",  # Diretto child
+            ".//*[local-name()='CedentePrestatore'][1]",  # Primo trovato
         ]
         
         cedente_node = None
         for query in cedente_queries:
             cedente_node = xpath_find_first(header_node, query)
             if cedente_node is not None:
+                logger.debug(f"Cedente trovato con query: {query}")
                 break
         
-        # Cessionario con percorsi multipli
+        # Cessionario - PIÙ SPECIFICO
         cessionario_queries = [
-            ".//*[local-name()='CessionarioCommittente']",
-            "./*[local-name()='CessionarioCommittente']",
-            ".//*[contains(local-name(), 'Cessionario')]",
-            ".//*[contains(local-name(), 'Committente')]"
+            "./*[local-name()='CessionarioCommittente']",  # Diretto child
+            ".//*[local-name()='CessionarioCommittente'][1]",  # Primo trovato
         ]
         
         cessionario_node = None
         for query in cessionario_queries:
             cessionario_node = xpath_find_first(header_node, query)
             if cessionario_node is not None:
+                logger.debug(f"Cessionario trovato con query: {query}")
                 break
 
         if cedente_node is None:
@@ -722,11 +688,14 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
         data['anagraphics']['cedente'] = extract_anagraphics_robust(cedente_node, 'Cedente')
         data['anagraphics']['cessionario'] = extract_anagraphics_robust(cessionario_node, 'Cessionario')
 
+        # Debug anagrafiche estratte
+        logger.debug(f"Cedente estratto: {data['anagraphics']['cedente']}")
+        logger.debug(f"Cessionario estratto: {data['anagraphics']['cessionario']}")
+
         # Dati trasmissione
         dati_trasmissione_queries = [
-            ".//*[local-name()='DatiTrasmissione']",
             "./*[local-name()='DatiTrasmissione']",
-            ".//*[contains(local-name(), 'Trasmissione')]"
+            ".//*[local-name()='DatiTrasmissione'][1]",
         ]
         
         dati_trasmissione = None
@@ -738,9 +707,8 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
         if dati_trasmissione:
             # Codice destinatario
             cod_dest_queries = [
-                ".//*[local-name()='CodiceDestinatario']/text()",
                 "./*[local-name()='CodiceDestinatario']/text()",
-                ".//*[contains(local-name(), 'CodDest')]/text()"
+                ".//*[local-name()='CodiceDestinatario']/text()",
             ]
             data['anagraphics']['cessionario']['codice_destinatario'] = xpath_get_text_robust(
                 dati_trasmissione, cod_dest_queries
@@ -748,9 +716,8 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
             
             # PEC destinatario
             pec_dest_queries = [
-                ".//*[local-name()='PECDestinatario']/text()",
                 "./*[local-name()='PECDestinatario']/text()",
-                ".//*[contains(local-name(), 'PEC')]/text()"
+                ".//*[local-name()='PECDestinatario']/text()",
             ]
             data['anagraphics']['cessionario']['pec'] = xpath_get_text_robust(
                 dati_trasmissione, pec_dest_queries
@@ -760,8 +727,14 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
         ced_anag = data['anagraphics']['cedente']
         ces_anag = data['anagraphics']['cessionario']
         
+        logger.debug(f"Controllo tipo fattura - My company: {my_company_data}")
+        logger.debug(f"Cedente: PIVA={ced_anag.get('piva')}, CF={ced_anag.get('cf')}")
+        logger.debug(f"Cessionario: PIVA={ces_anag.get('piva')}, CF={ces_anag.get('cf')}")
+        
         is_cedente_us = _is_own_company(ced_anag, my_company_data)
         is_cessionario_us = _is_own_company(ces_anag, my_company_data)
+        
+        logger.debug(f"is_cedente_us: {is_cedente_us}, is_cessionario_us: {is_cessionario_us}")
 
         if is_cedente_us and is_cessionario_us:
             data['type'] = 'Autofattura'
@@ -777,35 +750,37 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
 
         # === ESTRAZIONE DATI GENERALI DOCUMENTO ===
         dati_generali_queries = [
-            ".//*[local-name()='DatiGenerali']",
             "./*[local-name()='DatiGenerali']",
-            ".//*[contains(local-name(), 'DatiGen')]"
+            ".//*[local-name()='DatiGenerali'][1]",
         ]
         
         dati_generali_node = None
         for query in dati_generali_queries:
             dati_generali_node = xpath_find_first(body_node, query)
             if dati_generali_node is not None:
+                logger.debug(f"DatiGenerali trovato con query: {query}")
                 break
         
         if dati_generali_node is None:
             raise ValueError("Blocco DatiGenerali non trovato.")
         
         dati_generali_doc_queries = [
-            ".//*[local-name()='DatiGeneraliDocumento']",
             "./*[local-name()='DatiGeneraliDocumento']",
-            ".//*[contains(local-name(), 'DatiGeneraliDoc')]"
+            ".//*[local-name()='DatiGeneraliDocumento'][1]",
         ]
         
         dati_generali_doc_node = None
         for query in dati_generali_doc_queries:
             dati_generali_doc_node = xpath_find_first(dati_generali_node, query)
             if dati_generali_doc_node is not None:
+                logger.debug(f"DatiGeneraliDocumento trovato con query: {query}")
                 break
         
         # Estrai dati generali con funzione robusta
         general_data = extract_general_document_data_robust(dati_generali_doc_node, base_filename)
         data['body']['general_data'] = general_data
+        
+        logger.debug(f"Dati generali estratti: {general_data}")
 
         # === CALCOLO HASH UNIVOCO ===
         hash_cedente_id = ced_anag.get('piva') or ced_anag.get('cf') or ""
@@ -825,23 +800,25 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
 
         # === ESTRAZIONE DATI BENI SERVIZI (RIGHE E IVA) ===
         dati_beni_servizi_queries = [
-            ".//*[local-name()='DatiBeniServizi']",
             "./*[local-name()='DatiBeniServizi']",
-            ".//*[contains(local-name(), 'BeniServizi')]"
+            ".//*[local-name()='DatiBeniServizi'][1]",
         ]
         
         dati_beni_servizi_node = None
         for query in dati_beni_servizi_queries:
             dati_beni_servizi_node = xpath_find_first(body_node, query)
             if dati_beni_servizi_node is not None:
+                logger.debug(f"DatiBeniServizi trovato con query: {query}")
                 break
         
         if dati_beni_servizi_node:
             # Estrai righe con funzione robusta
             data['body']['lines'] = extract_document_lines_robust(dati_beni_servizi_node, base_filename)
+            logger.debug(f"Estratte {len(data['body']['lines'])} righe")
             
             # Estrai riepilogo IVA con funzione robusta
             data['body']['vat_summary'] = extract_vat_summary_robust(dati_beni_servizi_node, base_filename)
+            logger.debug(f"Estratti {len(data['body']['vat_summary'])} riepiloghi IVA")
             
             # Validazione e ricalcolo totale da riepilogo IVA
             calculated_total_from_vat = Decimal('0.0')
@@ -866,9 +843,8 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
 
         # === ESTRAZIONE DATI PAGAMENTO ===
         payment_blocks_queries = [
-            ".//*[local-name()='DatiPagamento']",
             "./*[local-name()='DatiPagamento']",
-            ".//*[contains(local-name(), 'Pagamento')]"
+            ".//*[local-name()='DatiPagamento']",
         ]
         
         payment_blocks = []
@@ -887,9 +863,8 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
         if payment_blocks:
             # Condizioni pagamento dal primo blocco
             conditions_queries = [
-                ".//*[local-name()='CondizioniPagamento']/text()",
                 "./*[local-name()='CondizioniPagamento']/text()",
-                ".//*[contains(local-name(), 'Condizioni')]/text()"
+                ".//*[local-name()='CondizioniPagamento']/text()",
             ]
             conditions = xpath_get_text_robust(payment_blocks[0], conditions_queries)
             
@@ -898,9 +873,8 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
                 
                 # Dettagli pagamento
                 details_queries = [
-                    ".//*[local-name()='DettaglioPagamento']",
                     "./*[local-name()='DettaglioPagamento']",
-                    ".//*[contains(local-name(), 'Dettaglio')]"
+                    ".//*[local-name()='DettaglioPagamento']",
                 ]
                 
                 details_nodes = []
@@ -912,26 +886,22 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
                 for det_node in details_nodes:
                     # Modalità pagamento
                     payment_method_queries = [
-                        ".//*[local-name()='ModalitaPagamento']/text()",
                         "./*[local-name()='ModalitaPagamento']/text()",
-                        ".//*[contains(local-name(), 'Modalita')]/text()"
+                        ".//*[local-name()='ModalitaPagamento']/text()",
                     ]
                     payment_method = xpath_get_text_robust(det_node, payment_method_queries)
                     
                     # Data scadenza
                     due_date_queries = [
-                        ".//*[local-name()='DataScadenzaPagamento']/text()",
                         "./*[local-name()='DataScadenzaPagamento']/text()",
-                        ".//*[contains(local-name(), 'DataScadenza')]/text()",
-                        ".//*[contains(local-name(), 'Scadenza')]/text()"
+                        ".//*[local-name()='DataScadenzaPagamento']/text()",
                     ]
                     due_date = xpath_get_text_robust(det_node, due_date_queries)
                     
                     # Importo pagamento
                     amount_queries = [
-                        ".//*[local-name()='ImportoPagamento']/text()",
                         "./*[local-name()='ImportoPagamento']/text()",
-                        ".//*[contains(local-name(), 'ImportoPag')]/text()"
+                        ".//*[local-name()='ImportoPagamento']/text()",
                     ]
                     amount = xpath_get_decimal_robust(det_node, amount_queries, '0.0')
                     
@@ -993,7 +963,6 @@ def parse_fattura_xml(xml_filepath, my_company_data=None):
 def debug_xml_structure(xml_filepath, max_depth=3):
     """
     Funzione di debug per analizzare la struttura di un XML problematico.
-    Utile per capire come adattare i parser per fornitori specifici.
     """
     try:
         parser = etree.XMLParser(recover=True)
@@ -1038,7 +1007,6 @@ def debug_xml_structure(xml_filepath, max_depth=3):
 def validate_xml_against_schema(xml_filepath, schema_path=None):
     """
     Valida un XML contro lo schema XSD delle fatture elettroniche italiane.
-    Utile per verificare se il problema è nell'XML o nel parser.
     """
     try:
         # Se non è fornito uno schema, usa una validazione base
