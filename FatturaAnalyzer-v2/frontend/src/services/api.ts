@@ -11,6 +11,7 @@
  * ✅ Upload component integrato correttamente
  * ✅ DragDropReconciliation query encoding risolto
  * ✅ 405/500 errors gestiti con graceful degradation
+ * ✅ Sintassi TypeScript corretta per parametri funzioni
  */
 
 import type { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
@@ -1053,7 +1054,7 @@ class ApiClient {
 
   async getReconciliationPerformanceMetrics(): Promise<APIResponse> {
     try {
-      return await this.request('/api/reconciliation/system/performance');
+      return await this.request('/api/reconciliation/performance/metrics');
     } catch (error) {
       throw new Error('Metriche performance riconciliazione non disponibili.');
     }
@@ -1180,7 +1181,7 @@ class ApiClient {
 
   async getReconciliationHealth(): Promise<APIResponse> {
     try {
-      return await this.request('/api/reconciliation/health-check');
+      return await this.request('/api/reconciliation/health');
     } catch (error) {
       throw new Error('Health check riconciliazione non disponibile.');
     }
@@ -1188,7 +1189,468 @@ class ApiClient {
 
   // ===== ANALYTICS API V4.0 ULTRA =====
 
-  // Executive Dashboard Ultra
+  // Executive Dashboard Ultra - CORREZIONE SINTASSI TYPESCRIPT
+  async getExecutiveDashboardUltra(
+    includePredictions = false,
+    includeAIInsights = true,
+    cacheEnabled = true,
+    realTime = false
+  ): Promise<APIResponse> {
+    const params = this.buildQuery({
+      include_predictions: includePredictions,
+      include_ai_insights: includeAIInsights,
+      cache_enabled: cacheEnabled,
+      real_time: realTime
+    });
+    
+    try {
+      // Prova prima l'endpoint V4.0
+      return await this.request(`/api/analytics/dashboard/executive?${params}`);
+    } catch (error) {
+      try {
+        // Fallback all'endpoint standard
+        return await this.request(`/analytics/dashboard?${params}`);
+      } catch (fallbackError) {
+        try {
+          // Ultimo fallback a KPI semplici
+          return await this.request('/analytics/kpis');
+        } catch (finalError) {
+          throw new Error('Dashboard esecutiva non disponibile. Tutte le API analytics non raggiungibili.');
+        }
+      }
+    }
+  }
+
+  // Operations Dashboard Live
+  async getOperationsDashboardLive(
+    autoRefreshSeconds = 30,
+    includeAlerts = true,
+    alertPriority: 'low' | 'medium' | 'high' | 'critical' = 'medium'
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        auto_refresh_seconds: autoRefreshSeconds,
+        include_alerts: includeAlerts,
+        alert_priority: alertPriority
+      });
+      return await this.request(`/api/analytics/dashboard/operations/live?${params}`);
+    } catch (error) {
+      throw new Error('Dashboard operativo non disponibile.');
+    }
+  }
+
+  // AI Business Insights
+  async getAIBusinessInsights(
+    analysisDepth: 'quick' | 'standard' | 'deep' = 'standard',
+    focusAreas?: string,
+    includeRecommendations = true,
+    language: 'it' | 'en' = 'it'
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        analysis_depth: analysisDepth,
+        focus_areas: focusAreas,
+        include_recommendations: includeRecommendations,
+        language
+      });
+      return await this.request(`/api/analytics/ai/business-insights?${params}`);
+    } catch (error) {
+      throw new Error('AI Business Insights non disponibile.');
+    }
+  }
+
+  // Custom AI Analysis
+  async runCustomAIAnalysis(request: AnalyticsRequest): Promise<APIResponse> {
+    try {
+      return await this.post('/api/analytics/ai/custom-analysis', request);
+    } catch (error) {
+      throw new Error('Analisi AI personalizzata non disponibile.');
+    }
+  }
+
+  async getUltraSeasonalityAnalysis(
+    yearsBack = 3,
+    includeWeatherCorrelation = false,
+    predictMonthsAhead = 6,
+    confidenceLevel = 0.95,
+    categoryFocus?: string
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        years_back: yearsBack,
+        include_weather_correlation: includeWeatherCorrelation,
+        predict_months_ahead: predictMonthsAhead,
+        confidence_level: confidenceLevel,
+        category_focus: categoryFocus
+      });
+      return await this.request(`/api/analytics/seasonality/ultra-analysis?${params}`);
+    } catch (error) {
+      throw new Error('Analisi stagionalità non disponibile.');
+    }
+  }
+
+  async getUltraCustomerIntelligence(
+    analysisDepth: 'basic' | 'standard' | 'comprehensive' | 'expert' = 'comprehensive',
+    includePredictiveLTV = true,
+    includeChurnPrediction = true,
+    includeNextBestAction = true,
+    segmentGranularity: 'basic' | 'detailed' | 'micro' = 'detailed'
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        analysis_depth: analysisDepth,
+        include_predictive_ltv: includePredictiveLTV,
+        include_churn_prediction: includeChurnPrediction,
+        include_next_best_action: includeNextBestAction,
+        segment_granularity: segmentGranularity
+      });
+      return await this.request(`/api/analytics/customers/ultra-intelligence?${params}`);
+    } catch (error) {
+      throw new Error('Customer intelligence non disponibile.');
+    }
+  }
+
+  async getCompetitiveMarketPosition(
+    benchmarkAgainst: 'industry' | 'local' | 'premium' = 'industry',
+    includePriceAnalysis = true,
+    includeMarginOptimization = true,
+    marketScope: 'local' | 'regional' | 'national' = 'regional'
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        benchmark_against: benchmarkAgainst,
+        include_price_analysis: includePriceAnalysis,
+        include_margin_optimization: includeMarginOptimization,
+        market_scope: marketScope
+      });
+      return await this.request(`/api/analytics/competitive/market-position?${params}`);
+    } catch (error) {
+      throw new Error('Posizione competitiva non disponibile.');
+    }
+  }
+
+  async processBatchUltraAnalytics(request: BatchAnalyticsRequest): Promise<APIResponse> {
+    try {
+      return await this.post('/api/analytics/batch/ultra-analytics', request);
+    } catch (error) {
+      throw new Error('Analytics batch non disponibile.');
+    }
+  }
+
+  async exportUltraAnalyticsReport(
+    reportType: 'executive' | 'operational' | 'comprehensive' | 'custom' = 'comprehensive',
+    format: 'excel' | 'pdf' | 'json' | 'csv' = 'excel',
+    includeAIInsights = true,
+    includePredictions = true,
+    includeRecommendations = true,
+    customSections?: string,
+    language: 'it' | 'en' = 'it'
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        report_type: reportType,
+        format,
+        include_ai_insights: includeAIInsights,
+        include_predictions: includePredictions,
+        include_recommendations: includeRecommendations,
+        custom_sections: customSections,
+        language
+      });
+      return await this.request(`/api/analytics/export/ultra-report?${params}`);
+    } catch (error) {
+      throw new Error('Export report analytics non disponibile.');
+    }
+  }
+
+  async getRealtimeLiveMetrics(
+    metrics = 'all',
+    refreshRate = 10,
+    includeAlerts = true
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        metrics,
+        refresh_rate: refreshRate,
+        include_alerts: includeAlerts
+      });
+      return await this.request(`/api/analytics/realtime/live-metrics?${params}`);
+    } catch (error) {
+      throw new Error('Metriche real-time non disponibili.');
+    }
+  }
+
+  async getUltraPredictions(
+    predictionHorizon = 12,
+    confidenceIntervals = true,
+    scenarioAnalysis = true,
+    externalFactors = false,
+    modelEnsemble = true
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({
+        prediction_horizon: predictionHorizon,
+        confidence_intervals: confidenceIntervals,
+        scenario_analysis: scenarioAnalysis,
+        external_factors: externalFactors,
+        model_ensemble: modelEnsemble
+      });
+      return await this.request(`/api/analytics/forecasting/ultra-predictions?${params}`);
+    } catch (error) {
+      throw new Error('Previsioni ultra non disponibili.');
+    }
+  }
+
+  async getUltraSystemHealth(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/analytics/system/ultra-health');
+    } catch (error) {
+      throw new Error('System health analytics non disponibile.');
+    }
+  }
+
+  async getUltraAnalyticsFeatures(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/analytics/system/ultra-features');
+    } catch (error) {
+      throw new Error('Features analytics non disponibili.');
+    }
+  }
+
+  // Original Analytics methods maintained for compatibility
+  async getKPIs(): Promise<APIResponse> {
+    return this.getExecutiveDashboardUltra();
+  }
+
+  async getDashboardData(): Promise<APIResponse> {
+    return this.getExecutiveDashboardUltra();
+  }
+
+  async getDetailedKPIs(): Promise<APIResponse> {
+    return this.getExecutiveDashboardUltra(false, true);
+  }
+
+  async getExecutiveDashboard(): Promise<APIResponse> {
+    return this.getExecutiveDashboardUltra();
+  }
+
+  async getOperationsDashboard(): Promise<APIResponse> {
+    return this.getOperationsDashboardLive();
+  }
+
+  async getAnalyticsHealth(): Promise<APIResponse> {
+    return this.getUltraSystemHealth();
+  }
+
+  async getAnalyticsFeatures(): Promise<APIResponse> {
+    return this.getUltraAnalyticsFeatures();
+  }
+
+  // ===== IMPORT/EXPORT API =====
+
+  // XML/P7M Import
+  async importInvoicesXML(files: FileList | File[]): Promise<APIResponse> {
+    const formData = new FormData();
+    const fileArray = Array.isArray(files) ? files : Array.from(files);
+    fileArray.forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      // Prova endpoint V4.0 ZIP
+      return await this.post('/api/import-export/invoices/zip', formData);
+    } catch (error) {
+      try {
+        // Fallback a endpoint XML standard
+        return await this.post('/api/import-export/invoices/xml', formData);
+      } catch (fallbackError) {
+        try {
+          // Fallback a endpoint base
+          return await this.post('/import/invoices', formData);
+        } catch (finalError) {
+          throw new Error('Import fatture XML non disponibile. Tutti gli endpoint di import sono non raggiungibili.');
+        }
+      }
+    }
+  }
+
+  async validateInvoiceFiles(files: FileList | File[]): Promise<APIResponse> {
+    const formData = new FormData();
+    const fileArray = Array.isArray(files) ? files : Array.from(files);
+    fileArray.forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      return await this.post('/api/import-export/invoices/xml/validate', formData);
+    } catch (error) {
+      try {
+        return await this.post('/import/validate', formData);
+      } catch (fallbackError) {
+        throw new Error('Validazione file fatture non disponibile.');
+      }
+    }
+  }
+
+  // CSV Import
+  async importTransactionsCSV(file: File): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      return await this.post('/api/import-export/transactions/csv', formData);
+    } catch (error) {
+      try {
+        return await this.post('/import/transactions', formData);
+      } catch (fallbackError) {
+        throw new Error('Import transazioni CSV non disponibile.');
+      }
+    }
+  }
+
+  async validateTransactionsCSV(file: File): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      return await this.post('/api/import-export/transactions/csv/validate', formData);
+    } catch (error) {
+      throw new Error('Validazione CSV transazioni non disponibile.');
+    }
+  }
+
+  async previewTransactionsCSV(file: File, maxRows = 10): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      return await this.post(`/api/import-export/transactions/csv/preview?max_rows=${maxRows}`, formData);
+    } catch (error) {
+      throw new Error('Preview CSV transazioni non disponibile.');
+    }
+  }
+
+  // Export functionality
+  async exportData(
+    dataType: 'invoices' | 'transactions' | 'anagraphics',
+    format: 'csv' | 'excel' | 'json' = 'excel',
+    filters?: Record<string, any>
+  ): Promise<APIResponse> {
+    try {
+      const params = this.buildQuery({ format, ...filters });
+      return await this.request(`/api/import-export/${dataType}/export?${params}`);
+    } catch (error) {
+      throw new Error(`Export ${dataType} non disponibile.`);
+    }
+  }
+
+  // Bulk operations
+  async bulkImportData(
+    dataType: 'invoices' | 'transactions' | 'anagraphics',
+    file: File,
+    options?: Record<string, any>
+  ): Promise<APIResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    if (options) {
+      Object.entries(options).forEach(([key, value]) => {
+        formData.append(key, String(value));
+      });
+    }
+
+    try {
+      return await this.post(`/api/import-export/${dataType}/bulk-import`, formData);
+    } catch (error) {
+      throw new Error(`Import bulk ${dataType} non disponibile.`);
+    }
+  }
+
+  // Import status and progress
+  async getImportStatus(importId: string): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/import-export/status/${importId}`);
+    } catch (error) {
+      throw new Error('Stato import non disponibile.');
+    }
+  }
+
+  // Import history - CORREZIONE: Usa endpoint sync/history esistente
+  async getImportHistory(limit = 20): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/sync/history?limit=${limit}`);
+    } catch (error) {
+      throw new Error('Storico import non disponibile.');
+    }
+  }
+
+  // Template and format helpers
+  async getImportTemplate(dataType: 'invoices' | 'transactions' | 'anagraphics'): Promise<APIResponse> {
+    try {
+      return await this.request(`/api/import-export/${dataType}/template`);
+    } catch (error) {
+      throw new Error(`Template import ${dataType} non disponibile.`);
+    }
+  }
+
+  // 🔥 CORREZIONE: Metodi che causavano errori 405 - ORA GESTITI CORRETTAMENTE
+  async getImportStatistics(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/import-export/statistics');
+    } catch (error) {
+      console.warn("Endpoint '/api/import-export/statistics' non implementato nel backend");
+      // Ritorna dati di fallback invece di lanciare errore
+      return {
+        success: true,
+        data: {
+          invoices: { total_invoices: 0, last_30_days: 0 },
+          transactions: { total_transactions: 0, last_30_days: 0 },
+          last_updated: new Date().toISOString()
+        }
+      };
+    }
+  }
+
+  async getImportExportHealth(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/import-export/health/enterprise');
+    } catch (error) {
+      console.warn("Endpoint '/api/import-export/health/enterprise' non implementato nel backend");
+      // Ritorna dati di fallback
+      return {
+        success: true,
+        data: {
+          status: 'unknown',
+          import_adapter: 'unknown',
+          temp_storage: 'unknown'
+        }
+      };
+    }
+  }
+
+  async getSupportedFormats(): Promise<APIResponse> {
+    try {
+      return await this.request('/api/import-export/supported-formats/enterprise');
+    } catch (error) {
+      console.warn("Endpoint '/api/import-export/supported-formats/enterprise' non implementato nel backend");
+      // Ritorna formati di fallback
+      return {
+        success: true,
+        data: {
+          import_formats: {
+            invoices: ['xml', 'p7m', 'zip'],
+            transactions: ['csv', 'zip'],
+            anagraphics: ['csv', 'excel']
+          },
+          enterprise_features: {},
+          limits_and_constraints: {
+            max_file_size: '100MB',
+            max_files_per_batch: 50
+          }
+        }
+      };
+    }
+  }
+
   async getExportPresets(): Promise<APIResponse> {
     try {
       return await this.request('/api/import-export/export/presets');
@@ -1281,7 +1743,7 @@ class ApiClient {
   // Logging and monitoring
   async getSystemLogs(
     level: 'debug' | 'info' | 'warning' | 'error' = 'info',
-    limit: number = 100
+    limit = 100
   ): Promise<APIResponse> {
     try {
       return await this.request(`/api/system/logs?level=${level}&limit=${limit}`);
@@ -1324,7 +1786,7 @@ class ApiClient {
   }
 
   // Notification and alerts
-  async getNotifications(unreadOnly: boolean = false): Promise<APIResponse> {
+  async getNotifications(unreadOnly = false): Promise<APIResponse> {
     try {
       return await this.request(`/api/notifications?unread_only=${unreadOnly}`);
     } catch (error) {
@@ -1628,6 +2090,7 @@ export { apiClient, ApiClient };
  * ✅ Debug Utilities: Aggiunti metodi di debug per sviluppo
  * ✅ Error Handling: Migliorato con logging appropriato
  * ✅ Backward Compatibility: Mantenuta compatibilità con codice esistente
+ * ✅ TypeScript Syntax: Corretta sintassi per parametri con valori default
  * 
  * 🔥 PROBLEMI RISOLTI:
  * - status_filter=Da+Riconciliare → status_filter=Da%20Riconciliare
@@ -1635,465 +2098,5 @@ export { apiClient, ApiClient };
  * - Endpoint 405 errors → Fallback con graceful degradation
  * - Hook compatibility → Metodi aggiuntivi per compatibilità
  * - Export functionality → Metodi corretti per blob/json handling
- */ecutiveDashboardUltra(
-    includePredictions: boolean = false,
-    includeAIInsights: boolean = true,
-    cacheEnabled: boolean = true,
-    realTime: boolean = false
-  ): Promise<APIResponse> {
-    const params = this.buildQuery({
-      include_predictions: includePredictions,
-      include_ai_insights: includeAIInsights,
-      cache_enabled: cacheEnabled,
-      real_time: realTime
-    });
-    
-    try {
-      // Prova prima l'endpoint V4.0
-      return await this.request(`/api/analytics/dashboard/executive?${params}`);
-    } catch (error) {
-      try {
-        // Fallback all'endpoint standard
-        return await this.request(`/analytics/dashboard?${params}`);
-      } catch (fallbackError) {
-        try {
-          // Ultimo fallback a KPI semplici
-          return await this.request('/analytics/kpis');
-        } catch (finalError) {
-          throw new Error('Dashboard esecutiva non disponibile. Tutte le API analytics non raggiungibili.');
-        }
-      }
-    }
-  }
-
-  // Operations Dashboard Live
-  async getOperationsDashboardLive(
-    autoRefreshSeconds: number = 30,
-    includeAlerts: boolean = true,
-    alertPriority: 'low' | 'medium' | 'high' | 'critical' = 'medium'
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        auto_refresh_seconds: autoRefreshSeconds,
-        include_alerts: includeAlerts,
-        alert_priority: alertPriority
-      });
-      return await this.request(`/api/analytics/dashboard/operations/live?${params}`);
-    } catch (error) {
-      throw new Error('Dashboard operativo non disponibile.');
-    }
-  }
-
-  // AI Business Insights
-  async getAIBusinessInsights(
-    analysisDepth: 'quick' | 'standard' | 'deep' = 'standard',
-    focusAreas?: string,
-    includeRecommendations: boolean = true,
-    language: 'it' | 'en' = 'it'
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        analysis_depth: analysisDepth,
-        focus_areas: focusAreas,
-        include_recommendations: includeRecommendations,
-        language
-      });
-      return await this.request(`/api/analytics/ai/business-insights?${params}`);
-    } catch (error) {
-      throw new Error('AI Business Insights non disponibile.');
-    }
-  }
-
-  // Custom AI Analysis
-  async runCustomAIAnalysis(request: AnalyticsRequest): Promise<APIResponse> {
-    try {
-      return await this.post('/api/analytics/ai/custom-analysis', request);
-    } catch (error) {
-      throw new Error('Analisi AI personalizzata non disponibile.');
-    }
-  }
-
-  async getUltraSeasonalityAnalysis(
-    yearsBack: number = 3,
-    includeWeatherCorrelation: boolean = false,
-    predictMonthsAhead: number = 6,
-    confidenceLevel: number = 0.95,
-    categoryFocus?: string
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        years_back: yearsBack,
-        include_weather_correlation: includeWeatherCorrelation,
-        predict_months_ahead: predictMonthsAhead,
-        confidence_level: confidenceLevel,
-        category_focus: categoryFocus
-      });
-      return await this.request(`/api/analytics/seasonality/ultra-analysis?${params}`);
-    } catch (error) {
-      throw new Error('Analisi stagionalità non disponibile.');
-    }
-  }
-
-  async getUltraCustomerIntelligence(
-    analysisDepth: 'basic' | 'standard' | 'comprehensive' | 'expert' = 'comprehensive',
-    includePredictiveLTV: boolean = true,
-    includeChurnPrediction: boolean = true,
-    includeNextBestAction: boolean = true,
-    segmentGranularity: 'basic' | 'detailed' | 'micro' = 'detailed'
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        analysis_depth: analysisDepth,
-        include_predictive_ltv: includePredictiveLTV,
-        include_churn_prediction: includeChurnPrediction,
-        include_next_best_action: includeNextBestAction,
-        segment_granularity: segmentGranularity
-      });
-      return await this.request(`/api/analytics/customers/ultra-intelligence?${params}`);
-    } catch (error) {
-      throw new Error('Customer intelligence non disponibile.');
-    }
-  }
-
-  async getCompetitiveMarketPosition(
-    benchmarkAgainst: 'industry' | 'local' | 'premium' = 'industry',
-    includePriceAnalysis: boolean = true,
-    includeMarginOptimization: boolean = true,
-    marketScope: 'local' | 'regional' | 'national' = 'regional'
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        benchmark_against: benchmarkAgainst,
-        include_price_analysis: includePriceAnalysis,
-        include_margin_optimization: includeMarginOptimization,
-        market_scope: marketScope
-      });
-      return await this.request(`/api/analytics/competitive/market-position?${params}`);
-    } catch (error) {
-      throw new Error('Posizione competitiva non disponibile.');
-    }
-  }
-
-  async processBatchUltraAnalytics(request: BatchAnalyticsRequest): Promise<APIResponse> {
-    try {
-      return await this.post('/api/analytics/batch/ultra-analytics', request);
-    } catch (error) {
-      throw new Error('Analytics batch non disponibile.');
-    }
-  }
-
-  async exportUltraAnalyticsReport(
-    reportType: 'executive' | 'operational' | 'comprehensive' | 'custom' = 'comprehensive',
-    format: 'excel' | 'pdf' | 'json' | 'csv' = 'excel',
-    includeAIInsights: boolean = true,
-    includePredictions: boolean = true,
-    includeRecommendations: boolean = true,
-    customSections?: string,
-    language: 'it' | 'en' = 'it'
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        report_type: reportType,
-        format,
-        include_ai_insights: includeAIInsights,
-        include_predictions: includePredictions,
-        include_recommendations: includeRecommendations,
-        custom_sections: customSections,
-        language
-      });
-      return await this.request(`/api/analytics/export/ultra-report?${params}`);
-    } catch (error) {
-      throw new Error('Export report analytics non disponibile.');
-    }
-  }
-
-  async getRealtimeLiveMetrics(
-    metrics: string = 'all',
-    refreshRate: number = 10,
-    includeAlerts: boolean = true
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        metrics,
-        refresh_rate: refreshRate,
-        include_alerts: includeAlerts
-      });
-      return await this.request(`/api/analytics/realtime/live-metrics?${params}`);
-    } catch (error) {
-      throw new Error('Metriche real-time non disponibili.');
-    }
-  }
-
-  async getUltraPredictions(
-    predictionHorizon: number = 12,
-    confidenceIntervals: boolean = true,
-    scenarioAnalysis: boolean = true,
-    externalFactors: boolean = false,
-    modelEnsemble: boolean = true
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({
-        prediction_horizon: predictionHorizon,
-        confidence_intervals: confidenceIntervals,
-        scenario_analysis: scenarioAnalysis,
-        external_factors: externalFactors,
-        model_ensemble: modelEnsemble
-      });
-      return await this.request(`/api/analytics/forecasting/ultra-predictions?${params}`);
-    } catch (error) {
-      throw new Error('Previsioni ultra non disponibili.');
-    }
-  }
-
-  async getUltraSystemHealth(): Promise<APIResponse> {
-    try {
-      return await this.request('/api/analytics/system/ultra-health');
-    } catch (error) {
-      throw new Error('System health analytics non disponibile.');
-    }
-  }
-
-  async getUltraAnalyticsFeatures(): Promise<APIResponse> {
-    try {
-      return await this.request('/api/analytics/system/ultra-features');
-    } catch (error) {
-      throw new Error('Features analytics non disponibili.');
-    }
-  }
-
-  // Original Analytics methods maintained for compatibility
-  async getKPIs(): Promise<APIResponse> {
-    return this.getExecutiveDashboardUltra();
-  }
-
-  async getDashboardData(): Promise<APIResponse> {
-    return this.getExecutiveDashboardUltra();
-  }
-
-  async getDetailedKPIs(): Promise<APIResponse> {
-    return this.getExecutiveDashboardUltra(false, true);
-  }
-
-  async getExecutiveDashboard(): Promise<APIResponse> {
-    return this.getExecutiveDashboardUltra();
-  }
-
-  async getOperationsDashboard(): Promise<APIResponse> {
-    return this.getOperationsDashboardLive();
-  }
-
-  async getAnalyticsHealth(): Promise<APIResponse> {
-    return this.getUltraSystemHealth();
-  }
-
-  async getAnalyticsFeatures(): Promise<APIResponse> {
-    return this.getUltraAnalyticsFeatures();
-  }
-
-  // ===== IMPORT/EXPORT API =====
-
-  // XML/P7M Import
-  async importInvoicesXML(files: FileList | File[]): Promise<APIResponse> {
-    const formData = new FormData();
-    const fileArray = Array.isArray(files) ? files : Array.from(files);
-    fileArray.forEach(file => {
-      formData.append('files', file);
-    });
-
-    try {
-      // Prova endpoint V4.0 ZIP
-      return await this.post('/api/import-export/invoices/zip', formData);
-    } catch (error) {
-      try {
-        // Fallback a endpoint XML standard
-        return await this.post('/api/import-export/invoices/xml', formData);
-      } catch (fallbackError) {
-        try {
-          // Fallback a endpoint base
-          return await this.post('/import/invoices', formData);
-        } catch (finalError) {
-          throw new Error('Import fatture XML non disponibile. Tutti gli endpoint di import sono non raggiungibili.');
-        }
-      }
-    }
-  }
-
-  async validateInvoiceFiles(files: FileList | File[]): Promise<APIResponse> {
-    const formData = new FormData();
-    const fileArray = Array.isArray(files) ? files : Array.from(files);
-    fileArray.forEach(file => {
-      formData.append('files', file);
-    });
-
-    try {
-      return await this.post('/api/import-export/invoices/xml/validate', formData);
-    } catch (error) {
-      try {
-        return await this.post('/import/validate', formData);
-      } catch (fallbackError) {
-        throw new Error('Validazione file fatture non disponibile.');
-      }
-    }
-  }
-
-  // CSV Import
-  async importTransactionsCSV(file: File): Promise<APIResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      return await this.post('/api/import-export/transactions/csv', formData);
-    } catch (error) {
-      try {
-        return await this.post('/import/transactions', formData);
-      } catch (fallbackError) {
-        throw new Error('Import transazioni CSV non disponibile.');
-      }
-    }
-  }
-
-  async validateTransactionsCSV(file: File): Promise<APIResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      return await this.post('/api/import-export/transactions/csv/validate', formData);
-    } catch (error) {
-      throw new Error('Validazione CSV transazioni non disponibile.');
-    }
-  }
-
-  async previewTransactionsCSV(file: File, maxRows: number = 10): Promise<APIResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      return await this.post(`/api/import-export/transactions/csv/preview?max_rows=${maxRows}`, formData);
-    } catch (error) {
-      throw new Error('Preview CSV transazioni non disponibile.');
-    }
-  }
-
-  // Export functionality
-  async exportData(
-    dataType: 'invoices' | 'transactions' | 'anagraphics',
-    format: 'csv' | 'excel' | 'json' = 'excel',
-    filters?: Record<string, any>
-  ): Promise<APIResponse> {
-    try {
-      const params = this.buildQuery({ format, ...filters });
-      return await this.request(`/api/import-export/${dataType}/export?${params}`);
-    } catch (error) {
-      throw new Error(`Export ${dataType} non disponibile.`);
-    }
-  }
-
-  // Bulk operations
-  async bulkImportData(
-    dataType: 'invoices' | 'transactions' | 'anagraphics',
-    file: File,
-    options?: Record<string, any>
-  ): Promise<APIResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    if (options) {
-      Object.entries(options).forEach(([key, value]) => {
-        formData.append(key, String(value));
-      });
-    }
-
-    try {
-      return await this.post(`/api/import-export/${dataType}/bulk-import`, formData);
-    } catch (error) {
-      throw new Error(`Import bulk ${dataType} non disponibile.`);
-    }
-  }
-
-  // Import status and progress
-  async getImportStatus(importId: string): Promise<APIResponse> {
-    try {
-      return await this.request(`/api/import-export/status/${importId}`);
-    } catch (error) {
-      throw new Error('Stato import non disponibile.');
-    }
-  }
-
-  // Import history - CORREZIONE: Usa endpoint sync/history esistente
-  async getImportHistory(limit: number = 20): Promise<APIResponse> {
-    try {
-      return await this.request(`/api/sync/history?limit=${limit}`);
-    } catch (error) {
-      throw new Error('Storico import non disponibile.');
-    }
-  }
-
-  // Template and format helpers
-  async getImportTemplate(dataType: 'invoices' | 'transactions' | 'anagraphics'): Promise<APIResponse> {
-    try {
-      return await this.request(`/api/import-export/${dataType}/template`);
-    } catch (error) {
-      throw new Error(`Template import ${dataType} non disponibile.`);
-    }
-  }
-
-  // 🔥 CORREZIONE: Metodi che causavano errori 405 - ORA GESTITI CORRETTAMENTE
-  async getImportStatistics(): Promise<APIResponse> {
-    try {
-      return await this.request('/api/import-export/statistics');
-    } catch (error) {
-      console.warn("Endpoint '/api/import-export/statistics' non implementato nel backend");
-      // Ritorna dati di fallback invece di lanciare errore
-      return {
-        success: true,
-        data: {
-          invoices: { total_invoices: 0, last_30_days: 0 },
-          transactions: { total_transactions: 0, last_30_days: 0 },
-          last_updated: new Date().toISOString()
-        }
-      };
-    }
-  }
-
-  async getImportExportHealth(): Promise<APIResponse> {
-    try {
-      return await this.request('/api/import-export/health/enterprise');
-    } catch (error) {
-      console.warn("Endpoint '/api/import-export/health/enterprise' non implementato nel backend");
-      // Ritorna dati di fallback
-      return {
-        success: true,
-        data: {
-          status: 'unknown',
-          import_adapter: 'unknown',
-          temp_storage: 'unknown'
-        }
-      };
-    }
-  }
-
-  async getSupportedFormats(): Promise<APIResponse> {
-    try {
-      return await this.request('/api/import-export/supported-formats/enterprise');
-    } catch (error) {
-      console.warn("Endpoint '/api/import-export/supported-formats/enterprise' non implementato nel backend");
-      // Ritorna formati di fallback
-      return {
-        success: true,
-        data: {
-          import_formats: {
-            invoices: ['xml', 'p7m', 'zip'],
-            transactions: ['csv', 'zip'],
-            anagraphics: ['csv', 'excel']
-          },
-          enterprise_features: {},
-          limits_and_constraints: {
-            max_file_size: '100MB',
-            max_files_per_batch: 50
-          }
-        }
-      };
-    }
-  }
-
-  async getEx
+ * - TypeScript syntax error → Corretta sintassi per parametri funzioni
+ */
