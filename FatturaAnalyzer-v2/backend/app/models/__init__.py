@@ -2,7 +2,7 @@
 Modelli base per FastAPI - VERSIONE COMPLETA E FINALE
 File: app/models/__init__.py
 """
-from typing import Optional, Any, List
+from typing import Optional, Any, Dict, List
 from enum import Enum
 from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field
