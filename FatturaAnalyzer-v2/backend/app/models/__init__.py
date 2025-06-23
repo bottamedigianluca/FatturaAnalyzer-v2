@@ -5,7 +5,7 @@ File: app/models/__init__.py
 from typing import Optional, Any, Dict, List
 from enum import Enum
 from datetime import datetime, date
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 class BaseConfig:
     """Configurazione base per tutti i modelli Pydantic"""
@@ -304,6 +304,14 @@ except ImportError as e:
         total_amount: float
         type: InvoiceType
         anagraphics_id: int
+        payment_status: PaymentStatus = Field(default=PaymentStatus.APERTA)
+        paid_amount: float = Field(default=0.0)
+        due_date: Optional[date] = None
+        notes: Optional[str] = None
+        created_at: Optional[datetime] = None
+        updated_at: Optional[datetime] = None
+        counterparty_name: Optional[str] = None
+        open_amount: Optional[float] = None
     
     class InvoiceLine(BaseModel, BaseConfig):
         id: Optional[int] = None
@@ -312,6 +320,65 @@ except ImportError as e:
         quantity: float = 1.0
         unit_price: float
         total_price: float
+
+# Modelli mancanti richiesti dall'API - SEMPRE DEFINITI
+class InvoiceBase(BaseModel, BaseConfig):
+    """Modello base per fatture"""
+    anagraphics_id: int = Field(..., gt=0, description="ID anagrafica")
+    type: InvoiceType = Field(..., description="Tipo fattura")
+    doc_number: str = Field(..., min_length=1, max_length=50, description="Numero documento")
+    doc_date: date = Field(..., description="Data documento")
+    total_amount: float = Field(..., ge=0, description="Importo totale")
+    payment_status: PaymentStatus = Field(default=PaymentStatus.APERTA, description="Stato pagamento")
+    paid_amount: float = Field(default=0.0, ge=0, description="Importo pagato")
+    due_date: Optional[date] = Field(None, description="Data scadenza")
+    notes: Optional[str] = Field(None, max_length=1000, description="Note")
+
+class InvoiceCreate(InvoiceBase):
+    """Modello per creazione fattura"""
+    pass
+
+class InvoiceUpdate(BaseModel, BaseConfig):
+    """Modello per aggiornamento fattura"""
+    anagraphics_id: Optional[int] = Field(None, gt=0)
+    type: Optional[InvoiceType] = None
+    doc_number: Optional[str] = Field(None, min_length=1, max_length=50)
+    doc_date: Optional[date] = None
+    total_amount: Optional[float] = Field(None, ge=0)
+    payment_status: Optional[PaymentStatus] = None
+    paid_amount: Optional[float] = Field(None, ge=0)
+    due_date: Optional[date] = None
+    notes: Optional[str] = Field(None, max_length=1000)
+
+class InvoiceFilter(BaseModel, BaseConfig):
+    """Filtri per ricerca fatture"""
+    type_filter: Optional[InvoiceType] = Field(None, description="Filtra per tipo fattura")
+    status_filter: Optional[PaymentStatus] = Field(None, description="Filtra per stato pagamento")
+    anagraphics_id: Optional[int] = Field(None, gt=0, description="Filtra per ID anagrafica")
+    search: Optional[str] = Field(None, min_length=2, max_length=200, description="Ricerca in numero documento o nome")
+    start_date: Optional[date] = Field(None, description="Data inizio periodo")
+    end_date: Optional[date] = Field(None, description="Data fine periodo")
+    min_amount: Optional[float] = Field(None, ge=0, description="Importo minimo")
+    max_amount: Optional[float] = Field(None, ge=0, description="Importo massimo")
+    overdue_only: Optional[bool] = Field(False, description="Solo fatture scadute")
+    paid_only: Optional[bool] = Field(False, description="Solo fatture pagate")
+    unpaid_only: Optional[bool] = Field(False, description="Solo fatture non pagate")
+
+    @validator('end_date')
+    def end_date_after_start(cls, v, values):
+        if v and values.get('start_date') and v < values['start_date']:
+            raise ValueError('end_date must be after start_date')
+        return v
+
+    @validator('max_amount')
+    def max_amount_greater_than_min(cls, v, values):
+        if v and values.get('min_amount') and v < values['min_amount']:
+            raise ValueError('max_amount must be greater than min_amount')
+        return v
+
+class InvoiceListResponse(PaginatedResponse):
+    """Response per lista fatture"""
+    items: List[Invoice]
 
 # ==================== IMPORT MODELLI TRANSACTION ====================
 
@@ -406,8 +473,9 @@ __all__ = [
     # Anagraphics
     'Anagraphics', 'AnagraphicsCreate', 'AnagraphicsUpdate', 'AnagraphicsListResponse',
     
-    # Invoices
-    'Invoice', 'InvoiceExtended', 'InvoiceLine', 'InvoiceLineExtended',
+    # Invoices - TUTTI I MODELLI RICHIESTI
+    'Invoice', 'InvoiceBase', 'InvoiceCreate', 'InvoiceUpdate', 'InvoiceFilter',
+    'InvoiceListResponse', 'InvoiceExtended', 'InvoiceLine', 'InvoiceLineExtended',
     'InvoiceVATSummary', 'InvoiceVATSummaryExtended', 'InvoiceAttachment',
     'InvoicePayment', 'InvoiceValidation', 'InvoiceStats', 'InvoiceSearch',
     'InvoiceBulkOperation', 'InvoiceTemplate', 'InvoiceReminder', 'InvoiceReport',
