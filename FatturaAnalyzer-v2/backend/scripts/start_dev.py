@@ -1,98 +1,106 @@
-#!/usr/bin/env python3
-"""
-Script per avviare il server di sviluppo - Aggiornato per macOS
-"""
-
 import os
 import sys
 import subprocess
 import shutil
 from pathlib import Path
+import asyncio
+
+# Aggiungi la root del progetto al path per permettere l'import successivo
+backend_root_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(backend_root_dir))
 
 def find_python_command():
-    """Trova il comando Python disponibile"""
-    # Prova in ordine di preferenza
-    python_commands = ['python3', 'python', 'python3.11', 'python3.10', 'python3.9']
+    """Trova il comando Python disponibile, dando priorità a quello del venv."""
+    if hasattr(sys, 'prefix') and sys.prefix != sys.base_prefix:
+        return sys.executable
     
+    python_commands = ['python3', 'python']
     for cmd in python_commands:
         if shutil.which(cmd):
             return cmd
-    
-    print("❌ Python non trovato! Installa Python 3.8+ per continuare.")
-    print("Su macOS puoi installarlo con: brew install python")
+    print("❌ Python non trovato! Installa Python 3.9+.")
     sys.exit(1)
 
-def main():
-    """Avvia server di sviluppo con configurazione automatica"""
+async def initialize_system():
+    """Inizializza il database e le tabelle se non esistono."""
+    print("🔍 Checking system setup...")
     
-    # Trova comando Python
-    python_cmd = find_python_command()
-    print(f"🐍 Using Python: {python_cmd} ({shutil.which(python_cmd)})")
-    
-    # Assicurati di essere nella directory corretta
-    backend_root_dir = Path(__file__).parent.parent 
-    os.chdir(backend_root_dir)
-    
-    # Set environment variables per sviluppo
-    os.environ["ENVIRONMENT"] = "development"
-    os.environ["DEBUG"] = "true"
-    
-    # Verifica requirements
     try:
-        subprocess.run([python_cmd, "-c", "import fastapi, uvicorn"], 
-                      check=True, capture_output=True)
-        print("✅ Dependencies found")
-    except subprocess.CalledProcessError:
-        print("❌ Missing dependencies!")
-        print(f"Run: {python_cmd} -m pip install -r requirements.txt")
+        from app.config import settings
+        from app.adapters.database_adapter import db_adapter
+        from app.core.database import create_tables # Import diretto per sicurezza
+    except ImportError as e:
+        print(f"❌ Critical import error: {e}")
+        print("Ensure you have run 'pip install -r requirements.txt' in your venv.")
         sys.exit(1)
+
+    db_path = Path(settings.get_database_path())
     
-    # Verifica config.ini
-    if not Path("config.ini").exists(): 
-        print("⚠️ config.ini not found in backend root, using defaults")
+    # Crea la directory 'data' se non esiste
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Crea directories necessarie
-    for dir_name in ["logs", "data", "uploads", "temp"]:
-        Path(dir_name).mkdir(exist_ok=True)
-    
+    # Controlla se il DB e le tabelle sono già a posto
+    try:
+        conn_test = db_adapter.get_connection()
+        cursor = conn_test.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Invoices';")
+        if cursor.fetchone():
+            print("✅ Database and tables already exist.")
+            conn_test.close()
+            return
+        conn_test.close()
+    except Exception:
+        print("⚠️ Database or tables missing. Proceeding with setup.")
+
+    try:
+        print(f"   -> Initializing tables in '{db_path}'...")
+        await db_adapter.create_tables_async()
+        print("✅ Database and tables created successfully.")
+        
+        print("🌱 Generating sample data...")
+        # Usa un import locale per evitare problemi di path
+        from scripts.generate_sample_data import main_async as generate_data
+        await generate_data()
+        print("✅ Sample data generated.")
+
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR during database setup: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+def start_server(python_cmd):
+    """Avvia il server Uvicorn."""
     print("🚀 Starting FastAPI development server...")
-    print(f"🔧 Environment: {os.environ.get('ENVIRONMENT', 'N/A')}")
-    print(f"🐛 Debug Mode: {os.environ.get('DEBUG', 'N/A')}")
-    print(f"🐍 Python Command: {python_cmd}")
-    print("📊 Dashboard: http://127.0.0.1:8000/api/docs")
-    print("🔍 Health check: http://127.0.0.1:8000/health")
-    print("🎯 First run wizard: http://127.0.0.1:8000/api/first-run/check")
+    print(f"🔧 Environment: development")
+    print(f"🐛 Debug Mode: true")
+    print(f"📊 Dashboard: http://127.0.0.1:8000/api/docs")
+    print(f"🔍 Health check: http://127.0.0.1:8000/health")
     
-    # Avvia server
     try:
         subprocess.run([
             python_cmd, "-m", "uvicorn",
             "app.main:app",
             "--host", "127.0.0.1",
             "--port", "8000",
-            "--log-level", "info"
+            "--log-level", "info",
+            "--reload"
         ], check=True)
     except KeyboardInterrupt:
         print("\n👋 Server stopped")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"❌ Error starting server: {e}")
-        
-        # Debugging info
-        print("\n🔍 Debug Information:")
-        print(f"Python command: {python_cmd}")
-        print(f"Working directory: {os.getcwd()}")
-        print(f"Python path: {sys.path[:3]}...")
-        
-        # Check if app.main module exists
-        try:
-            subprocess.run([python_cmd, "-c", "import app.main"], 
-                          check=True, capture_output=True)
-            print("✅ app.main module can be imported")
-        except subprocess.CalledProcessError as import_error:
-            print("❌ Cannot import app.main module")
-            print("Make sure you're in the backend directory and dependencies are installed")
-        
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    # Assicurati di essere nella directory corretta
+    os.chdir(backend_root_dir)
+    
+    python_cmd = find_python_command()
+    print(f"🐍 Using Python: {python_cmd}")
+
+    # Esegui l'inizializzazione asincrona
+    asyncio.run(initialize_system())
+
+    # Avvia il server
+    start_server(python_cmd)
