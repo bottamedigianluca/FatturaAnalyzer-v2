@@ -1801,6 +1801,109 @@ class ReconciliationAdapterV4:
         self.request_patterns = defaultdict(int)
         
         logger.info(f"ReconciliationAdapter V4.0 initialized with features: {self.feature_flags}")
+
+    # In backend/app/adapters/reconciliation_adapter.py
+# All'interno della classe ReconciliationAdapterV4
+
+@performance_tracked_recon_v4("get_system_status")
+async def get_system_status_async(self) -> Dict[str, Any]:
+    """
+    Ottiene lo stato di salute COMPLETO del sistema di riconciliazione V4.0.
+    Combina metriche sui dati (stato del lavoro) e metriche di sistema (salute del motore).
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        
+        # --- Task per le statistiche sui dati (la tua logica) ---
+        def _get_data_statistics():
+            from app.core.database import get_connection
+            
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as total_invoices,
+                        COUNT(CASE WHEN payment_status = 'Riconciliata' OR payment_status = 'Pagata Tot.' THEN 1 END) as reconciled_invoices,
+                        COUNT(CASE WHEN payment_status IN ('Aperta', 'Scaduta') THEN 1 END) as open_invoices
+                    FROM Invoices
+                """)
+                invoice_stats = dict(cursor.fetchone())
+                
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as total_transactions,
+                        COUNT(CASE WHEN reconciliation_status = 'Riconciliato Tot.' THEN 1 END) as fully_reconciled,
+                        COUNT(CASE WHEN reconciliation_status = 'Da Riconciliare' THEN 1 END) as unreconciled
+                    FROM BankTransactions
+                """)
+                transaction_stats = dict(cursor.fetchone())
+                
+                total_invoices = invoice_stats.get('total_invoices', 0)
+                reconciled_invoices = invoice_stats.get('reconciled_invoices', 0)
+                total_transactions = transaction_stats.get('total_transactions', 0)
+                unreconciled_transactions = transaction_stats.get('unreconciled', 0)
+                
+                # Calcolo più robusto del tasso di riconciliazione
+                reconciliation_rate = (reconciled_invoices / max(1, total_invoices)) * 100 if total_invoices > 0 else 0
+                
+                if reconciliation_rate >= 90: system_status_label = "excellent"
+                elif reconciliation_rate >= 70: system_status_label = "good"
+                elif reconciliation_rate >= 50: system_status_label = "fair"
+                else: system_status_label = "needs_attention"
+                
+                return {
+                    "status_label": system_status_label,
+                    "reconciliation_rate_percent": round(reconciliation_rate, 2),
+                    "total_invoices": total_invoices,
+                    "reconciled_invoices": reconciled_invoices,
+                    "open_invoices": invoice_stats.get('open_invoices', 0),
+                    "total_transactions": total_transactions,
+                    "unreconciled_transactions": unreconciled_transactions
+                }
+            finally:
+                if 'conn' in locals() and conn:
+                    conn.close()
+
+        # --- Task per le metriche di sistema (la mia logica) ---
+        async def _get_system_health():
+            # Riutilizziamo le funzioni già presenti nell'adapter se possibile
+            perf_stats = await loop.run_in_executor(self.executor, self.performance_monitor.get_comprehensive_stats)
+            cache_stats = await loop.run_in_executor(self.executor, self.cache_manager.get_stats if hasattr(self.cache_manager, 'get_stats') else lambda: {})
+            return {
+                "performance": perf_stats,
+                "cache": cache_stats
+            }
+
+        # Esecuzione in parallelo
+        data_stats_task = loop.run_in_executor(self.executor, _get_data_statistics)
+        system_health_task = _get_system_health()
+        
+        results = await asyncio.gather(data_stats_task, system_health_task, return_exceptions=True)
+        
+        data_statistics = results[0] if not isinstance(results[0], Exception) else {'error': str(results[0])}
+        system_health = results[1] if not isinstance(results[1], Exception) else {'error': str(results[1])}
+
+        is_healthy = not any(isinstance(r, Exception) for r in results)
+
+        return {
+            "status": "operational" if is_healthy else "degraded",
+            "overall_reconciliation_status": data_statistics.get('status_label', 'unknown'),
+            "adapter_version": "4.0",
+            "data_statistics": data_statistics,
+            "system_health": system_health,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Fatal error in get_system_status_async: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "version": "4.0", 
+            "error": "An internal error occurred while fetching system status.",
+            "details": str(e)
+        }
     
     # ===== ENHANCED 1:1 MATCHING =====
     
