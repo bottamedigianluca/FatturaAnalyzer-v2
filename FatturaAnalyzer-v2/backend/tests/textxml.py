@@ -342,4 +342,104 @@ def test_with_your_xmls():
     print("3. Struttura XML identica per il resto")
     print("")
     print("💡 SOLUZIONE:")
-    print("Il parser deve gestire <N
+    print("Il parser deve gestire <NumeroCivico> separato e combinarlo con <Indirizzo>")
+    print("Questo è già implementato nel parser corretto che ho fornito!")
+
+def test_company_detection_issue():
+    """Test specifico per rilevazione azienda"""
+    print(f"\n🏢 TEST RILEVAZIONE TIPO AZIENDA")
+    print("=" * 50)
+    
+    # Simula dati config.ini tipici
+    my_company_configs = [
+        {'piva': '02273530226', 'cf': 'BTTPLG77S15F187I'},  # Bottamedi
+        {'piva': '02273530226', 'cf': None},  # Solo P.IVA
+        {'piva': None, 'cf': 'BTTPLG77S15F187I'},  # Solo CF
+    ]
+    
+    # Dati dalle fatture di test
+    cedente_data = {'piva': '04103780237', 'cf': '04103780237'}  # Polifunghi
+    cessionario_data = {'piva': '02273530226', 'cf': 'BTTPLG77S15F187I'}  # Bottamedi
+    
+    print("DATI ESTRATTI DALLE FATTURE:")
+    print(f"Cedente (Polifunghi): PIVA={cedente_data['piva']}, CF={cedente_data['cf']}")
+    print(f"Cessionario (Bottamedi): PIVA={cessionario_data['piva']}, CF={cessionario_data['cf']}")
+    
+    for i, config in enumerate(my_company_configs):
+        print(f"\nTEST {i+1} - Config: PIVA={config.get('piva')}, CF={config.get('cf')}")
+        
+        # Simula _is_own_company
+        def is_own_company_simple(anag_data, my_data):
+            my_piva = my_data.get('piva', '').strip()
+            my_cf = my_data.get('cf', '').strip()
+            anag_piva = anag_data.get('piva', '').strip()
+            anag_cf = anag_data.get('cf', '').strip()
+            
+            if my_piva and anag_piva and my_piva == anag_piva:
+                return True
+            if my_cf and anag_cf and my_cf == anag_cf:
+                return True
+            return False
+        
+        is_cedente_us = is_own_company_simple(cedente_data, config)
+        is_cessionario_us = is_own_company_simple(cessionario_data, config)
+        
+        if is_cedente_us and is_cessionario_us:
+            tipo = 'Autofattura'
+        elif is_cedente_us:
+            tipo = 'Attiva'
+        elif is_cessionario_us:
+            tipo = 'Passiva'
+        else:
+            tipo = 'Unknown'
+        
+        print(f"  Cedente è nostra azienda: {is_cedente_us}")
+        print(f"  Cessionario è nostra azienda: {is_cessionario_us}")
+        print(f"  Tipo fattura: {tipo}")
+        
+        if tipo == 'Passiva':
+            print(f"  ✅ CORRETTO - Fattura passiva rilevata")
+        else:
+            print(f"  ❌ PROBLEMA - Dovrebbe essere Passiva")
+
+def main():
+    """Funzione principale per test rapido"""
+    print("⚡ QUICK TEST - Identificazione Problema Parser XML")
+    print("=" * 70)
+    
+    # Test con i tuoi XML
+    test_with_your_xmls()
+    
+    # Test rilevazione azienda
+    test_company_detection_issue()
+    
+    print(f"\n📋 RIEPILOGO PROBLEMI E SOLUZIONI:")
+    print("=" * 50)
+    print("❌ PROBLEMA IDENTIFICATO:")
+    print("   Il parser XML originale non gestisce correttamente:")
+    print("   1. NumeroCivico separato da Indirizzo")
+    print("   2. Possibili variazioni nei percorsi XPath")
+    print("")
+    print("✅ SOLUZIONE IMPLEMENTATA:")
+    print("   Ho corretto il parser XML con:")
+    print("   1. Gestione NumeroCivico separato")
+    print("   2. Percorsi XPath più specifici e robusti")
+    print("   3. Migliore gestione delle variazioni strutturali")
+    print("   4. Debug logging migliorato")
+    print("")
+    print("🔧 AZIONI DA FARE:")
+    print("   1. Sostituire il file parser_xml.py con la versione corretta")
+    print("   2. Testare import delle fatture Polifunghi")
+    print("   3. Verificare che il config.ini contenga P.IVA/CF corretti")
+    print("")
+    print("📁 FILE DA AGGIORNARE:")
+    print("   - FatturaAnalyzer-v2/backend/app/core/parser_xml.py")
+    print("")
+    print("⚠️  IMPORTANTE:")
+    print("   Assicurati che nel file config.ini ci siano:")
+    print("   [Azienda]")
+    print("   PartitaIVA = 02273530226")
+    print("   CodiceFiscale = BTTPLG77S15F187I")
+
+if __name__ == "__main__":
+    main()
