@@ -13,7 +13,7 @@
  * ✅ 405/500 errors gestiti con graceful degradation
  */
 
-import { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
+import type { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
