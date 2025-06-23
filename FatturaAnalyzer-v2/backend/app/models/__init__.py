@@ -275,6 +275,97 @@ class BackgroundTask(BaseModel, BaseConfig):
     error_message: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
 
+# ==================== IMPORT MODELLI INVOICE ====================
+
+# Importa tutti i modelli dalle fatture
+try:
+    from .invoice import (
+        DocumentType, PaymentMethod, VATRegime, InvoiceLineExtended,
+        InvoiceVATSummaryExtended, InvoiceAttachment, InvoicePayment,
+        InvoiceExtended, InvoiceValidation, InvoiceStats, InvoiceSearch,
+        InvoiceBulkOperation, InvoiceTemplate, InvoiceReminder, InvoiceReport,
+        ElectronicInvoiceData
+    )
+    
+    # Alias per compatibilità
+    Invoice = InvoiceExtended
+    InvoiceLine = InvoiceLineExtended
+    InvoiceVATSummary = InvoiceVATSummaryExtended
+    
+except ImportError as e:
+    # Fallback se il modulo invoice non esiste
+    print(f"Warning: Could not import invoice models: {e}")
+    
+    # Definisci modelli base per evitare errori
+    class Invoice(BaseModel, BaseConfig):
+        id: Optional[int] = None
+        doc_number: str
+        doc_date: date
+        total_amount: float
+        type: InvoiceType
+        anagraphics_id: int
+    
+    class InvoiceLine(BaseModel, BaseConfig):
+        id: Optional[int] = None
+        invoice_id: int
+        description: str
+        quantity: float = 1.0
+        unit_price: float
+        total_price: float
+
+# ==================== IMPORT MODELLI TRANSACTION ====================
+
+# Importa modelli transazioni estesi se disponibili
+try:
+    from .transaction import (
+        TransactionType, TransactionCategory, BankAccount, TransactionRule,
+        TransactionBase, TransactionCreate, TransactionUpdate, TransactionFull,
+        TransactionImport, TransactionMatch, TransactionSummary, TransactionAnalytics,
+        TransactionFilter, TransactionBulkOperation, BankStatementImport
+    )
+    
+    # Alias per compatibilità
+    Transaction = TransactionFull
+    
+except ImportError as e:
+    print(f"Warning: Could not import extended transaction models: {e}")
+    # I modelli base sono già definiti sopra
+
+# ==================== IMPORT MODELLI ANAGRAPHICS ====================
+
+# Importa modelli anagrafiche estesi se disponibili
+try:
+    from .anagraphics import (
+        Anagraphics, AnagraphicsCreate, AnagraphicsUpdate, AnagraphicsListResponse
+    )
+except ImportError as e:
+    print(f"Warning: Could not import anagraphics models: {e}")
+    
+    # Fallback per modelli base anagrafiche
+    class Anagraphics(BaseModel, BaseConfig):
+        id: int
+        type: AnagraphicsType
+        denomination: str
+        piva: Optional[str] = None
+        cf: Optional[str] = None
+        created_at: datetime
+        updated_at: datetime
+    
+    class AnagraphicsCreate(BaseModel, BaseConfig):
+        type: AnagraphicsType
+        denomination: str
+        piva: Optional[str] = None
+        cf: Optional[str] = None
+    
+    class AnagraphicsUpdate(BaseModel, BaseConfig):
+        type: Optional[AnagraphicsType] = None
+        denomination: Optional[str] = None
+        piva: Optional[str] = None
+        cf: Optional[str] = None
+    
+    class AnagraphicsListResponse(PaginatedResponse):
+        items: List[Anagraphics]
+
 # ==================== EXPORTS ====================
 
 __all__ = [
@@ -298,7 +389,7 @@ __all__ = [
     
     # Transactions
     'BankTransactionBase', 'BankTransactionCreate', 'BankTransactionUpdate', 
-    'BankTransaction', 'TransactionListResponse',
+    'BankTransaction', 'TransactionListResponse', 'Transaction',
     
     # Analytics
     'KPIData', 'CashFlowData',
@@ -310,5 +401,15 @@ __all__ = [
     'SearchResult', 'SearchResponse',
     
     # Tasks
-    'BackgroundTask'
+    'BackgroundTask',
+    
+    # Anagraphics
+    'Anagraphics', 'AnagraphicsCreate', 'AnagraphicsUpdate', 'AnagraphicsListResponse',
+    
+    # Invoices
+    'Invoice', 'InvoiceExtended', 'InvoiceLine', 'InvoiceLineExtended',
+    'InvoiceVATSummary', 'InvoiceVATSummaryExtended', 'InvoiceAttachment',
+    'InvoicePayment', 'InvoiceValidation', 'InvoiceStats', 'InvoiceSearch',
+    'InvoiceBulkOperation', 'InvoiceTemplate', 'InvoiceReminder', 'InvoiceReport',
+    'ElectronicInvoiceData', 'DocumentType', 'PaymentMethod', 'VATRegime'
 ]
