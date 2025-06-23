@@ -1,31 +1,35 @@
 """
-Modelli base per FastAPI - VERSIONE COMPLETA E FINALE
-File: app/models/__init__.py
+Pydantic models for FastAPI request/response validation
 """
-from typing import Optional, Any, Dict, List
-from enum import Enum
-from datetime import datetime, date
-from pydantic import BaseModel, ConfigDict, Field, validator
 
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Optional, List, Dict, Any, Union
+from enum import Enum
+
+from pydantic import BaseModel, Field, ConfigDict, validator
+
+
+# Base configuration for all models
 class BaseConfig:
-    """Configurazione base per tutti i modelli Pydantic"""
     model_config = ConfigDict(
         from_attributes=True,
         use_enum_values=True,
         validate_assignment=True,
-        str_strip_whitespace=True,
-        arbitrary_types_allowed=True
+        str_strip_whitespace=True
     )
 
-# ==================== ENUMS BASE ====================
 
+# Enums for type safety
 class AnagraphicsType(str, Enum):
     CLIENTE = "Cliente"
     FORNITORE = "Fornitore"
 
+
 class InvoiceType(str, Enum):
     ATTIVA = "Attiva"
     PASSIVA = "Passiva"
+
 
 class PaymentStatus(str, Enum):
     APERTA = "Aperta"
@@ -35,6 +39,7 @@ class PaymentStatus(str, Enum):
     INSOLUTA = "Insoluta"
     RICONCILIATA = "Riconciliata"
 
+
 class ReconciliationStatus(str, Enum):
     DA_RICONCILIARE = "Da Riconciliare"
     RICONCILIATO_PARZ = "Riconciliato Parz."
@@ -42,39 +47,342 @@ class ReconciliationStatus(str, Enum):
     RICONCILIATO_ECCESSO = "Riconciliato Eccesso"
     IGNORATO = "Ignorato"
 
-# ==================== RESPONSE MODELS ====================
 
-class APIResponse(BaseModel, BaseConfig):
-    """Response model standard per tutte le API"""
-    success: bool
-    message: str
-    data: Optional[Any] = None
-    timestamp: datetime = Field(default_factory=datetime.now)
+# Anagraphics Models
+class AnagraphicsBase(BaseModel, BaseConfig):
+    type: AnagraphicsType
+    piva: Optional[str] = Field(None, max_length=20, description="Partita IVA")
+    cf: Optional[str] = Field(None, max_length=16, description="Codice Fiscale")
+    denomination: str = Field(..., min_length=1, max_length=200, description="Denominazione")
+    address: Optional[str] = Field(None, max_length=200)
+    cap: Optional[str] = Field(None, max_length=10)
+    city: Optional[str] = Field(None, max_length=100)
+    province: Optional[str] = Field(None, max_length=5)
+    country: str = Field(default="IT", max_length=5)
+    iban: Optional[str] = Field(None, max_length=34)
+    email: Optional[str] = Field(None, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    pec: Optional[str] = Field(None, max_length=100)
+    codice_destinatario: Optional[str] = Field(None, max_length=10)
 
-class ErrorResponse(BaseModel, BaseConfig):
-    """Response model per errori"""
-    success: bool = False
-    error: str
-    message: str
-    timestamp: datetime = Field(default_factory=datetime.now)
-    details: Optional[Dict[str, Any]] = None
+    @validator('piva')
+    def validate_piva(cls, v):
+        if v and len(v) < 5:
+            raise ValueError('Partita IVA must be at least 5 characters')
+        return v
 
-class PaginatedResponse(BaseModel, BaseConfig):
-    """Response model per liste paginate"""
-    items: List[Any]
-    total: int
-    page: int
+    @validator('cf')
+    def validate_cf(cls, v):
+        if v and len(v) < 10:
+            raise ValueError('Codice Fiscale must be at least 10 characters')
+        return v
+
+
+class AnagraphicsCreate(AnagraphicsBase):
+    pass
+
+
+class AnagraphicsUpdate(BaseModel, BaseConfig):
+    type: Optional[AnagraphicsType] = None
+    piva: Optional[str] = None
+    cf: Optional[str] = None
+    denomination: Optional[str] = None
+    address: Optional[str] = None
+    cap: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    country: Optional[str] = None
+    iban: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    pec: Optional[str] = None
+    codice_destinatario: Optional[str] = None
+
+
+class Anagraphics(AnagraphicsBase):
+    id: int
+    score: float = Field(default=100.0, ge=0, le=100)
+    created_at: datetime
+    updated_at: datetime
+
+
+# Invoice Models
+class InvoiceLineBase(BaseModel, BaseConfig):
+    line_number: int = Field(..., ge=1)
+    description: Optional[str] = Field(None, max_length=500)
+    quantity: Optional[float] = Field(None, ge=0)
+    unit_measure: Optional[str] = Field(None, max_length=20)
+    unit_price: Optional[float] = Field(None, ge=0)
+    total_price: float = Field(..., ge=0)
+    vat_rate: float = Field(..., ge=0, le=100)
+    item_code: Optional[str] = Field(None, max_length=50)
+    item_type: Optional[str] = Field(None, max_length=50)
+
+
+class InvoiceLineCreate(InvoiceLineBase):
+    pass
+
+
+class InvoiceLine(InvoiceLineBase):
+    id: int
+    invoice_id: int
+
+
+class InvoiceVATSummaryBase(BaseModel, BaseConfig):
+    vat_rate: float = Field(..., ge=0, le=100)
+    taxable_amount: float = Field(..., ge=0)
+    vat_amount: float = Field(..., ge=0)
+
+
+class InvoiceVATSummaryCreate(InvoiceVATSummaryBase):
+    pass
+
+
+class InvoiceVATSummary(InvoiceVATSummaryBase):
+    id: int
+    invoice_id: int
+
+
+class InvoiceBase(BaseModel, BaseConfig):
+    anagraphics_id: int = Field(..., gt=0)
+    type: InvoiceType
+    doc_type: Optional[str] = Field(None, max_length=10)
+    doc_number: str = Field(..., min_length=1, max_length=50)
+    doc_date: date
+    total_amount: float = Field(..., ge=0)
+    due_date: Optional[date] = None
+    payment_method: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = Field(None, max_length=1000)
+    xml_filename: Optional[str] = Field(None, max_length=200)
+    p7m_source_file: Optional[str] = Field(None, max_length=200)
+
+
+class InvoiceCreate(InvoiceBase):
+    lines: Optional[List[InvoiceLineCreate]] = []
+    vat_summary: Optional[List[InvoiceVATSummaryCreate]] = []
+
+
+class InvoiceUpdate(BaseModel, BaseConfig):
+    anagraphics_id: Optional[int] = None
+    type: Optional[InvoiceType] = None
+    doc_type: Optional[str] = None
+    doc_number: Optional[str] = None
+    doc_date: Optional[date] = None
+    total_amount: Optional[float] = None
+    due_date: Optional[date] = None
+    payment_status: Optional[PaymentStatus] = None
+    paid_amount: Optional[float] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class Invoice(InvoiceBase):
+    id: int
+    payment_status: PaymentStatus = PaymentStatus.APERTA
+    paid_amount: float = Field(default=0.0, ge=0)
+    unique_hash: str
+    created_at: datetime
+    updated_at: datetime
+    
+    # Computed fields
+    open_amount: Optional[float] = None
+    counterparty_name: Optional[str] = None
+    
+    # Relations
+    lines: List[InvoiceLine] = []
+    vat_summary: List[InvoiceVATSummary] = []
+
+
+# Transaction Models
+class BankTransactionBase(BaseModel, BaseConfig):
+    transaction_date: date
+    value_date: Optional[date] = None
+    amount: float = Field(..., description="Transaction amount (positive for income, negative for expense)")
+    description: Optional[str] = Field(None, max_length=500)
+    causale_abi: Optional[int] = Field(None, ge=0)
+
+
+class BankTransactionCreate(BankTransactionBase):
+    unique_hash: str = Field(..., min_length=1, max_length=100)
+
+
+class BankTransactionUpdate(BaseModel, BaseConfig):
+    transaction_date: Optional[date] = None
+    value_date: Optional[date] = None
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    causale_abi: Optional[int] = None
+    reconciliation_status: Optional[ReconciliationStatus] = None
+    reconciled_amount: Optional[float] = None
+
+
+class BankTransaction(BankTransactionBase):
+    id: int
+    reconciliation_status: ReconciliationStatus = ReconciliationStatus.DA_RICONCILIARE
+    reconciled_amount: float = Field(default=0.0, ge=0)
+    unique_hash: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    # Computed fields
+    remaining_amount: Optional[float] = None
+
+
+# Reconciliation Models
+class ReconciliationLinkBase(BaseModel, BaseConfig):
+    transaction_id: int = Field(..., gt=0)
+    invoice_id: int = Field(..., gt=0)
+    reconciled_amount: float = Field(..., gt=0)
+    notes: Optional[str] = Field(None, max_length=500)
+
+
+class ReconciliationLinkCreate(ReconciliationLinkBase):
+    pass
+
+
+class ReconciliationLink(ReconciliationLinkBase):
+    id: int
+    reconciliation_date: datetime
+    created_at: datetime
+
+
+class ReconciliationSuggestion(BaseModel, BaseConfig):
+    confidence: str = Field(..., description="Alta, Media, Bassa")
+    confidence_score: float = Field(..., ge=0, le=1)
+    invoice_ids: List[int]
+    transaction_ids: Optional[List[int]] = None
+    description: str
+    total_amount: float
+    match_details: Optional[Dict[str, Any]] = None
+    reasons: Optional[List[str]] = []
+
+
+class ReconciliationRequest(BaseModel, BaseConfig):
+    invoice_id: int = Field(..., gt=0)
+    transaction_id: int = Field(..., gt=0)
+    amount: float = Field(..., gt=0)
+
+
+class ReconciliationBatchRequest(BaseModel, BaseConfig):
+    invoice_ids: List[int] = Field(..., min_items=1)
+    transaction_ids: List[int] = Field(..., min_items=1)
+
+
+# Analytics Models
+class KPIData(BaseModel, BaseConfig):
+    total_receivables: float
+    total_payables: float
+    overdue_receivables_count: int
+    overdue_receivables_amount: float
+    overdue_payables_count: int
+    overdue_payables_amount: float
+    revenue_ytd: float
+    revenue_prev_year_ytd: float
+    revenue_yoy_change_ytd: Optional[float] = None
+    gross_margin_ytd: float
+    margin_percent_ytd: Optional[float] = None
+    avg_days_to_payment: Optional[float] = None
+    inventory_turnover_estimate: Optional[float] = None
+    active_customers_month: int
+    new_customers_month: int
+
+
+class CashFlowData(BaseModel, BaseConfig):
+    month: str
+    incassi_clienti: float
+    incassi_contanti: float
+    altri_incassi: float
+    pagamenti_fornitori: float
+    spese_carte: float
+    carburanti: float
+    trasporti: float
+    utenze: float
+    tasse_tributi: float
+    commissioni_bancarie: float
+    altri_pagamenti: float
+    net_operational_flow: float
+    total_inflows: float
+    total_outflows: float
+    net_cash_flow: float
+
+
+class MonthlyRevenueData(BaseModel, BaseConfig):
+    month: str
+    revenue: float
+    cost: float
+    gross_margin: float
+    margin_percent: float
+
+
+class TopClientData(BaseModel, BaseConfig):
+    id: int
+    denomination: str
+    total_revenue: float
+    num_invoices: int
+    score: float
+    avg_order_value: float
+    last_order_date: Optional[date] = None
+
+
+class ProductAnalysisData(BaseModel, BaseConfig):
+    normalized_product: str
+    total_quantity: float
+    total_value: float
+    num_invoices: int
+    avg_unit_price: float
+    original_descriptions: List[str]
+
+
+class AgingBucket(BaseModel, BaseConfig):
+    label: str
+    amount: float
+    count: int
+
+
+class AgingSummary(BaseModel, BaseConfig):
+    buckets: List[AgingBucket]
+    total_amount: float
+    total_count: int
+
+
+# Import/Export Models
+class ImportResult(BaseModel, BaseConfig):
+    processed: int
+    success: int
+    duplicates: int
+    errors: int
+    unsupported: int
+    files: List[Dict[str, str]]
+
+
+class FileUploadResponse(BaseModel, BaseConfig):
+    filename: str
     size: int
-    pages: int
-    success: bool = True
-    message: str = "Data retrieved successfully"
+    content_type: str
+    status: str
+    message: Optional[str] = None
 
-# ==================== UTILITY MODELS ====================
 
+# Cloud Sync Models
+class SyncStatus(BaseModel, BaseConfig):
+    enabled: bool
+    service_available: bool
+    remote_file_id: Optional[str] = None
+    last_sync_time: Optional[datetime] = None
+    auto_sync_running: bool
+
+
+class SyncResult(BaseModel, BaseConfig):
+    success: bool
+    action: Optional[str] = None
+    message: str
+    timestamp: datetime
+
+
+# Filter and Pagination Models
 class PaginationParams(BaseModel, BaseConfig):
-    """Parametri di paginazione"""
-    page: int = Field(default=1, ge=1, description="Page number")
-    size: int = Field(default=50, ge=1, le=1000, description="Page size")
+    page: int = Field(default=1, ge=1)
+    size: int = Field(default=50, ge=1, le=1000)
     
     @property
     def offset(self) -> int:
@@ -84,369 +392,170 @@ class PaginationParams(BaseModel, BaseConfig):
     def limit(self) -> int:
         return self.size
 
+
 class DateRangeFilter(BaseModel, BaseConfig):
-    """Filtro per range di date"""
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     
-    def validate_date_range(self):
-        if self.start_date and self.end_date and self.start_date > self.end_date:
-            raise ValueError("start_date must be before end_date")
+    @validator('end_date')
+    def end_date_must_be_after_start_date(cls, v, values):
+        if v and values.get('start_date') and v < values['start_date']:
+            raise ValueError('end_date must be after start_date')
+        return v
 
-# ==================== IMPORT/EXPORT MODELS ====================
 
-class ImportResult(BaseModel, BaseConfig):
-    """Risultato operazione di import"""
-    processed: int = 0
-    success: int = 0
-    duplicates: int = 0
-    errors: int = 0
-    unsupported: int = 0
-    files: List[Dict[str, Any]] = Field(default_factory=list)
-    import_time: Optional[datetime] = Field(default_factory=datetime.now)
-    summary: Optional[str] = None
+class AnagraphicsFilter(BaseModel, BaseConfig):
+    type: Optional[AnagraphicsType] = None
+    search: Optional[str] = Field(None, max_length=100)
+    city: Optional[str] = Field(None, max_length=100)
+    province: Optional[str] = Field(None, max_length=5)
 
-class FileUploadResponse(BaseModel, BaseConfig):
-    """Response per upload file"""
-    filename: str
+
+class InvoiceFilter(BaseModel, BaseConfig):
+    type: Optional[InvoiceType] = None
+    status: Optional[PaymentStatus] = None
+    anagraphics_id: Optional[int] = None
+    search: Optional[str] = Field(None, max_length=100)
+    date_range: Optional[DateRangeFilter] = None
+    min_amount: Optional[float] = Field(None, ge=0)
+    max_amount: Optional[float] = Field(None, ge=0)
+
+
+class TransactionFilter(BaseModel, BaseConfig):
+    status: Optional[ReconciliationStatus] = None
+    search: Optional[str] = Field(None, max_length=100)
+    date_range: Optional[DateRangeFilter] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None
+    anagraphics_id_heuristic: Optional[int] = None
+    hide_pos: bool = False
+    hide_worldline: bool = False
+    hide_cash: bool = False
+    hide_commissions: bool = False
+
+
+# Response Models with Pagination
+class PaginatedResponse(BaseModel, BaseConfig):
+    items: List[Any]
+    total: int
+    page: int
     size: int
-    content_type: str
-    status: str
-    message: Optional[str] = None
-    file_id: Optional[str] = None
+    pages: int
 
-# ==================== SYNC MODELS ====================
 
-class SyncStatus(BaseModel, BaseConfig):
-    """Status sincronizzazione cloud"""
-    enabled: bool
-    service_available: bool
-    remote_file_id: Optional[str] = None
-    last_sync_time: Optional[datetime] = None
-    auto_sync_running: bool = False
-    sync_interval: Optional[int] = None
-    next_sync_time: Optional[datetime] = None
+class AnagraphicsListResponse(BaseModel, BaseConfig):
+    items: List[Anagraphics]
+    total: int
+    page: int
+    size: int
+    pages: int
 
-class SyncResult(BaseModel, BaseConfig):
-    """Risultato operazione di sync"""
+
+class InvoiceListResponse(BaseModel, BaseConfig):
+    items: List[Invoice]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+
+class TransactionListResponse(BaseModel, BaseConfig):
+    items: List[BankTransaction]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+
+# API Response Models
+class APIResponse(BaseModel, BaseConfig):
     success: bool
-    action: Optional[str] = None
+    message: str
+    data: Optional[Any] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
+class ErrorResponse(BaseModel, BaseConfig):
+    success: bool = False
+    error: str
     message: str
     timestamp: datetime = Field(default_factory=datetime.now)
-    file_size: Optional[int] = None
-    duration_ms: Optional[int] = None
-    sync_direction: Optional[str] = None
 
-# ==================== TRANSACTION MODELS BASE ====================
 
-class BankTransactionBase(BaseModel, BaseConfig):
-    """Modello base per transazioni bancarie"""
-    transaction_date: date = Field(..., description="Data operazione")
-    value_date: Optional[date] = Field(None, description="Data valuta")
-    amount: float = Field(..., description="Importo (positivo=entrata, negativo=uscita)")
-    description: Optional[str] = Field(None, max_length=500, description="Descrizione")
-    causale_abi: Optional[int] = Field(None, ge=0, description="Codice causale ABI")
+# Dashboard Models
+class DashboardKPIs(BaseModel, BaseConfig):
+    # Financial KPIs
+    total_receivables: float = Field(description="Total amount receivable")
+    total_payables: float = Field(description="Total amount payable")
+    overdue_receivables_amount: float = Field(description="Overdue receivables amount")
+    overdue_receivables_count: int = Field(description="Number of overdue receivables")
+    overdue_payables_amount: float = Field(description="Overdue payables amount")
+    overdue_payables_count: int = Field(description="Number of overdue payables")
+    
+    # Revenue KPIs
+    revenue_ytd: float = Field(description="Revenue year-to-date")
+    revenue_prev_year_ytd: float = Field(description="Revenue previous year YTD")
+    revenue_yoy_change_ytd: Optional[float] = Field(None, description="YoY revenue change percentage")
+    gross_margin_ytd: float = Field(description="Gross margin YTD")
+    margin_percent_ytd: Optional[float] = Field(None, description="Margin percentage YTD")
+    
+    # Operational KPIs
+    avg_days_to_payment: Optional[float] = Field(None, description="Average days to payment")
+    inventory_turnover_estimate: Optional[float] = Field(None, description="Estimated inventory turnover")
+    active_customers_month: int = Field(description="Active customers this month")
+    new_customers_month: int = Field(description="New customers this month")
 
-class BankTransactionCreate(BankTransactionBase):
-    """Modello per creazione transazione"""
-    unique_hash: str = Field(..., min_length=1, max_length=100, description="Hash univoco")
 
-class BankTransactionUpdate(BaseModel, BaseConfig):
-    """Modello per aggiornamento transazione"""
-    transaction_date: Optional[date] = None
-    value_date: Optional[date] = None
-    amount: Optional[float] = None
-    description: Optional[str] = None
-    causale_abi: Optional[int] = None
-    reconciliation_status: Optional[ReconciliationStatus] = None
-    reconciled_amount: Optional[float] = None
+class DashboardData(BaseModel, BaseConfig):
+    kpis: DashboardKPIs
+    recent_invoices: List[Invoice]
+    recent_transactions: List[BankTransaction]
+    cash_flow_summary: List[CashFlowData]
+    top_clients: List[TopClientData]
+    overdue_invoices: List[Invoice]
 
-class BankTransaction(BankTransactionBase):
-    """Modello completo transazione"""
-    id: int
-    reconciliation_status: ReconciliationStatus = Field(default=ReconciliationStatus.DA_RICONCILIARE)
-    reconciled_amount: float = Field(default=0.0, ge=0)
-    unique_hash: str
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    remaining_amount: Optional[float] = Field(None, description="Importo rimanente")
-    is_fully_reconciled: Optional[bool] = Field(None, description="Completamente riconciliata")
 
-class TransactionListResponse(PaginatedResponse):
-    """Response per lista transazioni"""
-    items: List[BankTransaction]
-
-# ==================== ANALYTICS MODELS ====================
-
-class KPIData(BaseModel, BaseConfig):
-    """Dati KPI dashboard"""
-    total_receivables: float = 0.0
-    total_payables: float = 0.0
-    overdue_receivables_count: int = 0
-    overdue_receivables_amount: float = 0.0
-    overdue_payables_count: int = 0
-    overdue_payables_amount: float = 0.0
-    revenue_ytd: float = 0.0
-    revenue_prev_year_ytd: float = 0.0
-    revenue_yoy_change_ytd: Optional[float] = None
-    gross_margin_ytd: float = 0.0
-    margin_percent_ytd: Optional[float] = None
-    avg_days_to_payment: Optional[float] = None
-    inventory_turnover_estimate: Optional[float] = None
-    active_customers_month: int = 0
-    new_customers_month: int = 0
-
-class CashFlowData(BaseModel, BaseConfig):
-    """Dati cash flow mensile"""
-    month: str
-    incassi_clienti: float = 0.0
-    incassi_contanti: float = 0.0
-    altri_incassi: float = 0.0
-    pagamenti_fornitori: float = 0.0
-    spese_carte: float = 0.0
-    carburanti: float = 0.0
-    trasporti: float = 0.0
-    utenze: float = 0.0
-    tasse_tributi: float = 0.0
-    commissioni_bancarie: float = 0.0
-    altri_pagamenti: float = 0.0
-    net_operational_flow: float = 0.0
-    total_inflows: float = 0.0
-    total_outflows: float = 0.0
-    net_cash_flow: float = 0.0
-
-# ==================== HEALTH CHECK MODELS ====================
-
-class HealthStatus(BaseModel, BaseConfig):
-    """Status di salute del sistema"""
-    status: str  # healthy, degraded, unhealthy
-    timestamp: datetime = Field(default_factory=datetime.now)
-    version: str = "4.0.0"
-    adapter_version: str = "4.0"
-    database_connection: bool = True
-    cache_status: bool = True
-    external_services: Dict[str, bool] = Field(default_factory=dict)
-    performance_metrics: Optional[Dict[str, Any]] = None
-
-class SystemMetrics(BaseModel, BaseConfig):
-    """Metriche di sistema"""
-    uptime_seconds: int
-    memory_usage_mb: float
-    cpu_usage_percent: float
-    active_connections: int
-    cache_hit_rate: float
-    average_response_time_ms: float
-    requests_per_minute: int
-    error_rate_percent: float
-
-# ==================== SEARCH MODELS ====================
-
+# Search Models
 class SearchResult(BaseModel, BaseConfig):
-    """Risultato ricerca"""
-    type: str = Field(description="Tipo risultato: invoice, transaction, anagraphics")
+    type: str = Field(description="Type of result: invoice, transaction, anagraphics")
     id: int
     title: str
     subtitle: str
     amount: Optional[float] = None
     date: Optional[date] = None
     status: Optional[str] = None
-    relevance_score: Optional[float] = None
+
 
 class SearchResponse(BaseModel, BaseConfig):
-    """Response ricerca"""
     query: str
     results: List[SearchResult]
     total: int
     took_ms: int
-    search_mode: str = "standard"
 
-# ==================== TASK MODELS ====================
 
-class BackgroundTask(BaseModel, BaseConfig):
-    """Task in background"""
-    task_id: str
-    task_type: str
-    status: str  # created, processing, completed, failed
-    progress: int = 0
-    total: int = 0
-    created_at: datetime = Field(default_factory=datetime.now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None
-    result: Optional[Dict[str, Any]] = None
-
-# ==================== IMPORT MODELLI INVOICE ====================
-
-# Importa tutti i modelli dalle fatture
-try:
-    from .invoice import (
-        DocumentType, PaymentMethod, VATRegime, InvoiceLineExtended,
-        InvoiceVATSummaryExtended, InvoiceAttachment, InvoicePayment,
-        InvoiceExtended, InvoiceValidation, InvoiceStats, InvoiceSearch,
-        InvoiceBulkOperation, InvoiceTemplate, InvoiceReminder, InvoiceReport,
-        ElectronicInvoiceData
-    )
-    
-    # Alias per compatibilità
-    Invoice = InvoiceExtended
-    InvoiceLine = InvoiceLineExtended
-    InvoiceVATSummary = InvoiceVATSummaryExtended
-    
-except ImportError as e:
-    # Fallback se il modulo invoice non esiste
-    print(f"Warning: Could not import invoice models: {e}")
-    
-    # Definisci modelli base per evitare errori
-    class Invoice(BaseModel, BaseConfig):
-        id: Optional[int] = None
-        doc_number: str
-        doc_date: date
-        total_amount: float
-        type: InvoiceType
-        anagraphics_id: int
-        payment_status: PaymentStatus = Field(default=PaymentStatus.APERTA)
-        paid_amount: float = Field(default=0.0)
-        due_date: Optional[date] = None
-        notes: Optional[str] = None
-        created_at: Optional[datetime] = None
-        updated_at: Optional[datetime] = None
-        counterparty_name: Optional[str] = None
-        open_amount: Optional[float] = None
-    
-    class InvoiceLine(BaseModel, BaseConfig):
-        id: Optional[int] = None
-        invoice_id: int
-        description: str
-        quantity: float = 1.0
-        unit_price: float
-        total_price: float
-
-# Modelli mancanti richiesti dall'API - SEMPRE DEFINITI
-class InvoiceBase(BaseModel, BaseConfig):
-    """Modello base per fatture"""
-    anagraphics_id: int = Field(..., gt=0, description="ID anagrafica")
-    type: InvoiceType = Field(..., description="Tipo fattura")
-    doc_number: str = Field(..., min_length=1, max_length=50, description="Numero documento")
-    doc_date: date = Field(..., description="Data documento")
-    total_amount: float = Field(..., ge=0, description="Importo totale")
-    payment_status: PaymentStatus = Field(default=PaymentStatus.APERTA, description="Stato pagamento")
-    paid_amount: float = Field(default=0.0, ge=0, description="Importo pagato")
-    due_date: Optional[date] = Field(None, description="Data scadenza")
-    notes: Optional[str] = Field(None, max_length=1000, description="Note")
-
-class InvoiceCreate(InvoiceBase):
-    """Modello per creazione fattura"""
-    pass
-
-class InvoiceUpdate(BaseModel, BaseConfig):
-    """Modello per aggiornamento fattura"""
-    anagraphics_id: Optional[int] = Field(None, gt=0)
-    type: Optional[InvoiceType] = None
-    doc_number: Optional[str] = Field(None, min_length=1, max_length=50)
-    doc_date: Optional[date] = None
-    total_amount: Optional[float] = Field(None, ge=0)
-    payment_status: Optional[PaymentStatus] = None
-    paid_amount: Optional[float] = Field(None, ge=0)
-    due_date: Optional[date] = None
-    notes: Optional[str] = Field(None, max_length=1000)
-
-class InvoiceFilter(BaseModel, BaseConfig):
-    """Filtri per ricerca fatture"""
-    type_filter: Optional[InvoiceType] = Field(None, description="Filtra per tipo fattura")
-    status_filter: Optional[PaymentStatus] = Field(None, description="Filtra per stato pagamento")
-    anagraphics_id: Optional[int] = Field(None, gt=0, description="Filtra per ID anagrafica")
-    search: Optional[str] = Field(None, min_length=2, max_length=200, description="Ricerca in numero documento o nome")
-    start_date: Optional[date] = Field(None, description="Data inizio periodo")
-    end_date: Optional[date] = Field(None, description="Data fine periodo")
-    min_amount: Optional[float] = Field(None, ge=0, description="Importo minimo")
-    max_amount: Optional[float] = Field(None, ge=0, description="Importo massimo")
-    overdue_only: Optional[bool] = Field(False, description="Solo fatture scadute")
-    paid_only: Optional[bool] = Field(False, description="Solo fatture pagate")
-    unpaid_only: Optional[bool] = Field(False, description="Solo fatture non pagate")
-
-    @validator('end_date')
-    def end_date_after_start(cls, v, values):
-        if v and values.get('start_date') and v < values['start_date']:
-            raise ValueError('end_date must be after start_date')
-        return v
-
-    @validator('max_amount')
-    def max_amount_greater_than_min(cls, v, values):
-        if v and values.get('min_amount') and v < values['min_amount']:
-            raise ValueError('max_amount must be greater than min_amount')
-        return v
-
-class InvoiceListResponse(PaginatedResponse):
-    """Response per lista fatture"""
-    items: List[Invoice]
-
-# ==================== IMPORT MODELLI TRANSACTION ====================
-
-# Importa modelli transazioni estesi se disponibili
-try:
-    from .transaction import (
-        TransactionType, TransactionCategory, BankAccount, TransactionRule,
-        TransactionBase, TransactionCreate, TransactionUpdate, TransactionFull,
-        TransactionImport, TransactionMatch, TransactionSummary, TransactionAnalytics,
-        TransactionFilter, TransactionBulkOperation, BankStatementImport
-    )
-    
-    # Alias per compatibilità
-    Transaction = TransactionFull
-    
-except ImportError as e:
-    print(f"Warning: Could not import extended transaction models: {e}")
-    # I modelli base sono già definiti sopra
-
-# ==================== IMPORT MODELLI ANAGRAPHICS ====================
-
-# Importa modelli anagrafiche estesi se disponibili
-try:
-    from .anagraphics import (
-        Anagraphics, AnagraphicsCreate, AnagraphicsUpdate, AnagraphicsListResponse
-    )
-except ImportError as e:
-    print(f"Warning: Could not import anagraphics models: {e}")
-    
-    # Fallback per modelli base anagrafiche
-    class Anagraphics(BaseModel, BaseConfig):
-        id: int
-        type: AnagraphicsType
-        denomination: str
-        piva: Optional[str] = None
-        cf: Optional[str] = None
-        created_at: datetime
-        updated_at: datetime
-    
-    class AnagraphicsCreate(BaseModel, BaseConfig):
-        type: AnagraphicsType
-        denomination: str
-        piva: Optional[str] = None
-        cf: Optional[str] = None
-    
-    class AnagraphicsUpdate(BaseModel, BaseConfig):
-        type: Optional[AnagraphicsType] = None
-        denomination: Optional[str] = None
-        piva: Optional[str] = None
-        cf: Optional[str] = None
-    
-    class AnagraphicsListResponse(PaginatedResponse):
-        items: List[Anagraphics]
-
-# ==================== EXPORTS ====================
-
+# Export all models
 __all__ = [
-    # Base
-    'BaseConfig',
-    
     # Enums
     'AnagraphicsType', 'InvoiceType', 'PaymentStatus', 'ReconciliationStatus',
     
-    # Response Models
-    'APIResponse', 'ErrorResponse', 'PaginatedResponse',
+    # Anagraphics
+    'AnagraphicsBase', 'AnagraphicsCreate', 'AnagraphicsUpdate', 'Anagraphics',
     
-    # Utility Models
-    'PaginationParams', 'DateRangeFilter',
+    # Invoices
+    'InvoiceLineBase', 'InvoiceLineCreate', 'InvoiceLine',
+    'InvoiceVATSummaryBase', 'InvoiceVATSummaryCreate', 'InvoiceVATSummary',
+    'InvoiceBase', 'InvoiceCreate', 'InvoiceUpdate', 'Invoice',
+    
+    # Transactions
+    'BankTransactionBase', 'BankTransactionCreate', 'BankTransactionUpdate', 'BankTransaction',
+    
+    # Reconciliation
+    'ReconciliationLinkBase', 'ReconciliationLinkCreate', 'ReconciliationLink',
+    'ReconciliationSuggestion', 'ReconciliationRequest', 'ReconciliationBatchRequest',
+    
+    # Analytics
+    'KPIData', 'CashFlowData', 'MonthlyRevenueData', 'TopClientData', 'ProductAnalysisData',
+    'AgingBucket', 'AgingSummary',
     
     # Import/Export
     'ImportResult', 'FileUploadResponse',
@@ -454,30 +563,16 @@ __all__ = [
     # Sync
     'SyncStatus', 'SyncResult',
     
-    # Transactions
-    'BankTransactionBase', 'BankTransactionCreate', 'BankTransactionUpdate', 
-    'BankTransaction', 'TransactionListResponse', 'Transaction',
+    # Filters and Pagination
+    'PaginationParams', 'DateRangeFilter', 'AnagraphicsFilter', 'InvoiceFilter', 'TransactionFilter',
     
-    # Analytics
-    'KPIData', 'CashFlowData',
+    # Responses
+    'PaginatedResponse', 'AnagraphicsListResponse', 'InvoiceListResponse', 'TransactionListResponse',
+    'APIResponse', 'ErrorResponse',
     
-    # Health & Metrics
-    'HealthStatus', 'SystemMetrics',
+    # Dashboard
+    'DashboardKPIs', 'DashboardData',
     
     # Search
-    'SearchResult', 'SearchResponse',
-    
-    # Tasks
-    'BackgroundTask',
-    
-    # Anagraphics
-    'Anagraphics', 'AnagraphicsCreate', 'AnagraphicsUpdate', 'AnagraphicsListResponse',
-    
-    # Invoices - TUTTI I MODELLI RICHIESTI
-    'Invoice', 'InvoiceBase', 'InvoiceCreate', 'InvoiceUpdate', 'InvoiceFilter',
-    'InvoiceListResponse', 'InvoiceExtended', 'InvoiceLine', 'InvoiceLineExtended',
-    'InvoiceVATSummary', 'InvoiceVATSummaryExtended', 'InvoiceAttachment',
-    'InvoicePayment', 'InvoiceValidation', 'InvoiceStats', 'InvoiceSearch',
-    'InvoiceBulkOperation', 'InvoiceTemplate', 'InvoiceReminder', 'InvoiceReport',
-    'ElectronicInvoiceData', 'DocumentType', 'PaymentMethod', 'VATRegime'
+    'SearchResult', 'SearchResponse'
 ]
