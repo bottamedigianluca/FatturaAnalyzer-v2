@@ -338,7 +338,7 @@ async def get_executive_dashboard_ultra(
                 )
         
         # Usa l'adapter per dashboard potenziata
-        enhanced_dashboard = await analytics_adapter.get_enhanced_dashboard_async()
+        enhanced_dashboard = await analytics_adapter.get_dashboard_kpis_async()
         
         # Aggiungi AI insights se richiesto
         if include_ai_insights:
