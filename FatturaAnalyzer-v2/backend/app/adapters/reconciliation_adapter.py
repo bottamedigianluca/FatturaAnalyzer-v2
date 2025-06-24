@@ -36,6 +36,20 @@ warnings.filterwarnings('ignore')
 
 # Core imports dal sistema esistente
 try:
+    from app.core.reconciliation import *
+    CORE_RECONCILIATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Core reconciliation not available: {e}")
+    CORE_RECONCILIATION_AVAILABLE = False
+    # Implementare stubs
+
+try:
+    from app.core.smart_client_reconciliation import *
+    SMART_RECONCILIATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Smart reconciliation not available: {e}")
+    SMART_RECONCILIATION_AVAILABLE = False
+try:
     from app.core.reconciliation import (
         # Core functions V2 ultra-ottimizzate
         suggest_reconciliation_matches_enhanced,
@@ -1211,6 +1225,9 @@ class BatchOperationsProcessor:
         self.processing_stats = defaultdict(int)
         self.active_tasks = {}
         self._lock = threading.RLock()
+
+    async def process_suggestions_batch(self, requests: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
+    pass
         
     async def process_suggestions_batch(self, requests: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
         """Process multiple suggestion requests in optimized batches"""
@@ -1801,6 +1818,11 @@ class ReconciliationAdapterV4:
         self.request_patterns = defaultdict(int)
         
         logger.info(f"ReconciliationAdapter V4.0 initialized with features: {self.feature_flags}")
+
+    async def get_comprehensive_performance_async(self) -> Dict[str, Any]:
+    """ESISTE MA NOME SBAGLIATO - dovrebbe essere get_adapter_performance_metrics_async"""
+    # Rename o alias
+    pass
 
     @performance_tracked_recon_v4("get_smart_suggestions")
     async def get_smart_suggestions_async(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
