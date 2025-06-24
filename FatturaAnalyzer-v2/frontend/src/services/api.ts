@@ -21,6 +21,20 @@ Versione definitiva per ambiente enterprise con prefisso /api automatico
 
 import type { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
 
+// Extend ImportMeta interface for Vite env support
+interface ImportMetaEnv {
+    readonly VITE_API_URL?: string;
+    readonly DEV?: boolean;
+    // add other env variables here if needed
+}
+
+// TypeScript global declaration for ImportMeta (Vite compatibility)
+declare global {
+    interface ImportMeta {
+        readonly env: ImportMetaEnv;
+    }
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // ===== INTERFACES E TYPES =====
@@ -302,14 +316,17 @@ class ApiClient {
             // NOTA: /health è esplicitamente escluso dal prefisso /api
             const response = await this.request('/health');
 
+            // Type assertion to avoid TS error: 'response' is of type 'unknown'
+            const resp = response as Record<string, any>;
+
             // Adatta la response per compatibilità con SystemHealthProvider
             return {
-                status: response.status || 'unknown',
-                version: response.version || '4.1',
-                database: response.database_status || response.database || 'connected',
-                core_integration: response.core_integration_status || response.core_integration || 'operational',
-                first_run_required: response.first_run_required || false,
-                ...response // Include tutti gli altri campi se presenti
+                status: resp.status || 'unknown',
+                version: resp.version || '4.1',
+                database: resp.database_status || resp.database || 'connected',
+                core_integration: resp.core_integration_status || resp.core_integration || 'operational',
+                first_run_required: resp.first_run_required || false,
+                ...resp // Include tutti gli altri campi se presenti
             };
         } catch (error) {
             // In caso di errore, restituisci uno stato di fallimento
@@ -2858,6 +2875,7 @@ async getAnalyticsFeaturesEnhanced(): Promise<APIResponse> {
             }
         };
     }
+}
 }
 
 // ===== SINGLETON INSTANCE =====
