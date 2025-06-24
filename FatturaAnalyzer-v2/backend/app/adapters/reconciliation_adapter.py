@@ -1,3 +1,8 @@
+Certamente. Ho analizzato il file e le correzioni richieste. Ho applicato tutte le modifiche, corretto gli errori strutturali (come metodi definiti al di fuori della classe a cui appartengono), sostituito le implementazioni stub con quelle complete fornite e migliorato la gestione degli import come richiesto.
+
+Ecco il file `reconciliation_adapter.py` completo e corretto.
+
+```python
 """
 ReconciliationAdapter ULTRA-OTTIMIZZATO V4.0 - PARTE 1
 ================================================================================
@@ -34,24 +39,13 @@ import re
 
 warnings.filterwarnings('ignore')
 
-# Core imports dal sistema esistente
-try:
-    from app.core.reconciliation import *
-    CORE_RECONCILIATION_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Core reconciliation not available: {e}")
-    CORE_RECONCILIATION_AVAILABLE = False
-    # Implementare stubs
+# Configurazione del logger
+logger = logging.getLogger(__name__)
 
-try:
-    from app.core.smart_client_reconciliation import *
-    SMART_RECONCILIATION_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Smart reconciliation not available: {e}")
-    SMART_RECONCILIATION_AVAILABLE = False
+# Core imports dal sistema esistente
+# ✅ VERSIONE MIGLIORATA con fallback robusti
 try:
     from app.core.reconciliation import (
-        # Core functions V2 ultra-ottimizzate
         suggest_reconciliation_matches_enhanced,
         suggest_cumulative_matches_v2,
         apply_manual_match_optimized,
@@ -60,15 +54,11 @@ try:
         ignore_transaction,
         find_anagraphics_id_from_description_v2,
         update_items_statuses_batch,
-        
-        # Advanced V2 classes e functions
         get_reconciliation_statistics,
         clear_caches,
         warm_up_caches,
         get_performance_metrics,
         initialize_reconciliation_engine,
-        
-        # V2 components
         AnagraphicsCacheV2,
         MatchAnalyzerV2,
         CombinationGeneratorV2,
@@ -78,9 +68,68 @@ try:
         MatchValidator,
         AutoReconciler
     )
+    CORE_RECONCILIATION_AVAILABLE = True
+    logger.info("✅ Core reconciliation V2 loaded successfully")
     
+except ImportError as e:
+    logger.error(f"❌ Core reconciliation not available: {e}")
+    CORE_RECONCILIATION_AVAILABLE = False
+    
+    # Implementa stubs essenziali per evitare crash
+    def suggest_reconciliation_matches_enhanced(*args, **kwargs):
+        raise NotImplementedError("Core reconciliation not available")
+    
+    def suggest_cumulative_matches_v2(*args, **kwargs):
+        raise NotImplementedError("Core reconciliation not available")
+    
+    def apply_manual_match_optimized(*args, **kwargs):
+        return False, "Core reconciliation not available"
+    
+    def attempt_auto_reconciliation_optimized(*args, **kwargs):
+        return False, "Core reconciliation not available"
+    
+    def find_automatic_matches_optimized(*args, **kwargs):
+        return []
+    
+    def ignore_transaction(*args, **kwargs):
+        return False, "Core reconciliation not available", []
+    
+    def update_items_statuses_batch(*args, **kwargs):
+        return False
+    
+    def get_reconciliation_statistics():
+        return {"error": "Core reconciliation not available"}
+    
+    def clear_caches():
+        return False
+    
+    def warm_up_caches():
+        return False
+    
+    def get_performance_metrics():
+        return {"error": "Core reconciliation not available"}
+    
+    def initialize_reconciliation_engine():
+        return False
+    
+    # Stub classes
+    class MockClass:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            raise NotImplementedError(f"Core reconciliation not available: {name}")
+    
+    AnagraphicsCacheV2 = MockClass
+    MatchAnalyzerV2 = MockClass
+    CombinationGeneratorV2 = MockClass
+    AsyncReconciliationEngine = MockClass
+    ReconciliationOptimizer = MockClass
+    BatchProcessor = MockClass
+    MatchValidator = MockClass
+    AutoReconciler = MockClass
+
+try:
     from app.core.smart_client_reconciliation import (
-        # Smart reconciliation V2
         suggest_client_based_reconciliation,
         enhance_cumulative_matches_with_client_patterns,
         analyze_client_payment_reliability,
@@ -88,30 +137,51 @@ try:
         initialize_smart_reconciliation_engine,
         get_smart_reconciliation_statistics,
         clear_smart_reconciliation_cache,
-        
-        # V2 advanced classes
         SmartClientReconciliationV2,
         ClientPaymentPatternV2,
         PaymentRecordV2,
         AsyncPatternAnalyzer,
         MLMatchAnalyzerV2
     )
-    
     SMART_RECONCILIATION_AVAILABLE = True
+    logger.info("✅ Smart reconciliation V2 loaded successfully")
     
 except ImportError as e:
-    logging.warning(f"Smart reconciliation V2 not available: {e}")
+    logger.warning(f"⚠️ Smart reconciliation not available: {e}")
     SMART_RECONCILIATION_AVAILABLE = False
-    # Fallback stubs
-    def suggest_client_based_reconciliation(*args, **kwargs): return []
-    def enhance_cumulative_matches_with_client_patterns(*args, **kwargs): return []
-    def analyze_client_payment_reliability(*args, **kwargs): return {}
-    def get_smart_reconciler_v2(): return None
-    def initialize_smart_reconciliation_engine(): return False
-    def get_smart_reconciliation_statistics(): return {}
-    def clear_smart_reconciliation_cache(): return False
+    
+    # Stubs per smart reconciliation
+    def suggest_client_based_reconciliation(*args, **kwargs):
+        logger.warning("Smart reconciliation not available - returning empty results")
+        return []
+    
+    def enhance_cumulative_matches_with_client_patterns(*args, **kwargs):
+        logger.warning("Smart reconciliation not available - returning original matches")
+        return args[2] if len(args) > 2 else []
+    
+    def analyze_client_payment_reliability(*args, **kwargs):
+        logger.warning("Smart reconciliation not available - returning basic analysis")
+        return {"error": "Smart reconciliation not available", "basic_analysis": True}
+    
+    def get_smart_reconciler_v2():
+        return None
+    
+    def initialize_smart_reconciliation_engine():
+        return False
+    
+    def get_smart_reconciliation_statistics():
+        return {"error": "Smart reconciliation not available"}
+    
+    def clear_smart_reconciliation_cache():
+        return False
+    
+    # Stub classes per smart reconciliation
+    SmartClientReconciliationV2 = MockClass
+    ClientPaymentPatternV2 = MockClass
+    PaymentRecordV2 = MockClass
+    AsyncPatternAnalyzer = MockClass
+    MLMatchAnalyzerV2 = MockClass
 
-logger = logging.getLogger(__name__)
 
 # ================== CONFIGURAZIONE UNIFICATA AVANZATA ==================
 
@@ -290,26 +360,26 @@ class AdvancedPerformanceMonitor:
                 'total_operations': len(self.metrics),
                 'operation_breakdown': dict(self.operation_counts),
                 'performance': {
-                    'avg_time_ms': round(np.mean(response_times), 2),
-                    'median_time_ms': round(np.median(response_times), 2),
-                    'p95_time_ms': round(np.percentile(response_times, 95), 2),
-                    'p99_time_ms': round(np.percentile(response_times, 99), 2),
+                    'avg_time_ms': round(np.mean(response_times), 2) if response_times else 0,
+                    'median_time_ms': round(np.median(response_times), 2) if response_times else 0,
+                    'p95_time_ms': round(np.percentile(response_times, 95), 2) if response_times else 0,
+                    'p99_time_ms': round(np.percentile(response_times, 99), 2) if response_times else 0,
                     'operation_percentiles': percentiles
                 },
                 'quality_metrics': {
                     'total_suggestions': self.total_suggestions,
-                    'avg_suggestions_per_op': round(self.total_suggestions / len(self.metrics), 2),
+                    'avg_suggestions_per_op': round(self.total_suggestions / len(self.metrics), 2) if self.metrics else 0,
                     'confidence_distribution': dict(confidence_totals),
                     'feature_adoption_rates': feature_adoption
                 },
                 'resource_usage': {
-                    'avg_memory_mb': round(np.mean(memory_usage), 2),
+                    'avg_memory_mb': round(np.mean(memory_usage), 2) if memory_usage else 0,
                     'peak_memory_mb': round(max(self.memory_peaks), 2) if self.memory_peaks else 0,
                     'memory_trend': self._calculate_memory_trend()
                 },
                 'feature_usage': dict(self.feature_usage_stats),
                 'uptime_hours': round((time.time() - self.start_time) / 3600, 2),
-                'cache_efficiency': round(np.mean([m.cache_hit_rate for m in recent_metrics if m.cache_hit_rate > 0]), 3)
+                'cache_efficiency': round(np.mean([m.cache_hit_rate for m in recent_metrics if m.cache_hit_rate > 0]), 3) if recent_metrics else 0
             }
     
     def _calculate_memory_trend(self) -> str:
@@ -410,7 +480,7 @@ def performance_tracked_recon_v4(operation_type: str):
                             confidence_dist[confidence] += 1
                             
                 elif isinstance(result, dict):
-                    if 'suggestions' in result:
+                    if 'suggestions' in result and isinstance(result['suggestions'], list):
                         suggestions_count = len(result['suggestions'])
                     # Check for feature flags in result
                     ai_used = result.get('ai_enhanced', False)
@@ -1225,9 +1295,6 @@ class BatchOperationsProcessor:
         self.processing_stats = defaultdict(int)
         self.active_tasks = {}
         self._lock = threading.RLock()
-
-    async def process_suggestions_batch(self, requests: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
-    pass
         
     async def process_suggestions_batch(self, requests: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
         """Process multiple suggestion requests in optimized batches"""
@@ -1418,12 +1485,12 @@ class BatchOperationsProcessor:
             try:
                 shared_suggestions = await self.adapter.find_automatic_matches_async(
                     confidence_level=confidence_level,
-                    max_suggestions=request.get('max_suggestions', 50) * len(group_requests),
+                    max_suggestions=(request.get('max_suggestions', 50) * len(group_requests)),
                     enable_batch_processing=True
                 )
                 
                 # Distribute suggestions to each request
-                suggestions_per_request = len(shared_suggestions) // len(group_requests)
+                suggestions_per_request = len(shared_suggestions) // len(group_requests) if group_requests else 0
                 start_idx = 0
                 
                 for i, request in enumerate(group_requests):
@@ -1819,181 +1886,389 @@ class ReconciliationAdapterV4:
         
         logger.info(f"ReconciliationAdapter V4.0 initialized with features: {self.feature_flags}")
 
-    async def get_comprehensive_performance_async(self) -> Dict[str, Any]:
-    """ESISTE MA NOME SBAGLIATO - dovrebbe essere get_adapter_performance_metrics_async"""
-    # Rename o alias
-    pass
+    # ================== METODI WRAPPER MANCANTI (IMPLEMENTAZIONE COMPLETA) ==================
 
     @performance_tracked_recon_v4("get_smart_suggestions")
     async def get_smart_suggestions_async(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Wrapper per smart suggestions multi-strategy"""
+        """Wrapper per smart suggestions multi-strategy - METODO MANCANTE"""
         operation_type = request_data.get('operation_type', '1_to_1')
         
-        if operation_type == '1_to_1':
-            return await self.suggest_1_to_1_matches_async(
-                invoice_id=request_data.get('invoice_id'),
-                transaction_id=request_data.get('transaction_id'),
-                anagraphics_id_filter=request_data.get('anagraphics_id_filter'),
-                enable_ai=request_data.get('enable_ai_enhancement', True)
-            )
-        elif operation_type == 'n_to_m':
-            return await self.suggest_n_to_m_matches_async(
-                transaction_id=request_data['transaction_id'],
-                anagraphics_id_filter=request_data.get('anagraphics_id_filter'),
-                enable_ai=request_data.get('enable_ai_enhancement', True)
-            )
-        else:
-            return {"suggestions": [], "error": f"Unsupported operation_type: {operation_type}"}
-    
-    @performance_tracked_recon_v4("process_batch")
-    async def process_batch_async(self, batch_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Wrapper per batch processing"""
-        requests = batch_data.get('requests', [])
-        
-        # Usa il batch_processor già esistente
-        results = await self.batch_processor.process_suggestions_batch(requests)
-        
-        successful = len([r for r in results.values() if isinstance(r, list)])
-        failed = len(results) - successful
-        
-        return {
-            'total_processed': len(requests),
-            'successful': successful,
-            'failed': failed,
-            'results': results,
-            'adapter_version': '4.0'
-        }
-    
-    @performance_tracked_recon_v4("trigger_auto_reconciliation")
-    async def trigger_auto_reconciliation_async(self, confidence_threshold: float = 0.9, max_matches: int = 100) -> Dict[str, Any]:
-        """Wrapper per auto reconciliation"""
-        # Usa il batch_processor per auto matching
-        matches = await self.batch_processor.find_automatic_matches_parallel(
-            'Exact' if confidence_threshold > 0.9 else 'High',
-            max_matches
-        )
-        
-        return {
-            'triggered': True,
-            'confidence_threshold': confidence_threshold,
-            'max_matches': max_matches,
-            'estimated_matches': len(matches),
-            'adapter_version': '4.0'
-        }
-    
-    @performance_tracked_recon_v4("analyze_client_reliability")
-    async def analyze_client_reliability_async(self, anagraphics_id: int) -> Dict[str, Any]:
-        """Wrapper per client reliability analysis"""
-        if not self.feature_flags['smart_reconciliation']:
-            return {'error': 'Smart reconciliation not available'}
-        
-        # Usa la funzione esistente
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self.ai_engine.executor,
-            analyze_client_payment_reliability,
-            anagraphics_id
-        )
-
-@performance_tracked_recon_v4("get_system_status")
-async def get_system_status_async(self) -> Dict[str, Any]:
-    """
-    Ottiene lo stato di salute COMPLETO del sistema di riconciliazione V4.0.
-    Combina metriche sui dati (stato del lavoro) e metriche di sistema (salute del motore).
-    """
-    try:
-        loop = asyncio.get_event_loop()
-        
-        # --- Task per le statistiche sui dati (la tua logica) ---
-        def _get_data_statistics():
-            from app.core.database import get_connection
+        try:
+            if operation_type == '1_to_1':
+                suggestions = await self.suggest_1_to_1_matches_async(
+                    invoice_id=request_data.get('invoice_id'),
+                    transaction_id=request_data.get('transaction_id'),
+                    anagraphics_id_filter=request_data.get('anagraphics_id_filter'),
+                    enable_ai=request_data.get('enable_ai_enhancement', True)
+                )
+            elif operation_type == 'n_to_m':
+                suggestions = await self.suggest_n_to_m_matches_async(
+                    transaction_id=request_data['transaction_id'],
+                    anagraphics_id_filter=request_data.get('anagraphics_id_filter'),
+                    enable_ai=request_data.get('enable_ai_enhancement', True)
+                )
+            elif operation_type == 'smart_client':
+                if not request_data.get('anagraphics_id'):
+                    raise ValueError("smart_client requires an anagraphics_id")
+                suggestions = await self.suggest_smart_client_reconciliation_async(
+                    transaction_id=request_data['transaction_id'],
+                    anagraphics_id=request_data['anagraphics_id'],
+                    enhance_with_ml=request_data.get('enable_ai_enhancement', True)
+                )
+            else:
+                raise ValueError(f"Unsupported operation_type: {operation_type}")
             
-            try:
-                conn = get_connection()
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as total_invoices,
-                        COUNT(CASE WHEN payment_status = 'Riconciliata' OR payment_status = 'Pagata Tot.' THEN 1 END) as reconciled_invoices,
-                        COUNT(CASE WHEN payment_status IN ('Aperta', 'Scaduta') THEN 1 END) as open_invoices
-                    FROM Invoices
-                """)
-                invoice_stats = dict(cursor.fetchone())
-                
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as total_transactions,
-                        COUNT(CASE WHEN reconciliation_status = 'Riconciliato Tot.' THEN 1 END) as fully_reconciled,
-                        COUNT(CASE WHEN reconciliation_status = 'Da Riconciliare' THEN 1 END) as unreconciled
-                    FROM BankTransactions
-                """)
-                transaction_stats = dict(cursor.fetchone())
-                
-                total_invoices = invoice_stats.get('total_invoices', 0)
-                reconciled_invoices = invoice_stats.get('reconciled_invoices', 0)
-                total_transactions = transaction_stats.get('total_transactions', 0)
-                unreconciled_transactions = transaction_stats.get('unreconciled', 0)
-                
-                # Calcolo più robusto del tasso di riconciliazione
-                reconciliation_rate = (reconciled_invoices / max(1, total_invoices)) * 100 if total_invoices > 0 else 0
-                
-                if reconciliation_rate >= 90: system_status_label = "excellent"
-                elif reconciliation_rate >= 70: system_status_label = "good"
-                elif reconciliation_rate >= 50: system_status_label = "fair"
-                else: system_status_label = "needs_attention"
-                
-                return {
-                    "status_label": system_status_label,
-                    "reconciliation_rate_percent": round(reconciliation_rate, 2),
-                    "total_invoices": total_invoices,
-                    "reconciled_invoices": reconciled_invoices,
-                    "open_invoices": invoice_stats.get('open_invoices', 0),
-                    "total_transactions": total_transactions,
-                    "unreconciled_transactions": unreconciled_transactions
-                }
-            finally:
-                if 'conn' in locals() and conn:
-                    conn.close()
-
-        # --- Task per le metriche di sistema (la mia logica) ---
-        async def _get_system_health():
-            # Riutilizziamo le funzioni già presenti nell'adapter se possibile
-            perf_stats = await loop.run_in_executor(self.executor, self.performance_monitor.get_comprehensive_stats)
-            cache_stats = await loop.run_in_executor(self.executor, self.cache_manager.get_stats if hasattr(self.cache_manager, 'get_stats') else lambda: {})
             return {
-                "performance": perf_stats,
-                "cache": cache_stats
+                "suggestions": suggestions,
+                "total_suggestions": len(suggestions),
+                "operation_type": operation_type,
+                "adapter_version": "4.0",
+                "processing_time_ms": 0  # Will be set by decorator
+            }
+            
+        except Exception as e:
+            logger.error(f"Smart suggestions failed: {e}")
+            return {
+                "suggestions": [],
+                "total_suggestions": 0,
+                "error": str(e),
+                "operation_type": operation_type,
+                "adapter_version": "4.0"
             }
 
-        # Esecuzione in parallelo
-        data_stats_task = loop.run_in_executor(self.executor, _get_data_statistics)
-        system_health_task = _get_system_health()
-        
-        results = await asyncio.gather(data_stats_task, system_health_task, return_exceptions=True)
-        
-        data_statistics = results[0] if not isinstance(results[0], Exception) else {'error': str(results[0])}
-        system_health = results[1] if not isinstance(results[1], Exception) else {'error': str(results[1])}
+    @performance_tracked_recon_v4("process_batch")
+    async def process_batch_async(self, batch_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Wrapper per batch processing - METODO MANCANTE"""
+        try:
+            requests = batch_data.get('requests', [])
+            parallel_execution = batch_data.get('parallel_execution', True)
+            
+            if not requests:
+                return {
+                    'total_processed': 0,
+                    'successful': 0,
+                    'failed': 0,
+                    'results': {},
+                    'adapter_version': '4.0'
+                }
+            
+            # Usa il batch_processor esistente
+            if hasattr(self, 'batch_processor') and parallel_execution:
+                results = await self.batch_processor.process_suggestions_batch(requests)
+            else:
+                # Fallback: processa sequenzialmente
+                results = {}
+                for i, req in enumerate(requests):
+                    req_id = req.get('id', f"request_{i}")
+                    try:
+                        req_result = await self.get_smart_suggestions_async(req)
+                        results[req_id] = req_result.get('suggestions', [])
+                    except Exception as e:
+                        results[req_id] = {'error': str(e)}
+            
+            successful = len([r for r in results.values() if isinstance(r, list)])
+            failed = len(results) - successful
+            
+            return {
+                'total_processed': len(requests),
+                'successful': successful,
+                'failed': failed,
+                'results': results,
+                'parallel_execution': parallel_execution,
+                'adapter_version': '4.0'
+            }
+            
+        except Exception as e:
+            logger.error(f"Batch processing failed: {e}")
+            return {
+                'total_processed': len(batch_data.get('requests', [])),
+                'successful': 0,
+                'failed': len(batch_data.get('requests', [])),
+                'error': str(e),
+                'adapter_version': '4.0'
+            }
 
-        is_healthy = not any(isinstance(r, Exception) for r in results)
+    @performance_tracked_recon_v4("trigger_auto_reconciliation")
+    async def trigger_auto_reconciliation_async(self, 
+                                              confidence_threshold: float = 0.9, 
+                                              max_matches: int = 100) -> Dict[str, Any]:
+        """Wrapper per auto reconciliation - METODO MANCANTE"""
+        try:
+            # Determina livello confidence
+            if confidence_threshold >= 0.9:
+                confidence_level = 'Exact'
+            elif confidence_threshold >= 0.7:
+                confidence_level = 'High'
+            else:
+                confidence_level = 'Medium'
+            
+            # Usa il metodo esistente
+            matches = await self.find_automatic_matches_async(
+                confidence_level=confidence_level,
+                max_suggestions=max_matches
+            )
+            
+            return {
+                'triggered': True,
+                'confidence_threshold': confidence_threshold,
+                'confidence_level': confidence_level,
+                'max_matches': max_matches,
+                'estimated_matches': len(matches),
+                'matches_preview': matches[:5],  # Prime 5 per preview
+                'adapter_version': '4.0'
+            }
+            
+        except Exception as e:
+            logger.error(f"Auto reconciliation trigger failed: {e}")
+            return {
+                'triggered': False,
+                'error': str(e),
+                'confidence_threshold': confidence_threshold,
+                'max_matches': max_matches,
+                'adapter_version': '4.0'
+            }
 
-        return {
-            "status": "operational" if is_healthy else "degraded",
-            "overall_reconciliation_status": data_statistics.get('status_label', 'unknown'),
-            "adapter_version": "4.0",
-            "data_statistics": data_statistics,
-            "system_health": system_health,
-            "timestamp": datetime.now().isoformat()
-        }
+    @performance_tracked_recon_v4("analyze_client_reliability")
+    async def analyze_client_reliability_async(self, anagraphics_id: int) -> Dict[str, Any]:
+        """Wrapper per client reliability analysis - METODO MANCANTE"""
+        try:
+            # Prova prima il metodo smart se disponibile
+            if self.feature_flags.get('smart_reconciliation') and self.smart_reconciler:
+                analysis = await self.analyze_client_payment_reliability_async(anagraphics_id)
+                if analysis and not analysis.get('error'):
+                    return analysis
+            
+            # Fallback: implementazione semplificata con dati reali
+            return await self._get_basic_client_reliability_real(anagraphics_id)
+            
+        except Exception as e:
+            logger.error(f"Client reliability analysis failed: {e}")
+            return {
+                'error': str(e),
+                'anagraphics_id': anagraphics_id,
+                'adapter_version': '4.0'
+            }
+
+    async def _get_basic_client_reliability_real(self, anagraphics_id: int) -> Dict[str, Any]:
+        """Implementazione semplificata con DATI REALI dal database"""
+        try:
+            from app.core.database import get_connection
+            
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                # Query REALE per statistiche cliente
+                reliability_query = """
+                SELECT 
+                    COUNT(*) as total_invoices,
+                    SUM(CASE WHEN payment_status IN ('Pagata Tot.', 'Riconciliata') THEN 1 ELSE 0 END) as paid_invoices,
+                    AVG(CASE 
+                        WHEN payment_status IN ('Pagata Tot.', 'Riconciliata') 
+                        THEN julianday(COALESCE(updated_at, created_at)) - julianday(due_date)
+                        ELSE NULL 
+                    END) as avg_payment_delay,
+                    SUM(total_amount) as total_amount,
+                    MIN(doc_date) as first_invoice_date,
+                    MAX(doc_date) as last_invoice_date,
+                    COUNT(CASE WHEN payment_status = 'Scaduta' THEN 1 END) as overdue_invoices
+                FROM Invoices 
+                WHERE anagraphics_id = ? AND type = 'Attiva'
+                """
+                
+                cursor.execute(reliability_query, (anagraphics_id,))
+                stats = dict(cursor.fetchone())
         
-    except Exception as e:
-        logger.error(f"Fatal error in get_system_status_async: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "version": "4.0", 
-            "error": "An internal error occurred while fetching system status.",
-            "details": str(e)
-        }
+                if not stats or not stats['total_invoices']:
+                    return {
+                        'anagraphics_id': anagraphics_id,
+                        'error': 'No invoice data found for this client',
+                        'adapter_version': '4.0'
+                    }
+                
+                total_invoices = stats.get('total_invoices', 0)
+                paid_invoices = stats.get('paid_invoices', 0)
+                avg_delay = stats.get('avg_payment_delay', 0) or 0
+                overdue_invoices = stats.get('overdue_invoices', 0)
+                
+                # Calcola reliability score basato su dati reali
+                if total_invoices == 0:
+                    reliability_score = 0.5  # Neutrale per clienti nuovi
+                    risk_assessment = 'unknown'
+                    payment_rate = 0
+                    overdue_rate = 0
+                else:
+                    payment_rate = paid_invoices / total_invoices
+                    overdue_rate = overdue_invoices / total_invoices
+                    
+                    # Formula reliability basata su metriche reali
+                    delay_penalty = max(0, min(0.3, avg_delay / 30 * 0.1))
+                    overdue_penalty = overdue_rate * 0.2
+                    
+                    reliability_score = max(0, min(1, payment_rate - delay_penalty - overdue_penalty))
+                    
+                    if reliability_score > 0.8:
+                        risk_assessment = 'low'
+                    elif reliability_score > 0.5:
+                        risk_assessment = 'medium' 
+                    else:
+                        risk_assessment = 'high'
+                
+                return {
+                    'anagraphics_id': anagraphics_id,
+                    'reliability_score': round(reliability_score, 3),
+                    'payment_history': {
+                        'total_invoices': total_invoices,
+                        'paid_invoices': paid_invoices,
+                        'overdue_invoices': overdue_invoices,
+                        'payment_rate_percent': round(payment_rate * 100, 1),
+                        'avg_payment_delay_days': round(avg_delay, 1),
+                        'total_amount': float(stats.get('total_amount', 0) or 0),
+                        'first_invoice_date': stats.get('first_invoice_date'),
+                        'last_invoice_date': stats.get('last_invoice_date'),
+                        'business_relationship_days': (
+                            (datetime.now().date() - datetime.fromisoformat(stats['first_invoice_date']).date()).days
+                            if stats.get('first_invoice_date') else 0
+                        )
+                    },
+                    'risk_assessment': risk_assessment,
+                    'recommendations': self._generate_real_client_recommendations(reliability_score, avg_delay, overdue_rate),
+                    'adapter_version': '4.0',
+                    'data_source': 'real_database',
+                    'generated_at': datetime.now().isoformat()
+                }
+        
+        except Exception as e:
+            logger.error(f"Basic client reliability failed: {e}")
+            return {
+                'anagraphics_id': anagraphics_id,
+                'error': f'Database query failed: {str(e)}',
+                'adapter_version': '4.0'
+            }
+
+    def _generate_real_client_recommendations(self, reliability_score: float, avg_delay: float, overdue_rate: float) -> List[str]:
+        """Genera raccomandazioni reali basate sui dati effettivi"""
+        recommendations = []
+        
+        if reliability_score < 0.3:
+            recommendations.append("⚠️ Cliente ad alto rischio - valuta garanzie aggiuntive o pagamento anticipato")
+            recommendations.append("📋 Implementa controllo credito più rigoroso per ordini futuri")
+        elif reliability_score < 0.6:
+            recommendations.append("⚖️ Cliente medio rischio - monitora pagamenti da vicino")
+            recommendations.append("📞 Considera chiamate di courtesy prima della scadenza")
+        else:
+            recommendations.append("✅ Cliente affidabile - mantieni termini di pagamento standard")
+            recommendations.append("🤝 Cliente candidato per condizioni preferenziali")
+        
+        if avg_delay > 15:
+            recommendations.append(f"⏰ Ritardo medio {avg_delay:.0f} giorni - implementa solleciti automatici")
+        
+        if overdue_rate > 0.2:
+            recommendations.append(f"📊 {overdue_rate*100:.0f}% fatture scadute - riduci termini di pagamento")
+        
+        if avg_delay < 0:  # Pagamento anticipato
+            recommendations.append("🎯 Cliente paga in anticipo - considera sconti per pronto pagamento")
+        
+        return recommendations
+
+    # ================== METODI CORE DELL'ADAPTER (SPOSTATI E CORRETTI) ==================
+
+    @performance_tracked_recon_v4("get_system_status")
+    async def get_system_status_async(self) -> Dict[str, Any]:
+        """
+        Ottiene lo stato di salute COMPLETO del sistema di riconciliazione V4.0.
+        Combina metriche sui dati (stato del lavoro) e metriche di sistema (salute del motore).
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            
+            # --- Task per le statistiche sui dati (la tua logica) ---
+            def _get_data_statistics():
+                from app.core.database import get_connection
+                
+                try:
+                    with get_connection() as conn:
+                        cursor = conn.cursor()
+                        
+                        cursor.execute("""
+                            SELECT 
+                                COUNT(*) as total_invoices,
+                                COUNT(CASE WHEN payment_status = 'Riconciliata' OR payment_status = 'Pagata Tot.' THEN 1 END) as reconciled_invoices,
+                                COUNT(CASE WHEN payment_status IN ('Aperta', 'Scaduta') THEN 1 END) as open_invoices
+                            FROM Invoices
+                        """)
+                        invoice_stats = dict(cursor.fetchone())
+                        
+                        cursor.execute("""
+                            SELECT 
+                                COUNT(*) as total_transactions,
+                                COUNT(CASE WHEN reconciliation_status = 'Riconciliato Tot.' THEN 1 END) as fully_reconciled,
+                                COUNT(CASE WHEN reconciliation_status = 'Da Riconciliare' THEN 1 END) as unreconciled
+                            FROM BankTransactions
+                        """)
+                        transaction_stats = dict(cursor.fetchone())
+                        
+                        total_invoices = invoice_stats.get('total_invoices', 0)
+                        reconciled_invoices = invoice_stats.get('reconciled_invoices', 0)
+                        total_transactions = transaction_stats.get('total_transactions', 0)
+                        unreconciled_transactions = transaction_stats.get('unreconciled', 0)
+                        
+                        # Calcolo più robusto del tasso di riconciliazione
+                        reconciliation_rate = (reconciled_invoices / max(1, total_invoices)) * 100 if total_invoices > 0 else 0
+                        
+                        if reconciliation_rate >= 90: system_status_label = "excellent"
+                        elif reconciliation_rate >= 70: system_status_label = "good"
+                        elif reconciliation_rate >= 50: system_status_label = "fair"
+                        else: system_status_label = "needs_attention"
+                        
+                        return {
+                            "status_label": system_status_label,
+                            "reconciliation_rate_percent": round(reconciliation_rate, 2),
+                            "total_invoices": total_invoices,
+                            "reconciled_invoices": reconciled_invoices,
+                            "open_invoices": invoice_stats.get('open_invoices', 0),
+                            "total_transactions": total_transactions,
+                            "unreconciled_transactions": unreconciled_transactions
+                        }
+                except Exception as e:
+                    logger.error(f"Error getting data statistics: {e}")
+                    return {"error": str(e)}
+
+            # --- Task per le metriche di sistema (la mia logica) ---
+            async def _get_system_health():
+                perf_stats = self.performance_monitor.get_comprehensive_stats()
+                cache_stats = self.cache_manager.get_unified_cache_stats()
+                return {
+                    "performance": perf_stats,
+                    "cache": cache_stats
+                }
+
+            # Esecuzione in parallelo
+            data_stats_task = loop.run_in_executor(self.ai_engine.executor, _get_data_statistics)
+            system_health_task = _get_system_health()
+            
+            results = await asyncio.gather(data_stats_task, system_health_task, return_exceptions=True)
+            
+            data_statistics = results[0] if not isinstance(results[0], Exception) else {'error': str(results[0])}
+            system_health = results[1] if not isinstance(results[1], Exception) else {'error': str(results[1])}
+
+            is_healthy = not any(isinstance(r, Exception) for r in results)
+
+            return {
+                "status": "operational" if is_healthy else "degraded",
+                "overall_reconciliation_status": data_statistics.get('status_label', 'unknown'),
+                "adapter_version": "4.0",
+                "data_statistics": data_statistics,
+                "system_health": system_health,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Fatal error in get_system_status_async: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "version": "4.0", 
+                "error": "An internal error occurred while fetching system status.",
+                "details": str(e)
+            }
     
     # ===== ENHANCED 1:1 MATCHING =====
     
@@ -2018,7 +2293,8 @@ async def get_system_status_async(self) -> Dict[str, Any]:
                 anagraphics_id_filter=anagraphics_id_filter
             )
             if cache_result is not None:
-                cache_result._cache_hit_rate = 1.0
+                if hasattr(cache_result, '__dict__'):
+                    cache_result._cache_hit_rate = 1.0
                 return cache_result
         
         # Execute enhanced core reconciliation
@@ -2241,55 +2517,54 @@ async def get_system_status_async(self) -> Dict[str, Any]:
         
         return merged
 
-logger.info("ReconciliationAdapter V4.0 - Parte 3: Batch Processing e Core Adapter caricato")
-# ===== ENHANCED AUTOMATIC MATCHING =====
+    # ===== ENHANCED AUTOMATIC MATCHING =====
 
-@performance_tracked_recon_v4('automatic_matching_v4')
-async def find_automatic_matches_async(self, 
-                                      confidence_level: str = 'Exact',
-                                      max_suggestions: int = 50,
-                                      enable_batch_processing: bool = True,
-                                      enable_ai_filtering: bool = True) -> List[Dict]:
-    """Enhanced automatic matching con AI filtering"""
-    
-    # Check cache
-    cache_result = self.cache_manager.get('automatic_v4', confidence_level=confidence_level)
-    if cache_result is not None:
-        return cache_result[:max_suggestions]
-    
-    loop = asyncio.get_event_loop()
-    
-    if (enable_batch_processing and ReconciliationAdapterConfig.ENABLE_ASYNC_PROCESSING 
-        and ReconciliationAdapterConfig.MAX_WORKERS > 1):
-        # Use enhanced batch processor
-        matches = await self.batch_processor.find_automatic_matches_parallel(
-            confidence_level, max_suggestions
-        )
-    else:
-        # Standard processing with V2 optimizations
-        matches = await loop.run_in_executor(
-            self.ai_engine.executor,
-            find_automatic_matches_optimized,
-            confidence_level
-        )
-    
-    # AI-powered filtering and enhancement
-    if enable_ai_filtering and self.feature_flags['ai_matching'] and matches:
-        context = {
-            'operation_type': 'automatic_v4', 
-            'confidence_level': confidence_level,
-            'batch_processed': enable_batch_processing
-        }
-        matches = await self.ai_engine.enhance_suggestions_with_ai(matches, context)
+    @performance_tracked_recon_v4('automatic_matching_v4')
+    async def find_automatic_matches_async(self, 
+                                          confidence_level: str = 'Exact',
+                                          max_suggestions: int = 50,
+                                          enable_batch_processing: bool = True,
+                                          enable_ai_filtering: bool = True) -> List[Dict]:
+        """Enhanced automatic matching con AI filtering"""
         
-        # Additional AI filtering for automatic matches
-        matches = self._apply_ai_automatic_filtering(matches)
-    
-    # Cache result
-    self.cache_manager.set('automatic_v4', matches, confidence_level=confidence_level)
-    
-    self._increment_operation_count()
-    return matches[:max_suggestions]
+        # Check cache
+        cache_result = self.cache_manager.get('automatic_v4', confidence_level=confidence_level)
+        if cache_result is not None:
+            return cache_result[:max_suggestions]
+        
+        loop = asyncio.get_event_loop()
+        
+        if (enable_batch_processing and ReconciliationAdapterConfig.ENABLE_ASYNC_PROCESSING 
+            and ReconciliationAdapterConfig.MAX_WORKERS > 1):
+            # Use enhanced batch processor
+            matches = await self.batch_processor.find_automatic_matches_parallel(
+                confidence_level, max_suggestions
+            )
+        else:
+            # Standard processing with V2 optimizations
+            matches = await loop.run_in_executor(
+                self.ai_engine.executor,
+                find_automatic_matches_optimized,
+                confidence_level
+            )
+        
+        # AI-powered filtering and enhancement
+        if enable_ai_filtering and self.feature_flags['ai_matching'] and matches:
+            context = {
+                'operation_type': 'automatic_v4', 
+                'confidence_level': confidence_level,
+                'batch_processed': enable_batch_processing
+            }
+            matches = await self.ai_engine.enhance_suggestions_with_ai(matches, context)
+            
+            # Additional AI filtering for automatic matches
+            matches = self._apply_ai_automatic_filtering(matches)
+        
+        # Cache result
+        self.cache_manager.set('automatic_v4', matches, confidence_level=confidence_level)
+        
+        self._increment_operation_count()
+        return matches[:max_suggestions]
     
     def _apply_ai_automatic_filtering(self, matches: List[Dict]) -> List[Dict]:
         """Apply AI-based filtering for automatic matches"""
@@ -2400,7 +2675,7 @@ async def find_automatic_matches_async(self,
             validation_context = await self._get_validation_context(invoice_id, transaction_id)
             
             # AI-based pattern validation
-            if self.smart_reconciler:
+            if self.smart_reconciler and validation_context.get('anagraphics_id'):
                 pattern = self.smart_reconciler.get_client_pattern(validation_context.get('anagraphics_id'))
                 if pattern:
                     predictions = pattern.get_ml_predictions(to_decimal(amount), datetime.now())
@@ -2560,8 +2835,8 @@ async def find_automatic_matches_async(self,
         
         # Enhanced cache invalidation
         self.cache_manager.invalidate_related_entries(
-            **{f'transaction_id': tid for tid in transaction_ids},
-            **{f'invoice_id': iid for iid in invoice_ids}
+            **{f'transaction_id_{i}': tid for i, tid in enumerate(transaction_ids)},
+            **{f'invoice_id_{i}': iid for i, iid in enumerate(invoice_ids)}
         )
         
         self._increment_operation_count()
@@ -2728,7 +3003,7 @@ async def find_automatic_matches_async(self,
         
         try:
             pattern = self.smart_reconciler.get_client_pattern(anagraphics_id)
-            if not pattern or not pattern.amount_clusters:
+            if not pattern or not hasattr(pattern, 'amount_clusters'):
                 return suggestions
             
             # Enhance each suggestion with clustering insights
@@ -2841,7 +3116,7 @@ async def find_automatic_matches_async(self,
         if self.smart_reconciler:
             try:
                 pattern = self.smart_reconciler.get_client_pattern(anagraphics_id)
-                if pattern and pattern.temporal_model:
+                if pattern and hasattr(pattern, 'temporal_model') and pattern.temporal_model:
                     # Add temporal predictions
                     temporal_model = pattern.temporal_model
                     enhanced['predictive_insights'] = {
@@ -2887,59 +3162,58 @@ async def find_automatic_matches_async(self,
             'model_version': '4.0'
         }
 
-logger.info("ReconciliationAdapter V4.0 - Parte 4: Metodi Avanzati e Operations caricato")
-# ===== TRANSACTION MANAGEMENT =====
+    # ===== TRANSACTION MANAGEMENT =====
 
-@performance_tracked_recon_v4('ignore_transaction_v4')
-async def ignore_transaction_async(self, transaction_id: int) -> Dict[str, Any]:
-    """Enhanced transaction ignore con cleanup intelligente"""
+    @performance_tracked_recon_v4('ignore_transaction_v4')
+    async def ignore_transaction_async(self, transaction_id: int) -> Dict[str, Any]:
+        """Enhanced transaction ignore con cleanup intelligente"""
 
-    loop = asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
 
-    # Execute ignore operation
-    success, message, affected_invoices = await loop.run_in_executor(
-        self.ai_engine.executor,
-        ignore_transaction,
-        transaction_id
-    )
+        # Execute ignore operation
+        success, message, affected_invoices = await loop.run_in_executor(
+            self.ai_engine.executor,
+            ignore_transaction,
+            transaction_id
+        )
 
-    # Enhanced cache cleanup
-    self.cache_manager.invalidate_related_entries(transaction_id=transaction_id)
+        # Enhanced cache cleanup
+        self.cache_manager.invalidate_related_entries(transaction_id=transaction_id)
 
-    # Learn from ignore patterns if enabled
-    if success and self.feature_flags['pattern_learning']:
-        await self._learn_from_ignore_pattern(transaction_id, affected_invoices)
+        # Learn from ignore patterns if enabled
+        if success and self.feature_flags['pattern_learning']:
+            await self._learn_from_ignore_pattern(transaction_id, affected_invoices)
 
-    self._increment_operation_count()
+        self._increment_operation_count()
 
-    return {
-        'success': success,
-        'message': message,
-        'affected_invoices': affected_invoices,
-        'timestamp': datetime.now().isoformat(),
-        'cache_cleaned': True,
-        'learning_applied': self.feature_flags['pattern_learning']
-    }
-
-async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoices: List[int]):
-    """Learn from transaction ignore patterns"""
-    try:
-        # Record ignore pattern for future AI enhancement
-        ignore_pattern = {
-            'transaction_id': transaction_id,
+        return {
+            'success': success,
+            'message': message,
             'affected_invoices': affected_invoices,
-            'timestamp': time.time(),
-            'operation': 'ignore_transaction'
+            'timestamp': datetime.now().isoformat(),
+            'cache_cleaned': True,
+            'learning_applied': self.feature_flags['pattern_learning']
         }
 
-        # Store in pattern cache
-        patterns = self.cache_manager.get_learned_patterns('ignore_patterns')
-        patterns.append(ignore_pattern)
+    async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoices: List[int]):
+        """Learn from transaction ignore patterns"""
+        try:
+            # Record ignore pattern for future AI enhancement
+            ignore_pattern = {
+                'transaction_id': transaction_id,
+                'affected_invoices': affected_invoices,
+                'timestamp': time.time(),
+                'operation': 'ignore_transaction'
+            }
 
-        logger.debug(f"Learned ignore pattern for transaction {transaction_id}")
+            # Store in pattern cache
+            patterns = self.cache_manager.get_learned_patterns('ignore_patterns')
+            patterns.append(ignore_pattern)
 
-    except Exception as e:
-        logger.debug(f"Learning from ignore pattern failed: {e}")
+            logger.debug(f"Learned ignore pattern for transaction {transaction_id}")
+
+        except Exception as e:
+            logger.debug(f"Learning from ignore pattern failed: {e}")
     
     # ===== STATUS UPDATES =====
     
@@ -3014,7 +3288,7 @@ async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoice
             
             # Check results
             for result in results:
-                if isinstance(result, Exception):
+                if isinstance(result, Exception) or not result:
                     logger.error(f"Parallel status update failed: {result}")
                     return False
             
@@ -3048,6 +3322,7 @@ async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoice
     
     # ===== COMPREHENSIVE PERFORMANCE ANALYTICS =====
     
+    @performance_tracked_recon_v4('get_adapter_performance_metrics')
     async def get_comprehensive_performance_async(self) -> Dict[str, Any]:
         """Comprehensive performance analytics V4"""
         
@@ -3082,7 +3357,7 @@ async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoice
             'cpu_percent': round(process.cpu_percent(), 2),
             'thread_count': process.num_threads(),
             'uptime_hours': round((datetime.now() - self.startup_time).total_seconds() / 3600, 2),
-            'memory_trend': cache_stats.get('memory_trend', 'stable')
+            'memory_trend': self.performance_monitor._calculate_memory_trend()
         }
         
         # Request patterns analytics
@@ -3095,7 +3370,7 @@ async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoice
         feature_usage = {
             'total_operations': self.total_operations,
             'feature_adoption': self._calculate_feature_adoption(),
-            'performance_impact': self._calculate_performance_impact()
+            'performance_impact': self._calculate_performance_impact(core_metrics)
         }
         
         return {
@@ -3157,18 +3432,17 @@ async def _learn_from_ignore_pattern(self, transaction_id: int, affected_invoice
             'smart_reconciliation_rate': round((stats.get('smart_enhanced', 0) / total_ops) * 100, 1)
         }
     
-    def _calculate_performance_impact(self) -> Dict[str, Any]:
+    def _calculate_performance_impact(self, perf_stats: Dict) -> Dict[str, Any]:
         """Calculate performance impact of features"""
-        perf_stats = self.performance_monitor.get_comprehensive_stats()
-        
         # Simplified performance impact calculation
         base_performance = perf_stats.get('performance', {})
+        cache_stats = self.cache_manager.get_unified_cache_stats()
         
         return {
             'avg_response_time_improvement': '15%',  # Would be calculated from actual data
             'suggestion_quality_improvement': '25%',
-            'cache_efficiency_gain': round(base_performance.get('cache_efficiency', 0) * 100, 1),
-            'memory_optimization': cache_stats.get('memory_trend', 'stable')
+            'cache_efficiency_gain': round(cache_stats.get('avg_hits_per_entry', 0) * 10, 1),
+            'memory_optimization': self.performance_monitor._calculate_memory_trend()
         }
     
     def _generate_performance_recommendations(self) -> List[str]:
@@ -3258,7 +3532,7 @@ class SystemHealthMonitor:
         try:
             # Test basic functionality
             test_suggestions = await self.adapter.suggest_1_to_1_matches_async(
-                transaction_id=99999,  # Non-existent, should return empty
+                transaction_id=99999999,  # Non-existent, should return empty
                 enable_caching=False
             )
             
@@ -3710,3 +3984,4 @@ logger.info("✨ Features: AI/ML Enhancement, Smart Reconciliation V2, Unified C
 logger.info("📊 Monitoring: Performance Analytics, Health Checks, Pattern Learning")
 logger.info("⚡ Performance: Async Processing, Parallel Operations, Memory Optimization")
 logger.info("🎯 PRONTO PER PRODUZIONE - TUTTE LE IMPLEMENTAZIONI COMPLETE!")
+```
