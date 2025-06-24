@@ -86,7 +86,6 @@ const useExecutiveDashboard = () => {
     },
     staleTime: getCacheTTL('dashboard'),
     refetchInterval: aiEnabled ? 300000 : 600000, // 5 o 10 min
-    onError: (error) => handleError(error, 'executive-dashboard'),
     // ✅ FIX: Retry logic per gestire errori 422/404
     retry: (failureCount, error: any) => {
       if (error?.status === 422 || error?.status === 404) {
@@ -145,7 +144,6 @@ const useOperationsDashboard = () => {
     },
     staleTime: realTimeEnabled ? 30000 : 300000,
     refetchInterval: realTimeEnabled ? 30000 : undefined,
-    onError: (error) => handleError(error, 'operations-dashboard'),
     retry: 1,
   });
 };
@@ -153,7 +151,14 @@ const useOperationsDashboard = () => {
 /**
  * ✅ FIXED: AI Business Insights allineato con backend
  */
-const useAIBusinessInsights = (options = {}) => {
+type AIBusinessInsightsOptions = {
+  depth?: string;
+  includeRecommendations?: boolean;
+  language?: string;
+  focusAreas?: string;
+};
+
+const useAIBusinessInsights = (options: AIBusinessInsightsOptions = {}) => {
   const updateAIInsights = useDataStore(state => state.updateAIInsights || (() => {}));
   const aiEnabled = useAIFeaturesEnabled();
   const { handleError } = useSmartErrorHandling();
@@ -224,13 +229,12 @@ const useAIBusinessInsights = (options = {}) => {
           insights: [],
           recommendations: [],
           confidence_score: 0,
-          error: error.message
+          error: error instanceof Error ? error.message : String(error)
         };
       }
     },
     enabled: aiEnabled,
     staleTime: 600000, // 10 minutes
-    onError: (error) => handleError(error, 'ai-insights'),
     retry: (failureCount, error: any) => {
       if (error?.status === 422) return false;
       return failureCount < 1;
@@ -334,7 +338,6 @@ const useRealTimeMetrics = (enabled = false) => {
     enabled: enabled && realTimeEnabled,
     staleTime: 10000, // 10 seconds
     refetchInterval: realTimeEnabled ? 10000 : false,
-    onError: (error) => handleError(error, 'realtime-metrics'),
     retry: 1,
   });
 };
@@ -376,7 +379,6 @@ const useAnalyticsHealth = () => {
     },
     staleTime: 300000, // 5 minutes
     refetchInterval: 300000, // 5 minutes
-    onError: (error) => handleError(error, 'analytics-health'),
     retry: 1,
   });
 };
@@ -477,7 +479,15 @@ const useAnalyticsExport = () => {
 /**
  * ✅ FIXED: Seasonality Analysis allineato con backend
  */
-const useSeasonalityAnalysis = (options = {}) => {
+type SeasonalityAnalysisOptions = {
+  yearsBack?: number;
+  includeWeatherCorrelation?: boolean;
+  predictMonthsAhead?: number;
+  confidenceLevel?: number;
+  categoryFocus?: string;
+};
+
+const useSeasonalityAnalysis = (options: SeasonalityAnalysisOptions = {}) => {
   const { handleError } = useSmartErrorHandling();
   
   const {
@@ -529,7 +539,6 @@ const useSeasonalityAnalysis = (options = {}) => {
       }
     },
     staleTime: 3600000, // 1 hour
-    onError: (error) => handleError(error, 'seasonality-analysis'),
     retry: 1,
   });
 };
@@ -678,7 +687,6 @@ const useAnalyticsFeatures = () => {
       }
     },
     staleTime: Infinity, // Dati stabili
-    onError: (error) => handleError(error, 'analytics-features'),
     retry: 1,
   });
 };
