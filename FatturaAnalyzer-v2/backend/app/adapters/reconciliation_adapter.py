@@ -1802,8 +1802,76 @@ class ReconciliationAdapterV4:
         
         logger.info(f"ReconciliationAdapter V4.0 initialized with features: {self.feature_flags}")
 
-    # In backend/app/adapters/reconciliation_adapter.py
-# All'interno della classe ReconciliationAdapterV4
+    @performance_tracked_recon_v4("get_smart_suggestions")
+    async def get_smart_suggestions_async(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Wrapper per smart suggestions multi-strategy"""
+        operation_type = request_data.get('operation_type', '1_to_1')
+        
+        if operation_type == '1_to_1':
+            return await self.suggest_1_to_1_matches_async(
+                invoice_id=request_data.get('invoice_id'),
+                transaction_id=request_data.get('transaction_id'),
+                anagraphics_id_filter=request_data.get('anagraphics_id_filter'),
+                enable_ai=request_data.get('enable_ai_enhancement', True)
+            )
+        elif operation_type == 'n_to_m':
+            return await self.suggest_n_to_m_matches_async(
+                transaction_id=request_data['transaction_id'],
+                anagraphics_id_filter=request_data.get('anagraphics_id_filter'),
+                enable_ai=request_data.get('enable_ai_enhancement', True)
+            )
+        else:
+            return {"suggestions": [], "error": f"Unsupported operation_type: {operation_type}"}
+    
+    @performance_tracked_recon_v4("process_batch")
+    async def process_batch_async(self, batch_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Wrapper per batch processing"""
+        requests = batch_data.get('requests', [])
+        
+        # Usa il batch_processor già esistente
+        results = await self.batch_processor.process_suggestions_batch(requests)
+        
+        successful = len([r for r in results.values() if isinstance(r, list)])
+        failed = len(results) - successful
+        
+        return {
+            'total_processed': len(requests),
+            'successful': successful,
+            'failed': failed,
+            'results': results,
+            'adapter_version': '4.0'
+        }
+    
+    @performance_tracked_recon_v4("trigger_auto_reconciliation")
+    async def trigger_auto_reconciliation_async(self, confidence_threshold: float = 0.9, max_matches: int = 100) -> Dict[str, Any]:
+        """Wrapper per auto reconciliation"""
+        # Usa il batch_processor per auto matching
+        matches = await self.batch_processor.find_automatic_matches_parallel(
+            'Exact' if confidence_threshold > 0.9 else 'High',
+            max_matches
+        )
+        
+        return {
+            'triggered': True,
+            'confidence_threshold': confidence_threshold,
+            'max_matches': max_matches,
+            'estimated_matches': len(matches),
+            'adapter_version': '4.0'
+        }
+    
+    @performance_tracked_recon_v4("analyze_client_reliability")
+    async def analyze_client_reliability_async(self, anagraphics_id: int) -> Dict[str, Any]:
+        """Wrapper per client reliability analysis"""
+        if not self.feature_flags['smart_reconciliation']:
+            return {'error': 'Smart reconciliation not available'}
+        
+        # Usa la funzione esistente
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.ai_engine.executor,
+            analyze_client_payment_reliability,
+            anagraphics_id
+        )
 
 @performance_tracked_recon_v4("get_system_status")
 async def get_system_status_async(self) -> Dict[str, Any]:
