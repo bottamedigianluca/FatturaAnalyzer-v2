@@ -262,7 +262,6 @@ const useCustomAnalytics = (request: AnalyticsRequest) => {
             analysis_type: customRequest.analysis_type,
             parameters: customRequest.parameters || {},
             cache_enabled: true,
-            include_predictions: customRequest.include_ai_insights || false,
             output_format: customRequest.output_format || 'json',
             priority: 'normal'
           }),
