@@ -1024,21 +1024,20 @@ export const useRobustTransactionQuery = (filters: TransactionFilters) => {
 export const useTransactionDebugInfo = (filters: TransactionFilters) => {
   return useMemo(() => {
     const backendFilters = {
-      status_filter: filters.status_filter || filters.reconciliation_status,
-      search: filters.search,
-      start_date: filters.start_date,
-      end_date: filters.end_date,
-      min_amount: filters.min_amount,
-      max_amount: filters.max_amount,
-      anagraphics_id_heuristic: filters.anagraphics_id_heuristic,
-      hide_pos: filters.hide_pos || false,
-      hide_worldline: filters.hide_worldline || false,
-      hide_cash: filters.hide_cash || false,
-      hide_commissions: filters.hide_commissions || false,
-      enhanced: true,
-      enable_ai_insights: true,
-      cache_enabled: true,
-    };
+    status_filter: filters.status_filter || filters.reconciliation_status,
+    search: filters.search,
+    start_date: filters.start_date,
+    end_date: filters.end_date,
+    min_amount: filters.min_amount,
+    max_amount: filters.max_amount,
+    anagraphics_id_heuristic: filters.anagraphics_id_heuristic,
+    hide_pos: filters.hide_pos || false,
+    hide_worldline: filters.hide_worldline || false,
+    hide_cash: filters.hide_cash || false,
+    hide_commissions: filters.hide_commissions || false,
+    page: filters.page || 1,
+    size: filters.size || 50
+};
     
     // Log per debug
     if (process.env.NODE_ENV === 'development') {
