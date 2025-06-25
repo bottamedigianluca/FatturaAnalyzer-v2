@@ -452,7 +452,53 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
   hide_cash: false,
   hide_commissions: false
 };
+// =================================================================
+// ===== ANALYTICS & REPORTING TYPES =====
+// =================================================================
 
+export interface AnalyticsRequest {
+  analysis_type: string;
+  parameters?: Record<string, any>;
+  cache_enabled?: boolean;
+  include_predictions?: boolean;
+  output_format?: 'json' | 'excel' | 'csv' | 'pdf';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  time_range?: {
+    start_date?: string;
+    end_date?: string;
+  };
+  filters?: Record<string, any>;
+}
+
+export interface BatchAnalyticsRequest {
+  requests: AnalyticsRequest[];
+  parallel_execution?: boolean;
+  timeout_seconds?: number;
+  batch_name?: string;
+}
+
+export interface AnalyticsResponse<T = any> {
+  success: boolean;
+  data: T;
+  analysis_metadata?: {
+    analysis_type: string;
+    execution_time_ms: number;
+    cache_used: boolean;
+    generated_at: string;
+  };
+  insights?: string[];
+  recommendations?: string[];
+}
+
+export interface CustomReportConfig {
+  title: string;
+  sections: string[];
+  date_range: { start: string; end: string };
+  include_charts: boolean;
+  include_tables: boolean;
+  format: 'pdf' | 'excel' | 'html';
+  template?: string;
+}
 // =================================================================
 // ===== RECONCILIATION & ANALYTICS TYPES =====
 // =================================================================
