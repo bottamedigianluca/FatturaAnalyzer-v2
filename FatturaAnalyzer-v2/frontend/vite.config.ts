@@ -5,13 +5,11 @@ import react from '@vitejs/plugin-react-swc'
 import path from 'path'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
   plugins: [
     react({
       // Configurazione SWC ottimizzata per enterprise
-      plugins: [
-        // Plugin SWC per performance migliori
-      ],
+      plugins: [],
     }),
   ],
   
@@ -40,13 +38,13 @@ export default defineConfig({
     // Proxy per API backend
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/api'),
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
       },
@@ -57,22 +55,25 @@ export default defineConfig({
   build: {
     target: 'es2020',
     outDir: 'dist',
-    sourcemap: process.env.NODE_ENV === 'development',
-    minify: 'esbuild',
+    sourcemap: mode === 'development',
+    minify: command === 'build' ? 'esbuild' : false,
     rollupOptions: {
       output: {
         manualChunks: {
-          // Chunk splitting per performance
           vendor: ['react', 'react-dom'],
-          ui: ['@radix-ui/react-dialog', '@radix-ui/react-select'],
+          router: ['react-router-dom'],
+          query: ['@tanstack/react-query'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-dropdown-menu'],
           utils: ['clsx', 'tailwind-merge'],
           charts: ['recharts'],
           dnd: ['@dnd-kit/core', '@dnd-kit/sortable'],
           animations: ['framer-motion'],
+          forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
+          dates: ['date-fns'],
+          files: ['react-dropzone', 'papaparse'],
         },
       },
     },
-    // Aumenta la dimensione limite per enterprise apps
     chunkSizeWarningLimit: 1000,
   },
 
@@ -90,38 +91,90 @@ export default defineConfig({
       '@dnd-kit/utilities',
       'sonner',
       'react-hot-toast',
+      'zustand',
+      'clsx',
+      'tailwind-merge',
+      'recharts',
+      'react-hook-form',
+      'date-fns',
+      'papaparse',
     ],
-    exclude: [
-      // Esclude pacchetti problematici
-    ],
+    exclude: [],
   },
 
   // Configurazioni aggiuntive per compatibilità
   define: {
-    // Disabilita SES in development per evitare errori
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
-    '__DEV__': process.env.NODE_ENV === 'development',
+    'process.env.NODE_ENV': JSON.stringify(mode),
+    '__DEV__': mode === 'development',
+    // ✅ FIX: Disabilita service worker in development
+    '__ENABLE_SERVICE_WORKER__': mode === 'production',
+    // ✅ FIX: Aggiungi supporto per import.meta.env
+    'import.meta.env.MODE': JSON.stringify(mode),
+    'import.meta.env.DEV': mode === 'development',
+    'import.meta.env.PROD': mode === 'production',
   },
 
   // Configurazione CSS
   css: {
     modules: false,
     postcss: './postcss.config.js',
+    devSourcemap: mode === 'development',
   },
 
   // Environment variables
   envPrefix: ['VITE_', 'REACT_APP_'],
 
-  // Configurazione per problemi comuni
+  // ✅ FIX: Configurazione per problemi comuni
   esbuild: {
     logOverride: { 
       'this-is-undefined-in-esm': 'silent',
     },
     target: 'es2020',
+    // ✅ Migliora la gestione degli errori
+    define: mode === 'development' ? {
+      'process.env.NODE_ENV': '"development"'
+    } : undefined,
   },
 
   // Worker configuration
   worker: {
-    plugins: [react()],
+    plugins: () => [react()],
   },
-});
+
+  // ✅ FIX: Gestione errori migliorata
+  logLevel: mode === 'development' ? 'info' : 'warn',
+
+  // ✅ FIX: Configurazione per evitare warning
+  clearScreen: false,
+
+  // ✅ FIX: Performance improvements
+  ...(mode === 'development' && {
+    server: {
+      ...{
+        port: 1420,
+        host: true,
+        strictPort: true,
+        hmr: {
+          port: 1421,
+        },
+        proxy: {
+          '/api': {
+            target: 'http://127.0.0.1:8000',
+            changeOrigin: true,
+            secure: false,
+            rewrite: (path) => path.replace(/^\/api/, '/api'),
+          },
+          '/health': {
+            target: 'http://127.0.0.1:8000',
+            changeOrigin: true,
+            secure: false,
+          },
+        },
+      },
+      // ✅ Migliora la gestione degli asset in development
+      fs: {
+        strict: false,
+      },
+    },
+  }),
+}));
