@@ -1894,4 +1894,4 @@ __all__ = [
     
     # Core validation and helper functions
     'check_entity_duplicate', 'get_item_details'
-]_fmt',
+]
