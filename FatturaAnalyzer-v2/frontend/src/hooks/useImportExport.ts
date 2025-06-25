@@ -232,6 +232,14 @@ export function useImportTransactionsCSVZIP() {
 }
 
 /**
+ * ✅ NUOVO: Import transazioni CSV singolo (per TransactionsPage)
+ * Alias di useImportTransactionsCSVZIP per compatibilità
+ */
+export function useImportTransactionsCSV() {
+  return useImportTransactionsCSVZIP();
+}
+
+/**
  * ✅ VERIFICATO: Import contenuto misto da ZIP
  * Endpoint: POST /api/import-export/mixed/zip
  */
@@ -1207,6 +1215,7 @@ const useImportExportHooks = {
   // Core Import
   useImportInvoicesZIP,
   useImportTransactionsCSVZIP,
+  useImportTransactionsCSV, // ✅ AGGIUNTO: Export mancante
   useImportMixedZIP,
   useImportInvoicesXML,
   
