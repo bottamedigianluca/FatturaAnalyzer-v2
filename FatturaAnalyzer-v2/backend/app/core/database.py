@@ -586,100 +586,120 @@ def update_anagraphics_if_better_data(cursor, anag_id, new_data, piva_clean, cf_
 
 # === FUNZIONE PRINCIPALE MIGLIORATA ===
 
-def import_from_source(source_path, progress_callback=None):
+def add_anagraphics_if_not_exists(cursor, anag_data, anag_type):
     """
-    Importa dati da un file singolo (XML, P7M, CSV) o da un file ZIP/directory.
-    Ritorna un dizionario con i risultati dell'importazione.
+    Aggiunge un'anagrafica se non esiste già, con logica migliorata per gestire
+    casi edge comuni nelle fatture elettroniche.
+    
+    MIGLIORAMENTI CHIAVE:
+    - Validazione più permissiva: accetta anagrafiche con solo denominazione
+    - Pulizia automatica di P.IVA e CF
+    - Ricerca fuzzy per denominazioni simili
+    - Aggiornamento automatico di anagrafiche esistenti con dati migliori
+    - Gestione robust dei casi edge (CF nel campo P.IVA, etc.)
+    
+    Args:
+        cursor: Cursore database SQLite
+        anag_data: Dizionario con dati anagrafica
+        anag_type: 'Cliente' o 'Fornitore'
+    
+    Returns:
+        int: ID dell'anagrafica (esistente o nuova) o None se errore critico
     """
-    results = {'processed': 0, 'success': 0, 'duplicates': 0, 'errors': 0, 'unsupported': 0, 'files': []}
-    conn = None; temp_dir = None; files_to_process = []; processed_paths = set(); skipped_meta_files_count = 0; files_passed_to_process_file = 0
+    # Validazione e pulizia dati in ingresso
+    is_valid, cleaned_data, warnings = validate_anagraphics_data(anag_data, anag_type)
+    
+    if not is_valid:
+        logger.error(f"Dati anagrafica {anag_type} non validi: {cleaned_data}")
+        return None
+    
+    # Log warnings se presenti
+    for warning in warnings:
+        logger.warning(f"Anagrafica {anag_type}: {warning}")
+    
+    piva_clean = cleaned_data.get('piva', '')
+    cf_clean = cleaned_data.get('cf', '')
+    denomination = cleaned_data.get('denomination', '')
+    
+    logger.debug(f"Tentativo inserimento/ricerca anagrafica {anag_type}: '{denomination}' (P.IVA='{piva_clean}', CF='{cf_clean}')")
 
-    # === INIZIALIZZAZIONE DATABASE ===
-    try:
-        # Prima di tutto, assicura che il database e le tabelle esistano
-        logger.info("Verifica inizializzazione database...")
-        create_tables()
-        logger.info("Database e tabelle verificate/create con successo")
-        
-        # Test connessione
-        test_conn = get_connection()
-        test_cursor = test_conn.cursor()
-        test_cursor.execute("SELECT 1 FROM Anagraphics LIMIT 1")
-        test_conn.close()
-        logger.info("Test connessione database OK")
-        
-    except Exception as db_init_err:
-        logger.error(f"ERRORE CRITICO: Impossibile inizializzare database: {db_init_err}")
-        results['errors'] = 1
-        results['files'].append({'name': source_path, 'status': f'Error - Database init failed: {db_init_err}'})
-        return results
+    # Logica di fallback P.IVA/CF migliorata
+    if not piva_clean and cf_clean: 
+        piva_clean = cf_clean
+        cleaned_data['piva'] = cf_clean
+        logger.debug(f"P.IVA mancante, uso CF come P.IVA: {cf_clean}")
+    elif piva_clean and not cf_clean and len(piva_clean) == 16: 
+        cf_clean = piva_clean
+        cleaned_data['cf'] = piva_clean
+        logger.debug(f"CF mancante, P.IVA sembra CF: {piva_clean}")
 
-    # Lettura dati azienda dal config
-    my_company_data = {'piva': None, 'cf': None}
-    missing_config = False
+    # Ricerca anagrafica esistente con logica migliorata
+    anag_id = find_existing_anagraphics(cursor, anag_type, piva_clean, cf_clean, denomination)
+    
+    if anag_id:
+        logger.debug(f"Anagrafica {anag_type} '{denomination}' già esistente (ID:{anag_id}).")
+        # Aggiorna con dati migliori se disponibili
+        update_anagraphics_if_better_data(cursor, anag_id, cleaned_data, piva_clean, cf_clean)
+        return anag_id
+    
+    # Inserimento nuova anagrafica con logica robusta
     try:
-        config = configparser.ConfigParser()
-        # Percorso relativo alla directory del progetto (assumendo che importer.py sia in core/)
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(project_root, 'config.ini')
-        if os.path.exists(config_path):
-            config.read(config_path)
-            my_company_data['piva'] = config.get('Azienda', 'PartitaIVA', fallback=None)
-            my_company_data['cf'] = config.get('Azienda', 'CodiceFiscale', fallback=None)
-            logger.info(f"Dati azienda letti da config: PIVA={my_company_data['piva']}, CF={my_company_data['cf']}")
-            # Verifica essenziale per fatture
-            if not my_company_data['piva'] and not my_company_data['cf']:
-                logger.error("ERRORE CRITICO: Né PartitaIVA né CodiceFiscale specificati in config.ini [Azienda]. Impossibile determinare tipo fattura (Attiva/Passiva). L'importazione di XML/P7M fallirà.")
-                missing_config = True # Segnala come se mancasse il config per bloccare
+        sql = """INSERT INTO Anagraphics (
+            type, piva, cf, denomination, address, cap, city, province, country, 
+            email, phone, pec, codice_destinatario, score, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        
+        # Usa None per campi vuoti invece di stringhe vuote per mantenere consistenza DB
+        params = (
+            anag_type,
+            piva_clean if piva_clean else None,
+            cf_clean if cf_clean else None,
+            denomination,
+            cleaned_data.get('address') or None,
+            cleaned_data.get('cap') or None,
+            cleaned_data.get('city') or None,
+            cleaned_data.get('province') or None,
+            cleaned_data.get('country', 'IT'),
+            cleaned_data.get('email') or None,
+            cleaned_data.get('phone') or None,
+            cleaned_data.get('pec') or None,
+            cleaned_data.get('codice_destinatario') or None,
+            100.0,  # Score default
+            datetime.now()
+        )
+        
+        cursor.execute(sql, params)
+        new_id = cursor.lastrowid
+        
+        # Log dettagliato del successo
+        identifiers = []
+        if piva_clean: identifiers.append(f"P.IVA={piva_clean}")
+        if cf_clean and cf_clean != piva_clean: identifiers.append(f"CF={cf_clean}")
+        id_info = f" ({', '.join(identifiers)})" if identifiers else " (solo denominazione)"
+        
+        logger.info(f"✅ Nuova Anagrafica {anag_type} '{denomination}' inserita con ID:{new_id}{id_info}")
+        return new_id
+        
+    except sqlite3.IntegrityError as ie:
+        logger.warning(f"Constraint violato durante inserimento anagrafica '{denomination}': {ie}. Ritento ricerca...")
+        
+        # Possibile race condition o violazione UNIQUE, ritenta la ricerca
+        retry_anag_id = find_existing_anagraphics(cursor, anag_type, piva_clean, cf_clean, denomination)
+        if retry_anag_id:
+            logger.info(f"Anagrafica {anag_type} '{denomination}' trovata al secondo tentativo (ID:{retry_anag_id}).")
+            # Aggiorna anche in questo caso
+            update_anagraphics_if_better_data(cursor, retry_anag_id, cleaned_data, piva_clean, cf_clean)
+            return retry_anag_id
         else:
-            logger.error(f"ERRORE CRITICO: Config file '{config_path}' non trovato. Impossibile validare anagrafica aziendale e determinare tipo fattura.")
-            missing_config = True # Segnala config mancante
-
+            logger.error(f"❌ Inserimento fallito per IntegrityError ma non trovata al secondo tentativo: {denomination}")
+            return None
+            
+    except sqlite3.Error as dbe:
+        logger.error(f"❌ Errore DB inserimento anagrafica '{denomination}': {dbe}")
+        return None
     except Exception as e:
-        logger.error(f"Errore lettura config per dati azienda: {e}")
-        missing_config = True # Segnala errore lettura config
-
-    # Blocca import se manca config o dati essenziali
-    if missing_config:
-         results['errors'] = 1; results['files'].append({'name': source_path, 'status': 'Error - Config.ini mancante, illeggibile o senza P.IVA/CF azienda'}); return results
-
-    try:
-        # Identifica e raccogli file da processare
-        if os.path.isfile(source_path):
-            if zipfile.is_zipfile(source_path):
-                logger.info(f"Input ZIP: {source_path}. Estraggo..."); temp_dir = tempfile.mkdtemp(prefix="fattura_import_")
-                try:
-                    with zipfile.ZipFile(source_path, 'r') as zip_ref: zip_ref.extractall(temp_dir)
-                    logger.info(f"ZIP estratto in: {temp_dir}. Raccolgo file...");
-                    for root, _, files in os.walk(temp_dir):
-                        for filename in files:
-                            full_path = os.path.join(root, filename)
-                            if not _is_metadata_file(filename) and full_path not in processed_paths: files_to_process.append(full_path); processed_paths.add(full_path)
-                            elif _is_metadata_file(filename): skipped_meta_files_count += 1
-                except zipfile.BadZipFile: raise ValueError("File ZIP non valido o corrotto.")
-                except Exception as zip_err: raise IOError(f"Errore estrazione ZIP: {zip_err}") from zip_err
-            else:
-                if not _is_metadata_file(source_path): files_to_process = [source_path]
-                else: skipped_meta_files_count += 1
-        elif os.path.isdir(source_path):
-            logger.info(f"Input directory: {source_path}. Raccolgo file...");
-            for root, _, files in os.walk(source_path):
-                 for filename in files:
-                     full_path = os.path.join(root, filename)
-                     if not _is_metadata_file(filename) and full_path not in processed_paths: files_to_process.append(full_path); processed_paths.add(full_path)
-                     elif _is_metadata_file(filename): skipped_meta_files_count += 1
-        else: raise FileNotFoundError(f"Percorso non valido: {source_path}")
-
-        files_to_process.sort(); total_files_to_process = len(files_to_process)
-        results['unsupported'] = skipped_meta_files_count
-        if total_files_to_process == 0:
-            logger.warning(f"Nessun file valido trovato in '{source_path}' (esclusi {skipped_meta_files_count} file metadati).")
-            results['processed'] = skipped_meta_files_count
-            return results
-
-        # Processamento file
-        logger.info(f"Inizio processamento di {total_files_to_process} file...")
-        conn = get_connection(); conn.execute('BEGIN TRANSACTION')
+        logger.error(f"❌ Errore critico inserimento anagrafica '{denomination}': {e}", exc_info=True)
+        return None
 
 # === FUNZIONI TRANSAZIONI ===
 
