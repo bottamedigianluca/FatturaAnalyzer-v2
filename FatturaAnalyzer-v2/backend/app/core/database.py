@@ -565,11 +565,13 @@ def update_anagraphics_if_better_data(cursor, anag_id, new_data, piva_clean, cf_
         
         # Aggiorna altri campi se mancanti
         fields_to_check = ['address', 'city', 'province', 'email', 'phone']
-        for field in fields_to_check:
-            new_value = new_data.get(field, '').strip()
-            if new_value and not current[field]:
-                updates.append(f"{field} = ?")
-                params.append(new_value)
+for field in fields_to_check:
+    new_value = new_data.get(field)
+    if new_value:
+        new_value = str(new_value).strip()
+        if new_value and not current[field]:
+            updates.append(f"{field} = ?")
+            params.append(new_value)
         
         if updates:
             updates.append("updated_at = ?")
