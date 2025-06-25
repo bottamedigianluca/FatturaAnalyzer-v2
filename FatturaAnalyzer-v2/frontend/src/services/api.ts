@@ -1,24 +1,3 @@
-/**
-
-ENTERPRISE API Client V4.1 for FatturaAnalyzer Backend - VERSIONE FINALE COMPLETA
-
-Versione definitiva per ambiente enterprise con prefisso /api automatico
-
-🔥 CORREZIONI V4.1 COMPLETE:
-
-✅ Prefisso /api aggiunto automaticamente a tutte le chiamate API
-✅ URL encoding corretto per query parameters (+ => %20)
-✅ Gestione errori enterprise-grade senza mock data
-✅ Fallback solo per endpoint alternativi reali
-✅ Logging appropriato per debugging
-✅ Compatibilità con hook esistenti mantenuta
-✅ Upload component integrato correttamente
-✅ DragDropReconciliation query encoding risolto
-✅ 405/500 errors gestiti con graceful degradation
-✅ Sintassi TypeScript corretta per parametri funzioni
-✅ File completo e ordinato con tutti i metodi originali
-*/
-
 import type { Invoice, BankTransaction, Anagraphics, APIResponse } from '@/types';
 
 // Extend ImportMeta interface for Vite env support
@@ -785,9 +764,25 @@ class ApiClient {
     // ===== TRANSACTIONS API V4.1 =====
 
     async getTransactions(filters: TransactionFilters = {}) {
-        try {
-            const query = this.buildQuery(filters);
-            return await this.request(`/transactions/${query ? '?' + query : ''}`);
+    try {
+        const cleanFilters = {
+            status_filter: filters.status_filter,
+            search: filters.search,
+            start_date: filters.start_date,
+            end_date: filters.end_date,
+            min_amount: filters.min_amount,
+            max_amount: filters.max_amount,
+            anagraphics_id_heuristic: filters.anagraphics_id_heuristic,
+            hide_pos: filters.hide_pos || false,
+            hide_worldline: filters.hide_worldline || false,
+            hide_cash: filters.hide_cash || false,
+            hide_commissions: filters.hide_commissions || false,
+            page: filters.page || 1,
+            size: filters.size || 50
+        };
+        
+        const query = this.buildQuery(cleanFilters);
+        return await this.request(`/transactions/${query ? '?' + query : ''}`);
         } catch (error) {
             throw new Error('Impossibile recuperare le transazioni.');
         }
