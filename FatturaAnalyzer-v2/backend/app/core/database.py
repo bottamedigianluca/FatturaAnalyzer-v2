@@ -1137,3 +1137,761 @@ def get_transactions(start_date=None, end_date=None, status_filter=None, limit=N
             cols_to_add_dec = ['amount_dec', 'reconciled_amount_dec', 'remaining_amount_dec']
             for col in cols_to_add_fmt: df[col] = pd.Series(dtype='object')
             for col in cols_to_add_dec: df[col] = pd.Series(dtype='object') # object può contenere Decimal o NaN
+
+        cols_to_return = [
+            'id', 'transaction_date_fmt', 'value_date_fmt', 'amount_fmt',
+            'remaining_amount_fmt', 'description', 'causale_abi', 'reconciliation_status',
+            'amount_dec', 'reconciled_amount_dec', 'remaining_amount_dec', 'unique_hash', 'amount'
+        ]
+        # Assicura che tutte le colonne esistano prima di selezionarle
+        for col in cols_to_return:
+             if col not in df.columns:
+                 df[col] = pd.NA if '_dec' in col else ''
+
+        return df[cols_to_return]
+    except Exception as e:
+        logger.error(f"Errore recupero transazioni: {e}", exc_info=True)
+        cols_out = [
+            'id', 'transaction_date_fmt', 'value_date_fmt', 'amount_fmt',
+            'remaining_amount_fmt', 'description', 'causale_abi', 'reconciliation_status',
+            'amount_dec', 'reconciled_amount_dec', 'remaining_amount_dec', 'unique_hash', 'amount'
+        ]
+        return pd.DataFrame(columns=cols_out)
+    finally:
+        if conn: conn.close()
+
+# === FUNZIONI RICONCILIAZIONE ===
+
+def get_item_details(conn, item_type, item_id):
+    """
+    Recupera dettagli di una fattura o transazione specifica.
+    """
+    table = None
+    if item_type == 'invoice':
+        table = "Invoices"
+    elif item_type == 'transaction':
+        table = "BankTransactions"
+    else:
+        logger.error(f"Tipo elemento non valido per get_item_details: '{item_type}'")
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM {table} WHERE id = ?", (item_id,))
+        row = cursor.fetchone()
+        if not row:
+            logging.warning(f"Nessun dettaglio trovato per {item_type} ID {item_id}.")
+        return row
+    except sqlite3.Error as e:
+        logger.error(f"Errore DB recupero dettagli {item_type} {item_id}: {e}")
+        return None
+
+def update_invoice_reconciliation_state(conn, invoice_id, payment_status, paid_amount):
+    """
+    Aggiorna stato di riconciliazione di una fattura.
+    """
+    try:
+        cursor = conn.cursor()
+        # Assicura che paid_amount sia Decimal prima di quantize e conversione
+        paid_amount_dec = quantize(to_decimal(paid_amount, default='0.0'))
+        paid_amount_float = float(paid_amount_dec)
+        now_ts = datetime.now()
+        cursor.execute("UPDATE Invoices SET payment_status = ?, paid_amount = ?, updated_at = ? WHERE id = ?",
+                       (payment_status, paid_amount_float, now_ts, invoice_id))
+        if cursor.rowcount > 0:
+            logger.debug(f"Aggiornato stato/importo fattura {invoice_id}: Status='{payment_status}', Paid={paid_amount_float:.2f}")
+            return True
+        else:
+            logging.warning(f"Nessuna fattura trovata con ID {invoice_id} per aggiornamento stato/importo.")
+            return False
+    except (sqlite3.Error, ValueError, InvalidOperation) as e:
+        logger.error(f"Errore DB/Dati update stato fattura {invoice_id}: {e}")
+        return False
+    except Exception as e_gen:
+        logger.error(f"Errore generico update stato fattura {invoice_id}: {e_gen}", exc_info=True)
+        return False
+
+def update_transaction_reconciliation_state(conn, transaction_id, reconciliation_status, reconciled_amount):
+    """
+    Aggiorna stato di riconciliazione di una transazione.
+    """
+    try:
+        cursor = conn.cursor()
+        # Assicura che reconciled_amount sia Decimal prima di quantize e conversione
+        reconciled_amount_dec = quantize(to_decimal(reconciled_amount, default='0.0'))
+        reconciled_amount_float = float(reconciled_amount_dec)
+        cursor.execute("UPDATE BankTransactions SET reconciliation_status = ?, reconciled_amount = ? WHERE id = ?",
+                       (reconciliation_status, reconciled_amount_float, transaction_id))
+        if cursor.rowcount > 0:
+            logger.debug(f"Aggiornato stato/importo transazione {transaction_id}: Status='{reconciliation_status}', Reconciled={reconciled_amount_float:.2f}")
+            return True
+        else:
+            logging.warning(f"Nessuna transazione trovata con ID {transaction_id} per aggiornamento stato/importo.")
+            return False
+    except (sqlite3.Error, ValueError, InvalidOperation) as e:
+        logger.error(f"Errore DB/Dati update stato transazione {transaction_id}: {e}")
+        return False
+    except Exception as e_gen:
+        logger.error(f"Errore generico update stato transazione {transaction_id}: {e_gen}", exc_info=True)
+        return False
+
+def add_or_update_reconciliation_link(conn, invoice_id, transaction_id, amount_to_add):
+    """
+    Aggiunge o aggiorna un link di riconciliazione tra fattura e transazione.
+    """
+    cursor = conn.cursor()
+    try:
+        # Assicura che amount_to_add sia Decimal
+        amount_dec = quantize(to_decimal(amount_to_add))
+        if amount_dec.copy_abs() < AMOUNT_TOLERANCE / 2:
+            logging.warning(f"Tentativo link importo trascurabile ({amount_dec:.4f}) tra I:{invoice_id} e T:{transaction_id}. Ignorato.")
+            return True # Consideralo successo (nessuna azione necessaria)
+
+        cursor.execute("SELECT id, reconciled_amount FROM ReconciliationLinks WHERE invoice_id = ? AND transaction_id = ?", (invoice_id, transaction_id))
+        existing_link = cursor.fetchone()
+        now_ts = datetime.now()
+
+        if existing_link:
+            link_id = existing_link['id']
+            current_amount = to_decimal(existing_link['reconciled_amount'])
+            new_amount = quantize(current_amount + amount_dec)
+            cursor.execute("UPDATE ReconciliationLinks SET reconciled_amount = ?, reconciliation_date = ? WHERE id = ?",
+                           (float(new_amount), now_ts, link_id))
+            logging.debug(f"Aggiornato link {link_id} (I:{invoice_id}, T:{transaction_id}): Add={amount_dec:.2f}, NewTotalLink={new_amount:.2f}")
+        else:
+            cursor.execute("INSERT INTO ReconciliationLinks (invoice_id, transaction_id, reconciled_amount, reconciliation_date) VALUES (?, ?, ?, ?)",
+                           (invoice_id, transaction_id, float(amount_dec), now_ts))
+            new_link_id = cursor.lastrowid
+            logging.debug(f"Inserito nuovo link ID:{new_link_id} (I:{invoice_id}, T:{transaction_id}): Importo={amount_dec:.2f}")
+        return True
+    except (sqlite3.Error, ValueError, InvalidOperation) as e:
+        logger.error(f"Errore DB/Dati add/update link (I:{invoice_id}, T:{transaction_id}): {e}")
+        return False
+    except Exception as e_gen:
+        logger.error(f"Errore generico add/update link (I:{invoice_id}, T:{transaction_id}): {e_gen}", exc_info=True)
+        return False
+
+def remove_reconciliation_links(conn, transaction_id=None, invoice_id=None):
+    """
+    Rimuove i link di riconciliazione per una transazione o fattura specifica.
+    
+    Returns:
+        tuple: (success, (affected_invoices, affected_transactions))
+    """
+    if transaction_id is None and invoice_id is None:
+        logging.warning("Chiamata a remove_reconciliation_links senza specificare transaction_id né invoice_id.")
+        return False, ([], [])
+
+    cursor = conn.cursor()
+    affected_invoices = set()
+    affected_transactions = set()
+    id_type = ""
+    primary_id = None
+
+    try:
+        if transaction_id is not None:
+            where_clause = "transaction_id = ?"
+            primary_id = transaction_id
+            id_type = "T"
+            affected_transactions.add(transaction_id)
+            cursor.execute("SELECT DISTINCT invoice_id FROM ReconciliationLinks WHERE transaction_id = ?", (transaction_id,))
+            affected_invoices.update(row['invoice_id'] for row in cursor.fetchall())
+        elif invoice_id is not None:
+            where_clause = "invoice_id = ?"
+            primary_id = invoice_id
+            id_type = "I"
+            affected_invoices.add(invoice_id)
+            cursor.execute("SELECT DISTINCT transaction_id FROM ReconciliationLinks WHERE invoice_id = ?", (invoice_id,))
+            affected_transactions.update(row['transaction_id'] for row in cursor.fetchall())
+
+        if primary_id is None:
+            logging.error("ID primario non valido per remove_reconciliation_links.")
+            return False, ([], [])
+
+        # Non serve controllare se ci sono link, DELETE non darà errore se non trova nulla
+        delete_query = f"DELETE FROM ReconciliationLinks WHERE {where_clause}"
+        cursor.execute(delete_query, (primary_id,))
+        deleted_count = cursor.rowcount
+        if deleted_count > 0:
+            logging.info(f"Rimossi {deleted_count} link associati a {id_type}:{primary_id}.")
+        else:
+            # Aggiungi comunque l'ID primario alla lista degli affetti per forzare aggiornamento stato
+            if id_type == "T": affected_transactions.add(primary_id)
+            else: affected_invoices.add(primary_id)
+            logging.debug(f"Nessun link trovato da rimuovere per {id_type}:{primary_id}, ma lo includo per aggiornamento stato.")
+        return True, (list(affected_invoices), list(affected_transactions))
+
+    except sqlite3.Error as e:
+        primary_info = f"{id_type}:{primary_id}" if primary_id else "ID non specificato"
+        logger.error(f"Errore DB durante rimozione link ({primary_info}): {e}")
+        return False, ([], [])
+    except Exception as e_gen:
+        primary_info = f"{id_type}:{primary_id}" if primary_id else "ID non specificato"
+        logger.error(f"Errore generico durante rimozione link ({primary_info}): {e_gen}", exc_info=True)
+        return False, ([], [])
+
+# === FUNZIONI SETTINGS ===
+
+def get_settings_value(key, default_value=None):
+    """Ottiene un valore dalla tabella Settings con compatibilità completa"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Prima verifica che la tabella Settings esista con lo schema corretto
+        cursor.execute("PRAGMA table_info(Settings)")
+        columns_info = cursor.fetchall()
+        if not columns_info:
+            # Tabella non esiste, creala
+            ensure_settings_table_compatibility()
+            return default_value
+        
+        # Cerca il valore
+        cursor.execute("SELECT value FROM Settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        
+        if row:
+            return row['value']
+        else:
+            return default_value
+            
+    except sqlite3.Error as e:
+        logger.error(f"Errore lettura setting '{key}': {e}")
+        return default_value
+    finally:
+        if conn:
+            conn.close()
+
+def set_settings_value(key, value):
+    """Imposta un valore nella tabella Settings con compatibilità completa"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Assicura che la tabella Settings esista con lo schema corretto
+        ensure_settings_table_compatibility()
+        
+        # Usa INSERT OR REPLACE con updated_at (ora funziona grazie al fix dello schema)
+        cursor.execute("""
+            INSERT OR REPLACE INTO Settings (key, value, updated_at) 
+            VALUES (?, ?, datetime('now'))
+        """, (key, value))
+        
+        conn.commit()
+        logger.debug(f"Impostazione salvata: {key} = {value}")
+        return True
+        
+    except sqlite3.Error as e:
+        logger.error(f"Errore salvataggio setting '{key}': {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+# === FUNZIONI UTILITÀ E DIAGNOSTICA ===
+
+def get_database_stats():
+    """Ottiene statistiche complete del database"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        stats = {}
+        
+        # Conta record per tabella
+        tables = ['Anagraphics', 'Invoices', 'BankTransactions', 'ReconciliationLinks', 'Settings']
+        for table in tables:
+            try:
+                cursor.execute(f"SELECT COUNT(*) as count FROM {table}")
+                result = cursor.fetchone()
+                stats[f"{table.lower()}_count"] = result['count'] if result else 0
+            except sqlite3.Error:
+                stats[f"{table.lower()}_count"] = 0
+        
+        # Statistiche database
+        cursor.execute("PRAGMA page_count")
+        page_count_result = cursor.fetchone()
+        page_count = page_count_result[0] if page_count_result else 0
+        
+        cursor.execute("PRAGMA page_size")
+        page_size_result = cursor.fetchone()
+        page_size = page_size_result[0] if page_size_result else 0
+        
+        stats['database_size_kb'] = (page_count * page_size) / 1024 if page_count and page_size else 0
+        stats['total_records'] = sum(v for k, v in stats.items() if k.endswith('_count'))
+        
+        # Statistiche avanzate
+        try:
+            # Distribuzione tipi fatture
+            cursor.execute("SELECT type, COUNT(*) as count FROM Invoices GROUP BY type")
+            invoice_types = dict(cursor.fetchall())
+            stats['invoice_types'] = invoice_types
+            
+            # Statistiche stati pagamento
+            cursor.execute("SELECT payment_status, COUNT(*) as count FROM Invoices GROUP BY payment_status")
+            payment_statuses = dict(cursor.fetchall())
+            stats['payment_statuses'] = payment_statuses
+            
+            # Statistiche riconciliazione
+            cursor.execute("SELECT reconciliation_status, COUNT(*) as count FROM BankTransactions GROUP BY reconciliation_status")
+            reconciliation_statuses = dict(cursor.fetchall())
+            stats['reconciliation_statuses'] = reconciliation_statuses
+            
+        except Exception as advanced_err:
+            logger.warning(f"Errore statistiche avanzate: {advanced_err}")
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Errore calcolo statistiche database: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def verify_database_integrity():
+    """Verifica l'integrità completa del database"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # PRAGMA integrity_check
+        cursor.execute("PRAGMA integrity_check")
+        integrity_result = cursor.fetchone()
+        
+        integrity_ok = integrity_result and integrity_result[0] == 'ok'
+        
+        # Verifica foreign keys
+        cursor.execute("PRAGMA foreign_key_check")
+        fk_violations = cursor.fetchall()
+        
+        # Verifica schema Settings
+        cursor.execute("PRAGMA table_info(Settings)")
+        settings_columns = [row[1] for row in cursor.fetchall()]
+        settings_schema_ok = all(col in settings_columns for col in ['key', 'value', 'created_at', 'updated_at'])
+        
+        # Verifica indici
+        cursor.execute("PRAGMA index_list(Anagraphics)")
+        anag_indices = len(cursor.fetchall())
+        
+        cursor.execute("PRAGMA index_list(Invoices)")
+        invoice_indices = len(cursor.fetchall())
+        
+        return {
+            'integrity_ok': integrity_ok,
+            'foreign_key_violations': len(fk_violations),
+            'fk_violation_details': fk_violations[:5] if fk_violations else [],  # Prime 5 per debug
+            'settings_schema_ok': settings_schema_ok,
+            'settings_columns': settings_columns,
+            'indices_count': {
+                'anagraphics': anag_indices,
+                'invoices': invoice_indices
+            },
+            'database_path': DB_PATH,
+            'database_exists': os.path.exists(DB_PATH)
+        }
+        
+    except Exception as e:
+        logger.error(f"Errore verifica integrità database: {e}")
+        return {
+            'integrity_ok': False,
+            'error': str(e)
+        }
+    finally:
+        if conn:
+            conn.close()
+
+# === FUNZIONI COMPATIBILITÀ E MIGRAZIONE ===
+
+def ensure_database_ready():
+    """Assicura che il database sia pronto e compatibile con tutti i moduli"""
+    try:
+        # Crea/verifica tutte le tabelle
+        create_tables()
+        
+        # Verifica integrità
+        integrity = verify_database_integrity()
+        if not integrity.get('integrity_ok', False):
+            logger.warning("Database integrity check failed")
+            return False
+        
+        # Test operazioni Settings critiche
+        if not test_settings_operations():
+            logger.error("Settings operations test failed")
+            return False
+        
+        logger.info("Database is ready and fully compatible")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error ensuring database readiness: {e}")
+        return False
+
+def test_settings_operations():
+    """Testa le operazioni critiche su Settings per verificare compatibilità"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        test_key = "compatibility_test"
+        test_value = "test_value"
+        
+        # Test INSERT OR REPLACE con updated_at (operazione che causava l'errore originale)
+        cursor.execute("""
+            INSERT OR REPLACE INTO Settings (key, value, updated_at) 
+            VALUES (?, ?, datetime('now'))
+        """, (test_key, test_value))
+        
+        # Test SELECT
+        cursor.execute("SELECT key, value, created_at, updated_at FROM Settings WHERE key = ?", (test_key,))
+        result = cursor.fetchone()
+        
+        if not result or result['value'] != test_value:
+            return False
+        
+        # Test UPDATE
+        cursor.execute("""
+            UPDATE Settings SET value = ?, updated_at = datetime('now') 
+            WHERE key = ?
+        """, ("updated_test_value", test_key))
+        
+        # Cleanup
+        cursor.execute("DELETE FROM Settings WHERE key = ?", (test_key,))
+        
+        conn.commit()
+        logger.debug("Settings operations test passed")
+        return True
+        
+    except sqlite3.Error as e:
+        logger.error(f"Settings operations test failed: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def migrate_old_settings_table():
+    """Migra una vecchia tabella Settings al nuovo schema se necessario"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Controlla se esiste una tabella Settings con vecchio schema
+        cursor.execute("PRAGMA table_info(Settings)")
+        columns_info = cursor.fetchall()
+        
+        if not columns_info:
+            # Nessuna tabella Settings esistente
+            return True
+        
+        existing_columns = {row[1]: row for row in columns_info}
+        
+        # Se mancano le colonne timestamp, è una vecchia tabella
+        if 'created_at' not in existing_columns or 'updated_at' not in existing_columns:
+            logger.info("Migrating old Settings table to new schema...")
+            
+            # Backup dati esistenti
+            cursor.execute("SELECT key, value FROM Settings")
+            old_data = cursor.fetchall()
+            
+            # Rinomina vecchia tabella
+            cursor.execute("ALTER TABLE Settings RENAME TO Settings_old")
+            
+            # Crea nuova tabella con schema completo
+            cursor.execute("""
+                CREATE TABLE Settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Migra dati
+            for row in old_data:
+                cursor.execute("""
+                    INSERT INTO Settings (key, value, created_at, updated_at)
+                    VALUES (?, ?, datetime('now'), datetime('now'))
+                """, (row[0], row[1]))
+            
+            # Rimuovi vecchia tabella
+            cursor.execute("DROP TABLE Settings_old")
+            
+            conn.commit()
+            logger.info(f"Successfully migrated {len(old_data)} settings to new schema")
+        
+        return True
+        
+    except sqlite3.Error as e:
+        logger.error(f"Error migrating Settings table: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_schema_version():
+    """Ottiene la versione dello schema del database"""
+    try:
+        version = get_settings_value('schema_version', '1.0')
+        return version
+    except:
+        return '1.0'
+
+def set_schema_version(version):
+    """Imposta la versione dello schema del database"""
+    try:
+        return set_settings_value('schema_version', version)
+    except:
+        return False
+
+def update_schema_if_needed():
+    """Aggiorna lo schema del database se necessario"""
+    current_version = get_schema_version()
+    target_version = '2.0'  # Versione con Settings completo e anagrafiche robuste
+    
+    if current_version == target_version:
+        return True
+    
+    logger.info(f"Updating database schema from {current_version} to {target_version}")
+    
+    try:
+        # Assicura compatibilità Settings
+        ensure_settings_table_compatibility()
+        
+        # Aggiorna versione
+        set_schema_version(target_version)
+        
+        logger.info("Database schema updated successfully")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error updating database schema: {e}")
+        return False
+
+# === WRAPPER COMPATIBILITÀ ===
+
+class DatabaseCompatibilityWrapper:
+    """Wrapper per garantire compatibilità tra core sincrono e adapter asincrono"""
+    
+    @staticmethod
+    def ensure_compatibility():
+        """Assicura compatibilità tra tutti i sistemi"""
+        try:
+            # Aggiorna schema se necessario
+            update_schema_if_needed()
+            
+            # Assicura che il database sia pronto
+            ensure_database_ready()
+            
+            return True
+        except Exception as e:
+            logger.error(f"Compatibility check failed: {e}")
+            return False
+    
+    @staticmethod
+    def get_connection_safe():
+        """Ottiene connessione sicura con verifica compatibilità"""
+        try:
+            conn = get_connection()
+            
+            # Verifica rapida schema Settings
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(Settings)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            required = ['key', 'value', 'created_at', 'updated_at']
+            if not all(col in columns for col in required):
+                conn.close()
+                # Ripara automaticamente
+                ensure_settings_table_compatibility()
+                conn = get_connection()
+            
+            return conn
+        except Exception as e:
+            logger.error(f"Error getting safe connection: {e}")
+            raise
+
+# === FUNZIONI DIAGNOSTICA AVANZATA ===
+
+def analyze_anagraphics_quality():
+    """
+    Analizza la qualità dei dati anagrafici per identificare potenziali problemi.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        analysis = {
+            'total_anagraphics': 0,
+            'missing_piva_cf': 0,
+            'missing_denomination': 0,
+            'potential_duplicates': [],
+            'invalid_emails': 0,
+            'missing_address': 0
+        }
+        
+        # Conteggio totale
+        cursor.execute("SELECT COUNT(*) FROM Anagraphics")
+        analysis['total_anagraphics'] = cursor.fetchone()[0]
+        
+        # Anagrafiche senza P.IVA/CF
+        cursor.execute("SELECT COUNT(*) FROM Anagraphics WHERE (piva IS NULL OR piva = '') AND (cf IS NULL OR cf = '')")
+        analysis['missing_piva_cf'] = cursor.fetchone()[0]
+        
+        # Anagrafiche senza denominazione valida
+        cursor.execute("SELECT COUNT(*) FROM Anagraphics WHERE denomination IS NULL OR LENGTH(TRIM(denomination)) < 2")
+        analysis['missing_denomination'] = cursor.fetchone()[0]
+        
+        # Anagrafiche senza indirizzo
+        cursor.execute("SELECT COUNT(*) FROM Anagraphics WHERE address IS NULL OR address = ''")
+        analysis['missing_address'] = cursor.fetchone()[0]
+        
+        # Email non valide (controllo basico)
+        cursor.execute("SELECT COUNT(*) FROM Anagraphics WHERE email IS NOT NULL AND email != '' AND email NOT LIKE '%@%'")
+        analysis['invalid_emails'] = cursor.fetchone()[0]
+        
+        # Potenziali duplicati (stessa denominazione)
+        cursor.execute("""
+            SELECT denomination, COUNT(*) as count, GROUP_CONCAT(id) as ids
+            FROM Anagraphics 
+            WHERE denomination IS NOT NULL AND denomination != ''
+            GROUP BY LOWER(TRIM(denomination))
+            HAVING count > 1
+            ORDER BY count DESC
+            LIMIT 10
+        """)
+        
+        duplicates = cursor.fetchall()
+        for dup in duplicates:
+            analysis['potential_duplicates'].append({
+                'denomination': dup[0],
+                'count': dup[1],
+                'ids': dup[2].split(',')
+            })
+        
+        return analysis
+        
+    except Exception as e:
+        logger.error(f"Errore analisi qualità anagrafiche: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def cleanup_orphaned_records():
+    """
+    Pulisce record orfani che potrebbero essersi creati durante import falliti.
+    """
+    conn = None
+    cleanup_stats = {
+        'orphaned_invoice_lines': 0,
+        'orphaned_vat_summaries': 0,
+        'orphaned_reconciliation_links': 0
+    }
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Righe fatture orfane
+        cursor.execute("""
+            DELETE FROM InvoiceLines 
+            WHERE invoice_id NOT IN (SELECT id FROM Invoices)
+        """)
+        cleanup_stats['orphaned_invoice_lines'] = cursor.rowcount
+        
+        # Riepiloghi IVA orfani
+        cursor.execute("""
+            DELETE FROM InvoiceVATSummary 
+            WHERE invoice_id NOT IN (SELECT id FROM Invoices)
+        """)
+        cleanup_stats['orphaned_vat_summaries'] = cursor.rowcount
+        
+        # Link riconciliazione orfani
+        cursor.execute("""
+            DELETE FROM ReconciliationLinks 
+            WHERE invoice_id NOT IN (SELECT id FROM Invoices)
+               OR transaction_id NOT IN (SELECT id FROM BankTransactions)
+        """)
+        cleanup_stats['orphaned_reconciliation_links'] = cursor.rowcount
+        
+        conn.commit()
+        
+        total_cleaned = sum(cleanup_stats.values())
+        if total_cleaned > 0:
+            logger.info(f"Pulizia completata: {cleanup_stats}")
+        else:
+            logger.debug("Nessun record orfano trovato durante pulizia")
+            
+        return cleanup_stats
+        
+    except Exception as e:
+        logger.error(f"Errore durante pulizia record orfani: {e}")
+        if conn:
+            conn.rollback()
+        return cleanup_stats
+    finally:
+        if conn:
+            conn.close()
+
+# === INIZIALIZZAZIONE AUTOMATICA ===
+
+def _auto_initialize():
+    """Inizializzazione automatica del sistema database"""
+    try:
+        # Solo se il database esiste già, fai verifica compatibilità
+        if os.path.exists(DB_PATH):
+            db_wrapper = DatabaseCompatibilityWrapper()
+            if not db_wrapper.ensure_compatibility():
+                logger.warning("Database compatibility check failed during auto-initialization")
+    except Exception as e:
+        logger.warning(f"Auto-initialization failed: {e}")
+
+# Esegui inizializzazione automatica
+_auto_initialize()
+
+# === EXPORT FUNZIONI PRINCIPALI ===
+
+__all__ = [
+    # Core functions
+    'get_connection', 'create_tables', 'get_db_path',
+    
+    # CRUD operations  
+    'add_anagraphics_if_not_exists', 'get_anagraphics', 'get_invoices', 
+    'get_transactions', 'add_transactions',
+    
+    # Reconciliation
+    'get_reconciliation_links_for_item', 'add_or_update_reconciliation_link',
+    'remove_reconciliation_links', 'update_invoice_reconciliation_state',
+    'update_transaction_reconciliation_state',
+    
+    # Settings (compatibili con first_run.py)
+    'get_settings_value', 'set_settings_value',
+    
+    # Utility and compatibility
+    'get_database_stats', 'verify_database_integrity', 'ensure_database_ready',
+    'ensure_settings_table_compatibility', 'migrate_old_settings_table',
+    'DatabaseCompatibilityWrapper',
+    
+    # Schema management
+    'get_schema_version', 'set_schema_version', 'update_schema_if_needed',
+    
+    # Advanced functions
+    'analyze_anagraphics_quality', 'cleanup_orphaned_records',
+    'validate_anagraphics_data', 'find_existing_anagraphics',
+    'clean_fiscal_code', 'extract_significant_words',
+    
+    # Core validation and helper functions
+    'check_entity_duplicate', 'get_item_details'
+]_fmt',
