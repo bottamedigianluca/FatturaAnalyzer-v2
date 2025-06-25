@@ -1651,10 +1651,35 @@ class ApiClient {
     }
 
     async getExportPresets(): Promise<APIResponse> {
-        try {
-            return await this.request('/import-export/export/presets');
-        } catch (error) {
-            console.warn("Endpoint presets non implementato, usando fallback");
+    try {
+        return await this.request('/import-export/export/presets');
+    } catch (error) {
+        if (error instanceof Error && error.message.includes('500')) {
+            console.warn("Export presets endpoint returning 500, using enhanced fallback");
+            return {
+                success: true,
+                data: [
+                    {
+                        id: 'invoices-default',
+                        name: 'Fatture Standard',
+                        type: 'invoices',
+                        format: 'excel',
+                        filters: {},
+                        columns: ['numero', 'data', 'cliente', 'importo']
+                    },
+                    {
+                        id: 'transactions-default',
+                        name: 'Transazioni Standard',
+                        type: 'transactions',
+                        format: 'csv',
+                        filters: {},
+                        columns: ['data', 'descrizione', 'importo', 'stato']
+                    }
+                ]
+            };
+        }
+        throw error;
+    }
             return {
                 success: true,
                 data: [
