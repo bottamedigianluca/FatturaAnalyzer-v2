@@ -344,23 +344,152 @@ export interface BankTransaction {
   remaining_amount?: number;
 }
 
+/**
+ * Transaction Filters Interface - VERSIONE CORRETTA
+ * Allineata esattamente con parametri supportati dal backend
+ * 
+ * Aggiungere a: frontend/src/types/index.ts o creare nuovo file
+ */
+
+// ===== INTERFACE CORRETTA PER TRANSACTION FILTERS =====
+
 export interface TransactionFilters {
+  // ✅ PARAMETRI BASE SUPPORTATI DAL BACKEND
+  status_filter?: string; // 'Da Riconciliare' | 'Riconciliato Parz.' | 'Riconciliato Tot.' | 'Ignorato'
   search?: string;
-  status_filter?: string;
-  type_filter?: 'Entrata' | 'Uscita';
-  category_filter?: string;
-  start_date?: string;
-  end_date?: string;
-  amount_min?: number;
-  amount_max?: number;
+  start_date?: string; // ISO format YYYY-MM-DD
+  end_date?: string;   // ISO format YYYY-MM-DD
+  min_amount?: number;
+  max_amount?: number;
+  anagraphics_id_heuristic?: number;
+  
+  // ✅ FILTRI BOOLEAN SUPPORTATI
+  hide_pos?: boolean;
+  hide_worldline?: boolean;
+  hide_cash?: boolean;
+  hide_commissions?: boolean;
+  
+  // ✅ PAGINAZIONE SUPPORTATA
   page?: number;
   size?: number;
-  sort_by?: string;
-  sort_order?: 'asc' | 'desc';
-  // Enhanced filters V4.0
-  unreconciled_only?: boolean;
-  has_suggestions?: boolean;
-  ai_confidence_min?: number;
+  
+  // ===== BACKWARD COMPATIBILITY =====
+  // Mantieni per compatibilità con codice esistente ma NON inviare al backend
+  reconciliation_status?: string; // Alias per status_filter
+  limit?: number; // Alias per size
+  offset?: number; // Calcolato da page/size
+}
+
+// ===== ENUM PER STATI RICONCILIAZIONE =====
+
+export enum ReconciliationStatus {
+  DA_RICONCILIARE = "Da Riconciliare",
+  RICONCILIATO_PARZ = "Riconciliato Parz.",
+  RICONCILIATO_TOT = "Riconciliato Tot.",
+  RICONCILIATO_ECCESSO = "Riconciliato Eccesso",
+  IGNORATO = "Ignorato"
+}
+
+// ===== UTILITY FUNCTIONS =====
+
+/**
+ * Pulisce i filtri per il backend rimuovendo parametri non supportati
+ */
+export function cleanTransactionFilters(filters: TransactionFilters): Record<string, any> {
+  return {
+    status_filter: filters.status_filter || filters.reconciliation_status,
+    search: filters.search,
+    start_date: filters.start_date,
+    end_date: filters.end_date,
+    min_amount: filters.min_amount,
+    max_amount: filters.max_amount,
+    anagraphics_id_heuristic: filters.anagraphics_id_heuristic,
+    hide_pos: filters.hide_pos || false,
+    hide_worldline: filters.hide_worldline || false,
+    hide_cash: filters.hide_cash || false,
+    hide_commissions: filters.hide_commissions || false,
+    page: filters.page || 1,
+    size: filters.size || filters.limit || 50
+  };
+}
+
+/**
+ * Valida i filtri prima dell'invio
+ */
+export function validateTransactionFilters(filters: TransactionFilters): string[] {
+  const errors: string[] = [];
+  
+  if (filters.start_date && filters.end_date) {
+    const start = new Date(filters.start_date);
+    const end = new Date(filters.end_date);
+    if (start > end) {
+      errors.push('Data inizio deve essere precedente alla data fine');
+    }
+  }
+  
+  if (filters.min_amount && filters.max_amount && filters.min_amount > filters.max_amount) {
+    errors.push('Importo minimo deve essere inferiore all\'importo massimo');
+  }
+  
+  if (filters.page && filters.page < 1) {
+    errors.push('Numero pagina deve essere maggiore di 0');
+  }
+  
+  if (filters.size && (filters.size < 1 || filters.size > 1000)) {
+    errors.push('Dimensione pagina deve essere tra 1 e 1000');
+  }
+  
+  return errors;
+}
+
+// ===== CONSTANTI =====
+
+export const RECONCILIATION_STATUS_OPTIONS = [
+  { value: ReconciliationStatus.DA_RICONCILIARE, label: 'Da Riconciliare' },
+  { value: ReconciliationStatus.RICONCILIATO_PARZ, label: 'Riconciliato Parzialmente' },
+  { value: ReconciliationStatus.RICONCILIATO_TOT, label: 'Riconciliato Totalmente' },
+  { value: ReconciliationStatus.IGNORATO, label: 'Ignorato' }
+];
+
+export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
+  page: 1,
+  size: 50,
+  hide_pos: false,
+  hide_worldline: false,
+  hide_cash: false,
+  hide_commissions: false
+};
+
+export const MAX_SEARCH_LENGTH = 200;
+export const MIN_SEARCH_LENGTH = 2;
+export const MAX_PAGE_SIZE = 1000;
+export const DEFAULT_PAGE_SIZE = 50;
+
+// ===== TYPE GUARDS =====
+
+export function isValidReconciliationStatus(status: string): status is ReconciliationStatus {
+  return Object.values(ReconciliationStatus).includes(status as ReconciliationStatus);
+}
+
+export function isValidTransactionFilter(key: string): key is keyof TransactionFilters {
+  const validKeys: (keyof TransactionFilters)[] = [
+    'status_filter', 'search', 'start_date', 'end_date', 'min_amount', 'max_amount',
+    'anagraphics_id_heuristic', 'hide_pos', 'hide_worldline', 'hide_cash', 
+    'hide_commissions', 'page', 'size', 'reconciliation_status', 'limit', 'offset'
+  ];
+  return validKeys.includes(key as keyof TransactionFilters);
+}
+
+// ===== HELPER FOR DEBUG =====
+
+export function debugTransactionFilters(filters: TransactionFilters): void {
+  if (process.env.NODE_ENV === 'development') {
+    console.group('🔍 Transaction Filters Debug');
+    console.log('Original filters:', filters);
+    console.log('Cleaned filters:', cleanTransactionFilters(filters));
+    console.log('Validation errors:', validateTransactionFilters(filters));
+    console.groupEnd();
+  }
 }
 
 // Riconciliazione
