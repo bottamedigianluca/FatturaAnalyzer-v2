@@ -963,20 +963,9 @@ class ApiClient {
     }
 
     // Statistics Ultra V4.1
-    async getTransactionStatsV4(
-        useCache: boolean = true,
-        includeTrends: boolean = false,
-        includeAIInsights: boolean = false,
-        periodMonths: number = 12
-    ): Promise<APIResponse> {
-        try {
-            const params = this.buildQuery({
-                use_cache: useCache,
-                include_trends: includeTrends,
-                include_ai_insights: includeAIInsights,
-                period_months: periodMonths
-            });
-            return await this.request(`/transactions/stats/summary?${params}`);
+    async getTransactionStatsV4(): Promise<APIResponse> {
+    try {
+        return await this.request('/transactions/stats/summary');
         } catch (error) {
             throw new Error('Statistiche transazioni non disponibili.');
         }
