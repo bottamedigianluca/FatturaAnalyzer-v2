@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/services/api';
 import { useUIStore } from '@/store';
@@ -79,6 +80,7 @@ export interface ImportExportHealth {
     xml_processing: string;
     database_connection: string;
   };
+  error?: string;
 }
 
 export interface SupportedFormats {
@@ -135,6 +137,44 @@ export interface ImportMetrics {
   };
 }
 
+export interface ImportHistoryItem {
+  id: string;
+  type: 'import' | 'export' | 'validation';
+  status: 'completed' | 'failed' | 'in_progress';
+  filename: string;
+  timestamp: string;
+  records_processed: number;
+  success_count: number;
+  error_count: number;
+  message?: string;
+}
+
+export interface OperationStatus {
+  active_operations: Array<{
+    id: string;
+    type: string;
+    status: string;
+    progress_percentage: number;
+    started_at: string;
+    estimated_completion: string;
+    files_processed: number;
+    files_total: number;
+  }>;
+  recent_operations: Array<{
+    id: string;
+    type: string;
+    status: string;
+    completed_at: string;
+    duration_seconds: number;
+    result: string;
+  }>;
+  queue_status: {
+    pending_operations: number;
+    estimated_wait_time_minutes: number;
+    queue_capacity: string;
+  };
+}
+
 // ===== CORE IMPORT HOOKS (VERIFICATI CON IL BACKEND) =====
 
 /**
@@ -143,11 +183,12 @@ export interface ImportMetrics {
  */
 export function useImportInvoicesZIP() {
   const queryClient = useQueryClient();
+  
   return useMutation<ImportResult, Error, File>({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post('/api/import-export/invoices/zip', formData);
+      const response = await apiClient.post('/import-export/invoices/zip', formData);
       return response;
     },
     onSuccess: (data) => {
@@ -169,11 +210,12 @@ export function useImportInvoicesZIP() {
  */
 export function useImportTransactionsCSVZIP() {
   const queryClient = useQueryClient();
+  
   return useMutation<ImportResult, Error, File>({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post('/api/import-export/transactions/csv-zip', formData);
+      const response = await apiClient.post('/import-export/transactions/csv-zip', formData);
       return response;
     },
     onSuccess: (data) => {
@@ -195,11 +237,12 @@ export function useImportTransactionsCSVZIP() {
  */
 export function useImportMixedZIP() {
   const queryClient = useQueryClient();
+  
   return useMutation<ImportResult, Error, File>({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post('/api/import-export/mixed/zip', formData);
+      const response = await apiClient.post('/import-export/mixed/zip', formData);
       return response;
     },
     onSuccess: (data) => {
@@ -221,11 +264,12 @@ export function useImportMixedZIP() {
  */
 export function useImportInvoicesXML() {
   const queryClient = useQueryClient();
+  
   return useMutation<ImportResult, Error, File[]>({
     mutationFn: async (files: File[]) => {
       const formData = new FormData();
       files.forEach(file => formData.append('files', file));
-      const response = await apiClient.post('/api/import-export/invoices/xml', formData);
+      const response = await apiClient.post('/import-export/invoices/xml', formData);
       return response;
     },
     onSuccess: (data) => {
@@ -251,7 +295,7 @@ export function useValidateZIPArchive() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post('/api/import-export/validate-zip', formData);
+      const response = await apiClient.post('/import-export/validate-zip', formData);
       if (!response.success) throw new Error(response.message || 'Errore validazione ZIP');
       return response;
     },
@@ -282,7 +326,7 @@ export function useValidateCSV() {
     mutationFn: async ({ file, dataType }) => {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post(`/api/import-export/validate/csv?data_type=${dataType}`, formData);
+      const response = await apiClient.post(`/import-export/validate/csv?data_type=${dataType}`, formData);
       return response;
     },
     onSuccess: (response) => {
@@ -312,7 +356,7 @@ export function usePreviewCSV() {
     mutationFn: async ({ file, maxRows = 10 }) => {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post(`/api/import-export/preview/csv?max_rows=${maxRows}`, formData);
+      const response = await apiClient.post(`/import-export/preview/csv?max_rows=${maxRows}`, formData);
       return response;
     },
     onSuccess: (response) => {
@@ -335,7 +379,7 @@ export function useBatchValidateFiles() {
     mutationFn: async (files: File[]) => {
       const formData = new FormData();
       files.forEach(file => formData.append('files', file));
-      const response = await apiClient.post('/api/import-export/advanced/batch-validate', formData);
+      const response = await apiClient.post('/import-export/advanced/batch-validate', formData);
       return response;
     },
     onSuccess: (response) => {
@@ -374,7 +418,7 @@ export function useExportData() {
       
       if (format === 'json') {
         // Per JSON, ottieni i dati e scaricali come file
-        const response = await apiClient.get(`/api/import-export/export/${type}?${params.toString()}`);
+        const response = await apiClient.get(`/import-export/export/${type}?${params.toString()}`);
         const jsonData = JSON.stringify(response.data, null, 2);
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = window.URL.createObjectURL(blob);
@@ -387,7 +431,7 @@ export function useExportData() {
         window.URL.revokeObjectURL(url);
       } else {
         // Per CSV/Excel, fai una richiesta diretta per scaricare il file
-        const baseURL = apiClient.defaults?.baseURL || 'http://127.0.0.1:8000';
+        const baseURL = apiClient.baseURL || 'http://127.0.0.1:8000';
         const response = await fetch(`${baseURL}/api/import-export/export/${type}?${params.toString()}`);
         if (!response.ok) throw new Error('Export failed');
         
@@ -421,7 +465,7 @@ export function useExportData() {
 export function useDownloadTransactionTemplate() {
   return useMutation<void, Error, void>({
     mutationFn: async () => {
-      const baseURL = apiClient.defaults?.baseURL || 'http://127.0.0.1:8000';
+      const baseURL = apiClient.baseURL || 'http://127.0.0.1:8000';
       const response = await fetch(`${baseURL}/api/import-export/templates/transactions-csv`);
       if (!response.ok) throw new Error('Template non disponibile');
       
@@ -451,7 +495,7 @@ export function useDownloadTransactionTemplate() {
 export function useDownloadTemplate() {
   return useMutation<void, Error, string>({
     mutationFn: async (templateType: string) => {
-      const baseURL = apiClient.defaults?.baseURL || 'http://127.0.0.1:8000';
+      const baseURL = apiClient.baseURL || 'http://127.0.0.1:8000';
       const response = await fetch(`${baseURL}/api/import-export/templates/${templateType}`);
       if (!response.ok) throw new Error('Template non disponibile');
       
@@ -483,7 +527,7 @@ export function useDownloadTemplate() {
 export function useCreateBackup() {
   return useMutation<any, Error, void>({
     mutationFn: async () => {
-      const response = await apiClient.post('/api/import-export/system/backup/create');
+      const response = await apiClient.post('/import-export/system/backup/create');
       return response;
     },
     onSuccess: (data) => {
@@ -504,7 +548,7 @@ export function useCreateBackup() {
 export function useCleanupTempFiles() {
   return useMutation<any, Error, void>({
     mutationFn: async () => {
-      const response = await apiClient.post('/api/import-export/system/maintenance/cleanup');
+      const response = await apiClient.post('/import-export/system/maintenance/cleanup');
       return response;
     },
     onSuccess: (data) => {
@@ -526,6 +570,7 @@ export function useCleanupTempFiles() {
  */
 export function useSmartImportWithAI() {
   const queryClient = useQueryClient();
+  
   return useMutation<any, Error, {
     files: File[];
     autoCategorize?: boolean;
@@ -542,7 +587,7 @@ export function useSmartImportWithAI() {
         data_enrichment: String(dataEnrichment)
       });
       
-      const response = await apiClient.post(`/api/import-export/advanced/smart-import?${params.toString()}`, formData);
+      const response = await apiClient.post(`/import-export/advanced/smart-import?${params.toString()}`, formData);
       return response;
     },
     onSuccess: (response) => {
@@ -564,6 +609,7 @@ export function useSmartImportWithAI() {
  */
 export function useBulkImportData() {
   const queryClient = useQueryClient();
+  
   return useMutation<any, Error, {
     dataType: string;
     files: File[];
@@ -577,7 +623,7 @@ export function useBulkImportData() {
         formData.append('options', JSON.stringify(options));
       }
       
-      const response = await apiClient.post('/api/import-export/bulk/import', formData);
+      const response = await apiClient.post('/import-export/bulk/import', formData);
       return response;
     },
     onSuccess: (response) => {
@@ -603,7 +649,7 @@ export function useImportStatistics() {
   return useQuery<ImportStatistics, Error>({
     queryKey: ['import-statistics'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/statistics');
+      const response = await apiClient.get('/import-export/statistics');
       return response.data;
     },
     refetchInterval: 30000, // Aggiorna ogni 30 secondi
@@ -619,7 +665,7 @@ export function useImportExportHealth() {
   return useQuery<ImportExportHealth, Error>({
     queryKey: ['import-export-health'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/health/enterprise');
+      const response = await apiClient.get('/import-export/health/enterprise');
       return response.data;
     },
     refetchInterval: 2 * 60 * 1000, // Aggiorna ogni 2 minuti
@@ -635,7 +681,7 @@ export function useSupportedFormats() {
   return useQuery<SupportedFormats, Error>({
     queryKey: ['supported-formats'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/supported-formats/enterprise');
+      const response = await apiClient.get('/import-export/supported-formats/enterprise');
       return response.data;
     },
     staleTime: 10 * 60 * 1000, // Considera stale dopo 10 minuti
@@ -650,7 +696,7 @@ export function useExportPresets() {
   return useQuery<ExportPreset[], Error>({
     queryKey: ['export-presets'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/export/presets');
+      const response = await apiClient.get('/import-export/export/presets');
       return response.data;
     },
     staleTime: 15 * 60 * 1000, // Considera stale dopo 15 minuti
@@ -665,7 +711,7 @@ export function useImportMetrics() {
   return useQuery<ImportMetrics, Error>({
     queryKey: ['import-metrics'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/metrics/import');
+      const response = await apiClient.get('/import-export/metrics/import');
       return response.data;
     },
     refetchInterval: 5 * 60 * 1000, // Aggiorna ogni 5 minuti
@@ -677,10 +723,10 @@ export function useImportMetrics() {
  * Endpoint: GET /api/import-export/status/operations
  */
 export function useOperationStatus() {
-  return useQuery<any, Error>({
+  return useQuery<OperationStatus, Error>({
     queryKey: ['operation-status'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/status/operations');
+      const response = await apiClient.get('/import-export/status/operations');
       return response.data;
     },
     refetchInterval: 10 * 1000, // Aggiorna ogni 10 secondi per operazioni in tempo reale
@@ -695,7 +741,7 @@ export function useImportExportConfig() {
   return useQuery<any, Error>({
     queryKey: ['import-export-config'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/config');
+      const response = await apiClient.get('/import-export/config');
       return response.data;
     },
     staleTime: 30 * 60 * 1000, // Considera stale dopo 30 minuti
@@ -708,9 +754,10 @@ export function useImportExportConfig() {
  */
 export function useUpdateImportExportConfig() {
   const queryClient = useQueryClient();
+  
   return useMutation<any, Error, Record<string, any>>({
     mutationFn: async (config) => {
-      const response = await apiClient.post('/api/import-export/config', config);
+      const response = await apiClient.post('/import-export/config', config);
       return response;
     },
     onSuccess: (response) => {
@@ -735,7 +782,7 @@ export function useRecentImportErrors() {
   return useQuery<any, Error>({
     queryKey: ['recent-import-errors'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/debug/recent-errors');
+      const response = await apiClient.get('/import-export/debug/recent-errors');
       return response.data;
     },
     refetchInterval: 2 * 60 * 1000, // Aggiorna ogni 2 minuti
@@ -748,9 +795,10 @@ export function useRecentImportErrors() {
  */
 export function useRetryFailedOperation() {
   const queryClient = useQueryClient();
+  
   return useMutation<any, Error, string>({
     mutationFn: async (operationId: string) => {
-      const response = await apiClient.post(`/api/import-export/debug/retry-failed/${operationId}`);
+      const response = await apiClient.post(`/import-export/debug/retry-failed/${operationId}`);
       return response;
     },
     onSuccess: (response) => {
@@ -773,10 +821,25 @@ export function useImportExportInfo() {
   return useQuery<any, Error>({
     queryKey: ['import-export-info'],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/info');
+      const response = await apiClient.get('/import-export/info');
       return response.data;
     },
     staleTime: 60 * 60 * 1000, // Considera stale dopo 1 ora
+  });
+}
+
+/**
+ * ✅ NUOVO: Storico import/export
+ * Endpoint: GET /api/sync/history
+ */
+export function useImportHistory(limit: number = 20) {
+  return useQuery<ImportHistoryItem[], Error>({
+    queryKey: ['import-history', limit],
+    queryFn: async () => {
+      const response = await apiClient.getImportHistory(limit);
+      return response.data || [];
+    },
+    refetchInterval: 5 * 60 * 1000, // Aggiorna ogni 5 minuti
   });
 }
 
@@ -822,6 +885,7 @@ export function useRefreshImportExportData() {
     queryClient.invalidateQueries({ queryKey: ['export-presets'] });
     queryClient.invalidateQueries({ queryKey: ['supported-formats'] });
     queryClient.invalidateQueries({ queryKey: ['import-export-config'] });
+    queryClient.invalidateQueries({ queryKey: ['import-history'] });
     toast.info('Cache Aggiornata', { description: 'Tutti i dati import/export sono stati ricaricati' });
   };
 }
@@ -943,7 +1007,7 @@ export function useOperationMonitor(operationId?: string) {
   const { data: operationStatus, refetch } = useQuery({
     queryKey: ['operation-monitor', operationId],
     queryFn: async () => {
-      const response = await apiClient.get('/api/import-export/status/operations');
+      const response = await apiClient.get('/import-export/status/operations');
       if (operationId) {
         return response.data.active_operations?.find((op: any) => op.id === operationId);
       }
@@ -972,9 +1036,174 @@ export function useOperationMonitor(operationId?: string) {
   };
 }
 
-// ===== EXPORT DEFAULT =====
+/**
+ * ✅ UTILITY: Hook per gestire drag & drop file
+ */
+export function useFileDragDrop() {
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
 
-export default {
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent, onFilesDrop?: (files: File[]) => void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    setDraggedFiles(files);
+    
+    if (onFilesDrop) {
+      onFilesDrop(files);
+    }
+  };
+
+  const clearFiles = () => {
+    setDraggedFiles([]);
+  };
+
+  return {
+    isDragging,
+    draggedFiles,
+    handleDragEnter,
+    handleDragLeave,
+    handleDragOver,
+    handleDrop,
+    clearFiles
+  };
+}
+
+/**
+ * ✅ UTILITY: Hook per gestire batch di operazioni con progress
+ */
+export function useBatchOperationProgress() {
+  const [operations, setOperations] = useState<Array<{
+    id: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    progress: number;
+    message?: string;
+  }>>([]);
+
+  const addOperation = (id: string, message?: string) => {
+    setOperations(prev => [...prev, {
+      id,
+      status: 'pending',
+      progress: 0,
+      message
+    }]);
+  };
+
+  const updateOperation = (id: string, updates: Partial<typeof operations[0]>) => {
+    setOperations(prev => prev.map(op => 
+      op.id === id ? { ...op, ...updates } : op
+    ));
+  };
+
+  const removeOperation = (id: string) => {
+    setOperations(prev => prev.filter(op => op.id !== id));
+  };
+
+  const clearAll = () => {
+    setOperations([]);
+  };
+
+  const getOverallProgress = () => {
+    if (operations.length === 0) return 0;
+    const totalProgress = operations.reduce((sum, op) => sum + op.progress, 0);
+    return Math.round(totalProgress / operations.length);
+  };
+
+  const isAnyRunning = () => {
+    return operations.some(op => op.status === 'running');
+  };
+
+  return {
+    operations,
+    addOperation,
+    updateOperation,
+    removeOperation,
+    clearAll,
+    getOverallProgress,
+    isAnyRunning
+  };
+}
+
+/**
+ * ✅ UTILITY: Hook per gestire notifiche import/export
+ */
+export function useImportExportNotifications() {
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    timestamp: Date;
+    read: boolean;
+  }>>([]);
+
+  const addNotification = (notification: Omit<typeof notifications[0], 'id' | 'timestamp' | 'read'>) => {
+    const newNotification = {
+      ...notification,
+      id: `notification-${Date.now()}-${Math.random()}`,
+      timestamp: new Date(),
+      read: false
+    };
+    
+    setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Mantieni solo le ultime 50
+    
+    // Auto-remove dopo 5 secondi per successi, 10 per errori
+    const timeout = notification.type === 'success' ? 5000 : 10000;
+    setTimeout(() => {
+      removeNotification(newNotification.id);
+    }, timeout);
+  };
+
+  const markAsRead = (id: string) => {
+    setNotifications(prev => prev.map(notif => 
+      notif.id === id ? { ...notif, read: true } : notif
+    ));
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(notif => notif.id !== id));
+  };
+
+  const clearAll = () => {
+    setNotifications([]);
+  };
+
+  const getUnreadCount = () => {
+    return notifications.filter(notif => !notif.read).length;
+  };
+
+  return {
+    notifications,
+    addNotification,
+    markAsRead,
+    removeNotification,
+    clearAll,
+    getUnreadCount
+  };
+}
+
+// ===== EXPORT DEFAULT OBJECT CON TUTTI GLI HOOK =====
+
+const useImportExportHooks = {
   // Core Import
   useImportInvoicesZIP,
   useImportTransactionsCSVZIP,
@@ -1011,6 +1240,7 @@ export default {
   useOperationStatus,
   useImportExportConfig,
   useUpdateImportExportConfig,
+  useImportHistory,
   
   // Debug & Monitoring
   useRecentImportErrors,
@@ -1022,5 +1252,10 @@ export default {
   useRefreshImportExportData,
   useFileUploadWithProgress,
   useFileValidation,
-  useOperationMonitor
+  useOperationMonitor,
+  useFileDragDrop,
+  useBatchOperationProgress,
+  useImportExportNotifications
 };
+
+export default useImportExportHooks;
