@@ -597,6 +597,7 @@ def add_anagraphics_if_not_exists(cursor, anag_data, anag_type):
     - Ricerca fuzzy per denominazioni simili
     - Aggiornamento automatico di anagrafiche esistenti con dati migliori
     - Gestione robust dei casi edge (CF nel campo P.IVA, etc.)
+    - Verifica automatica esistenza tabelle
     
     Args:
         cursor: Cursore database SQLite
@@ -606,6 +607,30 @@ def add_anagraphics_if_not_exists(cursor, anag_data, anag_type):
     Returns:
         int: ID dell'anagrafica (esistente o nuova) o None se errore critico
     """
+    
+    # === VERIFICA E CREA TABELLE SE NECESSARIO ===
+    try:
+        # Test rapido esistenza tabella
+        cursor.execute("SELECT 1 FROM Anagraphics LIMIT 1")
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            logger.warning("Tabella Anagraphics non trovata durante add_anagraphics, creo le tabelle...")
+            try:
+                # Crea tutte le tabelle
+                create_tables()
+                logger.info("Tabelle create con successo")
+                # Test di nuovo
+                cursor.execute("SELECT 1 FROM Anagraphics LIMIT 1")
+            except Exception as create_err:
+                logger.error(f"Errore critico creazione tabelle: {create_err}")
+                return None
+        else:
+            logger.error(f"Errore DB non gestito in add_anagraphics: {e}")
+            return None
+    except Exception as unexpected_err:
+        logger.error(f"Errore imprevisto verifica tabelle: {unexpected_err}")
+        return None
+    
     # Validazione e pulizia dati in ingresso
     is_valid, cleaned_data, warnings = validate_anagraphics_data(anag_data, anag_type)
     
