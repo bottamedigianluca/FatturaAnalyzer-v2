@@ -635,43 +635,6 @@ async def get_supported_formats():
         }
     )
 
-Analizzerò gli errori e fornirò le correzioni necessarie. Dal report vedo i problemi principali:
-
-## 🔥 ERRORI PRINCIPALI IDENTIFICATI
-
-1. **HTTP 422 Errors** - Parametri non supportati dal backend
-2. **HTTP 500 Errors** - Export presets fallisce 
-3. **React Warnings** - setState durante render
-4. **Parametri API non allineati** tra frontend e backend
-
-## 📝 FILE DA CORREGGERE
-
-### 1. **Backend: transactions.py** - RISCRITTURA COMPLETA### 2. **Backend: import_export.py** - CORREZIONE SEZIONE EXPORT PRESETS
-
-Per il file `import_export.py`, ho identificato il problema nell'endpoint `get_export_presets`. Ecco la correzione specifica:
-
-**🔧 TROVA e SOSTITUISCI questa sezione (riga ~825-860):**
-
-```python
-@router.get("/export/presets", response_model=APIResponse)
-async def get_export_presets():
-    """Get predefined export configurations."""
-    return APIResponse(
-        success=True,
-        message="Export presets retrieved",
-        data=[
-            {
-                "id": "invoices-complete",
-                "name": "Fatture Complete",
-                "description": "Export completo di tutte le fatture con dettagli",
-                "type": "invoices",  # ← PROBLEMA: tipo non specifico
-                "format": "excel",
-                # ... resto del preset
-```
-
-**📝 SOSTITUISCI CON:**
-
-```python
 @router.get("/export/presets", response_model=APIResponse)
 async def get_export_presets():
     """Fix 'Unsupported data type' error - CORRETO"""
@@ -703,7 +666,9 @@ async def get_export_presets():
         # FALLBACK RESPONSE invece di 500:
         return APIResponse(
             success=True,
-            message
+            message="Using fallback presets",
+            data=[]
+        )
 
 # ===== SYSTEM ENDPOINTS =====
 
