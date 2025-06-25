@@ -333,7 +333,21 @@ def import_from_source(source_path, progress_callback=None):
             return results
 
         # Processamento file
+        # Processamento file
         logger.info(f"Inizio processamento di {total_files_to_process} file...")
+        
+        # === VERIFICA DATABASE PRIMA DI INIZIARE ===
+        try:
+            logger.info("Verifica inizializzazione database...")
+            create_tables()
+            logger.info("Database e tabelle verificate/create con successo")
+        except Exception as db_init_err:
+            logger.error(f"ERRORE CRITICO: Impossibile inizializzare database: {db_init_err}")
+            results['errors'] = 1
+            results['files'].append({'name': source_path, 'status': f'Error - Database init failed: {db_init_err}'})
+            return results
+        # === FINE VERIFICA DATABASE ===
+        
         conn = get_connection(); conn.execute('BEGIN TRANSACTION')
 
         for i, fpath in enumerate(files_to_process):
