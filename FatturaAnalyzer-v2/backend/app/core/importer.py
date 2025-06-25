@@ -21,7 +21,7 @@ try:
     from .parser_p7m import extract_xml_from_p7m, _cleanup_temp_file
     from .parser_csv import parse_bank_csv
     from .database import (get_connection, add_anagraphics_if_not_exists,
-                         check_entity_duplicate, add_transactions)
+                     check_entity_duplicate, add_transactions, create_tables)
     from .utils import to_decimal, quantize
 except ImportError:
     logging.warning("Import relativo fallito in importer.py, tento import assoluto.")
