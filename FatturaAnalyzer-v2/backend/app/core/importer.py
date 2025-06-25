@@ -339,6 +339,8 @@ def import_from_source(source_path, progress_callback=None):
         # === VERIFICA DATABASE PRIMA DI INIZIARE ===
         try:
             logger.info("Verifica inizializzazione database...")
+            # Import locale per evitare problemi circolari
+            from .database import create_tables
             create_tables()
             logger.info("Database e tabelle verificate/create con successo")
         except Exception as db_init_err:
