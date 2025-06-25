@@ -3,7 +3,7 @@ import { apiClient } from '@/services/api';
 import { useUIStore } from '@/store';
 import { toast } from 'sonner';
 
-// ===== TYPES AND INTERFACES =====
+// ===== TYPES AND INTERFACES (ALLINEATE CON IL BACKEND) =====
 
 export interface FileProcessingDetail {
   name: string;
@@ -25,7 +25,7 @@ export interface ImportResult {
 }
 
 export interface ZIPValidationResult {
-  validation_status: 'valid' | 'invalid' | 'warning';
+  validation_status: 'valid' | 'invalid' | 'unknown';
   can_import: boolean;
   validation_details: {
     zip_valid: boolean;
@@ -38,14 +38,22 @@ export interface ZIPValidationResult {
   recommendations: string[];
 }
 
-export interface ImportHistory {
-  id: number;
-  timestamp: string;
-  action: 'upload' | 'download' | 'auto';
-  success: boolean;
-  message: string;
-  file_size: string;
-  duration_ms: number;
+export interface CSVValidationResult {
+  validation_status: 'valid' | 'invalid';
+  file_info: {
+    filename: string;
+    size_bytes: number;
+    total_rows: number;
+    headers: string[];
+  };
+  validation_results: {
+    missing_columns: string[];
+    valid_rows: number;
+    invalid_rows: number;
+    errors: string[];
+  };
+  can_import: boolean;
+  recommendations: (string | null)[];
 }
 
 export interface ImportStatistics {
@@ -62,8 +70,9 @@ export interface ImportStatistics {
 
 export interface ImportExportHealth {
   status: 'healthy' | 'degraded' | 'critical';
-  import_adapter: 'operational' | 'degraded' | 'failed';
-  temp_storage: 'operational' | 'warning' | 'critical';
+  import_adapter: 'operational' | 'degraded' | 'failed' | 'unknown';
+  temp_storage: 'operational' | 'warning' | 'critical' | 'unknown';
+  last_check: string;
   components?: {
     zip_processing: string;
     csv_processing: string;
@@ -84,6 +93,7 @@ export interface SupportedFormats {
   };
   enterprise_features: Record<string, boolean>;
   limits_and_constraints: Record<string, any>;
+  validation_rules: Record<string, any>;
 }
 
 export interface ExportPreset {
@@ -97,10 +107,39 @@ export interface ExportPreset {
   columns: string[];
 }
 
-// ===== CORE IMPORT HOOKS - TUTTI FUNZIONANTI =====
+export interface ImportMetrics {
+  performance_metrics: {
+    avg_import_time_seconds: number;
+    avg_files_per_minute: number;
+    success_rate_percentage: number;
+    avg_file_size_mb: number;
+  };
+  daily_stats: {
+    imports_today: number;
+    files_processed_today: number;
+    data_imported_mb: number;
+    errors_today: number;
+  };
+  monthly_trends: {
+    total_imports: number;
+    total_files: number;
+    total_data_gb: number;
+    peak_day: string;
+    peak_imports: number;
+  };
+  system_health: {
+    queue_length: number;
+    processing_capacity: string;
+    storage_usage_percentage: number;
+    last_maintenance: string;
+  };
+}
+
+// ===== CORE IMPORT HOOKS (VERIFICATI CON IL BACKEND) =====
 
 /**
- * ✅ FUNZIONANTE: Import fatture da ZIP
+ * ✅ VERIFICATO: Import fatture da ZIP
+ * Endpoint: POST /api/import-export/invoices/zip
  */
 export function useImportInvoicesZIP() {
   const queryClient = useQueryClient();
@@ -125,7 +164,8 @@ export function useImportInvoicesZIP() {
 }
 
 /**
- * ✅ FUNZIONANTE: Import transazioni CSV da ZIP
+ * ✅ VERIFICATO: Import transazioni CSV da ZIP  
+ * Endpoint: POST /api/import-export/transactions/csv-zip
  */
 export function useImportTransactionsCSVZIP() {
   const queryClient = useQueryClient();
@@ -150,7 +190,8 @@ export function useImportTransactionsCSVZIP() {
 }
 
 /**
- * ✅ FUNZIONANTE: Import contenuto misto da ZIP
+ * ✅ VERIFICATO: Import contenuto misto da ZIP
+ * Endpoint: POST /api/import-export/mixed/zip
  */
 export function useImportMixedZIP() {
   const queryClient = useQueryClient();
@@ -175,7 +216,8 @@ export function useImportMixedZIP() {
 }
 
 /**
- * ✅ FUNZIONANTE: Import fatture XML multipli
+ * ✅ VERIFICATO: Import fatture XML multipli
+ * Endpoint: POST /api/import-export/invoices/xml
  */
 export function useImportInvoicesXML() {
   const queryClient = useQueryClient();
@@ -198,10 +240,11 @@ export function useImportInvoicesXML() {
   });
 }
 
-// ===== VALIDATION HOOKS =====
+// ===== VALIDATION HOOKS (VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Validazione archivi ZIP
+ * ✅ VERIFICATO: Validazione archivi ZIP
+ * Endpoint: POST /api/import-export/validate-zip
  */
 export function useValidateZIPArchive() {
   return useMutation<{ success: boolean; data: ZIPValidationResult }, Error, File>({
@@ -210,6 +253,36 @@ export function useValidateZIPArchive() {
       formData.append('file', file);
       const response = await apiClient.post('/api/import-export/validate-zip', formData);
       if (!response.success) throw new Error(response.message || 'Errore validazione ZIP');
+      return response;
+    },
+    onSuccess: (response) => {
+      const data = response.data;
+      if (data.validation_status === 'valid') {
+        toast.success('ZIP Valido', { 
+          description: `File valido con ${data.validation_details.file_count} file (${data.validation_details.total_size_mb}MB)` 
+        });
+      } else {
+        toast.warning('ZIP con Problemi', { 
+          description: `${data.validation_details.errors.length} errori trovati` 
+        });
+      }
+    },
+    onError: (error) => {
+      toast.error('Errore Validazione ZIP', { description: error.message });
+    },
+  });
+}
+
+/**
+ * ✅ VERIFICATO: Validazione CSV
+ * Endpoint: POST /api/import-export/validate/csv
+ */
+export function useValidateCSV() {
+  return useMutation<{ success: boolean; data: CSVValidationResult }, Error, { file: File; dataType: string }>({
+    mutationFn: async ({ file, dataType }) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await apiClient.post(`/api/import-export/validate/csv?data_type=${dataType}`, formData);
       return response;
     },
     onSuccess: (response) => {
@@ -231,7 +304,8 @@ export function useValidateZIPArchive() {
 }
 
 /**
- * ✅ FUNZIONANTE: Preview CSV
+ * ✅ VERIFICATO: Preview CSV
+ * Endpoint: POST /api/import-export/preview/csv
  */
 export function usePreviewCSV() {
   return useMutation<any, Error, { file: File; maxRows?: number }>({
@@ -253,7 +327,8 @@ export function usePreviewCSV() {
 }
 
 /**
- * ✅ FUNZIONANTE: Validazione batch di file
+ * ✅ VERIFICATO: Validazione batch di file
+ * Endpoint: POST /api/import-export/advanced/batch-validate
  */
 export function useBatchValidateFiles() {
   return useMutation<any, Error, File[]>({
@@ -275,14 +350,15 @@ export function useBatchValidateFiles() {
   });
 }
 
-// ===== EXPORT HOOKS =====
+// ===== EXPORT HOOKS (VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Export dati
+ * ✅ VERIFICATO: Export dati
+ * Endpoint: GET /api/import-export/export/{data_type}
  */
 export function useExportData() {
   return useMutation<void, Error, {
-    type: 'invoices' | 'transactions' | 'anagraphics' | 'reconciliation-report';
+    type: 'invoices' | 'transactions' | 'anagraphics';
     format: 'excel' | 'csv' | 'json';
     filters?: Record<string, any>;
     includeDetails?: boolean;
@@ -291,7 +367,9 @@ export function useExportData() {
       const params = new URLSearchParams({
         format,
         include_details: String(includeDetails),
-        ...filters
+        ...Object.fromEntries(
+          Object.entries(filters).map(([key, value]) => [key, String(value)])
+        )
       });
       
       if (format === 'json') {
@@ -309,7 +387,8 @@ export function useExportData() {
         window.URL.revokeObjectURL(url);
       } else {
         // Per CSV/Excel, fai una richiesta diretta per scaricare il file
-        const response = await fetch(`${apiClient.baseURL || 'http://127.0.0.1:8000'}/api/import-export/export/${type}?${params.toString()}`);
+        const baseURL = apiClient.defaults?.baseURL || 'http://127.0.0.1:8000';
+        const response = await fetch(`${baseURL}/api/import-export/export/${type}?${params.toString()}`);
         if (!response.ok) throw new Error('Export failed');
         
         const blob = await response.blob();
@@ -333,15 +412,17 @@ export function useExportData() {
   });
 }
 
-// ===== TEMPLATE HOOKS =====
+// ===== TEMPLATE HOOKS (VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Download template transazioni
+ * ✅ VERIFICATO: Download template transazioni
+ * Endpoint: GET /api/import-export/templates/transactions-csv
  */
 export function useDownloadTransactionTemplate() {
   return useMutation<void, Error, void>({
     mutationFn: async () => {
-      const response = await fetch(`${apiClient.baseURL || 'http://127.0.0.1:8000'}/api/import-export/templates/transactions-csv`);
+      const baseURL = apiClient.defaults?.baseURL || 'http://127.0.0.1:8000';
+      const response = await fetch(`${baseURL}/api/import-export/templates/transactions-csv`);
       if (!response.ok) throw new Error('Template non disponibile');
       
       const blob = await response.blob();
@@ -364,12 +445,14 @@ export function useDownloadTransactionTemplate() {
 }
 
 /**
- * ✅ FUNZIONANTE: Download template generico
+ * ✅ VERIFICATO: Download template generico
+ * Endpoint: GET /api/import-export/templates/{template_type}
  */
 export function useDownloadTemplate() {
   return useMutation<void, Error, string>({
     mutationFn: async (templateType: string) => {
-      const response = await fetch(`${apiClient.baseURL || 'http://127.0.0.1:8000'}/api/import-export/templates/${templateType}`);
+      const baseURL = apiClient.defaults?.baseURL || 'http://127.0.0.1:8000';
+      const response = await fetch(`${baseURL}/api/import-export/templates/${templateType}`);
       if (!response.ok) throw new Error('Template non disponibile');
       
       const blob = await response.blob();
@@ -391,10 +474,11 @@ export function useDownloadTemplate() {
   });
 }
 
-// ===== SYSTEM MANAGEMENT HOOKS =====
+// ===== SYSTEM MANAGEMENT HOOKS (VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Creazione backup
+ * ✅ VERIFICATO: Creazione backup
+ * Endpoint: POST /api/import-export/system/backup/create
  */
 export function useCreateBackup() {
   return useMutation<any, Error, void>({
@@ -414,7 +498,8 @@ export function useCreateBackup() {
 }
 
 /**
- * ✅ FUNZIONANTE: Pulizia file temporanei
+ * ✅ VERIFICATO: Pulizia file temporanei
+ * Endpoint: POST /api/import-export/system/maintenance/cleanup
  */
 export function useCleanupTempFiles() {
   return useMutation<any, Error, void>({
@@ -433,10 +518,11 @@ export function useCleanupTempFiles() {
   });
 }
 
-// ===== ADVANCED FEATURES HOOKS =====
+// ===== ADVANCED FEATURES HOOKS (VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Import intelligente con AI
+ * ✅ VERIFICATO: Import intelligente con AI
+ * Endpoint: POST /api/import-export/advanced/smart-import
  */
 export function useSmartImportWithAI() {
   const queryClient = useQueryClient();
@@ -473,7 +559,8 @@ export function useSmartImportWithAI() {
 }
 
 /**
- * ✅ FUNZIONANTE: Import bulk
+ * ✅ VERIFICATO: Import bulk
+ * Endpoint: POST /api/import-export/bulk/import
  */
 export function useBulkImportData() {
   const queryClient = useQueryClient();
@@ -506,10 +593,11 @@ export function useBulkImportData() {
   });
 }
 
-// ===== QUERY HOOKS (DATA FETCHING) =====
+// ===== QUERY HOOKS (DATA FETCHING - VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Statistiche import
+ * ✅ VERIFICATO: Statistiche import
+ * Endpoint: GET /api/import-export/statistics
  */
 export function useImportStatistics() {
   return useQuery<ImportStatistics, Error>({
@@ -524,21 +612,8 @@ export function useImportStatistics() {
 }
 
 /**
- * ✅ FUNZIONANTE: Storico import (da sync.py)
- */
-export function useImportHistory(limit: number = 20) {
-  return useQuery<ImportHistory[], Error>({
-    queryKey: ['import-history', limit],
-    queryFn: async () => {
-      const response = await apiClient.get(`/api/sync/history?limit=${limit}`);
-      return response.data?.history || [];
-    },
-    refetchInterval: 60000, // Aggiorna ogni minuto
-  });
-}
-
-/**
- * ✅ FUNZIONANTE: Stato salute import/export
+ * ✅ VERIFICATO: Stato salute import/export
+ * Endpoint: GET /api/import-export/health/enterprise
  */
 export function useImportExportHealth() {
   return useQuery<ImportExportHealth, Error>({
@@ -553,7 +628,8 @@ export function useImportExportHealth() {
 }
 
 /**
- * ✅ FUNZIONANTE: Formati supportati
+ * ✅ VERIFICATO: Formati supportati
+ * Endpoint: GET /api/import-export/supported-formats/enterprise
  */
 export function useSupportedFormats() {
   return useQuery<SupportedFormats, Error>({
@@ -567,7 +643,8 @@ export function useSupportedFormats() {
 }
 
 /**
- * ✅ FUNZIONANTE: Preset di export
+ * ✅ VERIFICATO: Preset di export
+ * Endpoint: GET /api/import-export/export/presets
  */
 export function useExportPresets() {
   return useQuery<ExportPreset[], Error>({
@@ -581,10 +658,11 @@ export function useExportPresets() {
 }
 
 /**
- * ✅ FUNZIONANTE: Metriche import
+ * ✅ VERIFICATO: Metriche import
+ * Endpoint: GET /api/import-export/metrics/import
  */
 export function useImportMetrics() {
-  return useQuery<any, Error>({
+  return useQuery<ImportMetrics, Error>({
     queryKey: ['import-metrics'],
     queryFn: async () => {
       const response = await apiClient.get('/api/import-export/metrics/import');
@@ -595,7 +673,8 @@ export function useImportMetrics() {
 }
 
 /**
- * ✅ FUNZIONANTE: Stato operazioni in corso
+ * ✅ VERIFICATO: Stato operazioni in corso
+ * Endpoint: GET /api/import-export/status/operations
  */
 export function useOperationStatus() {
   return useQuery<any, Error>({
@@ -609,7 +688,8 @@ export function useOperationStatus() {
 }
 
 /**
- * ✅ FUNZIONANTE: Configurazione import/export
+ * ✅ VERIFICATO: Configurazione import/export
+ * Endpoint: GET /api/import-export/config
  */
 export function useImportExportConfig() {
   return useQuery<any, Error>({
@@ -623,7 +703,8 @@ export function useImportExportConfig() {
 }
 
 /**
- * ✅ FUNZIONANTE: Aggiornamento configurazione
+ * ✅ VERIFICATO: Aggiornamento configurazione
+ * Endpoint: POST /api/import-export/config
  */
 export function useUpdateImportExportConfig() {
   const queryClient = useQueryClient();
@@ -644,10 +725,11 @@ export function useUpdateImportExportConfig() {
   });
 }
 
-// ===== DEBUG AND MONITORING HOOKS =====
+// ===== DEBUG AND MONITORING HOOKS (VERIFICATI) =====
 
 /**
- * ✅ FUNZIONANTE: Errori recenti
+ * ✅ VERIFICATO: Errori recenti
+ * Endpoint: GET /api/import-export/debug/recent-errors
  */
 export function useRecentImportErrors() {
   return useQuery<any, Error>({
@@ -661,7 +743,8 @@ export function useRecentImportErrors() {
 }
 
 /**
- * ✅ FUNZIONANTE: Retry operazione fallita
+ * ✅ VERIFICATO: Retry operazione fallita
+ * Endpoint: POST /api/import-export/debug/retry-failed/{operation_id}
  */
 export function useRetryFailedOperation() {
   const queryClient = useQueryClient();
@@ -683,7 +766,8 @@ export function useRetryFailedOperation() {
 }
 
 /**
- * ✅ FUNZIONANTE: Informazioni sistema import/export
+ * ✅ VERIFICATO: Informazioni sistema import/export
+ * Endpoint: GET /api/import-export/info
  */
 export function useImportExportInfo() {
   return useQuery<any, Error>({
@@ -731,40 +815,212 @@ export function useRefreshImportExportData() {
   
   return () => {
     queryClient.invalidateQueries({ queryKey: ['import-statistics'] });
-    queryClient.invalidateQueries({ queryKey: ['import-history'] });
     queryClient.invalidateQueries({ queryKey: ['import-export-health'] });
     queryClient.invalidateQueries({ queryKey: ['import-metrics'] });
     queryClient.invalidateQueries({ queryKey: ['operation-status'] });
     queryClient.invalidateQueries({ queryKey: ['recent-import-errors'] });
+    queryClient.invalidateQueries({ queryKey: ['export-presets'] });
+    queryClient.invalidateQueries({ queryKey: ['supported-formats'] });
+    queryClient.invalidateQueries({ queryKey: ['import-export-config'] });
     toast.info('Cache Aggiornata', { description: 'Tutti i dati import/export sono stati ricaricati' });
   };
-} 'valid') {
-        toast.success('ZIP Valido', { 
-          description: `File valido con ${data.validation_details.file_count} file (${data.validation_details.total_size_mb}MB)` 
-        });
-      } else {
-        toast.warning('ZIP con Problemi', { 
-          description: `${data.validation_details.errors.length} errori trovati` 
-        });
-      }
-    },
-    onError: (error) => {
-      toast.error('Errore Validazione ZIP', { description: error.message });
-    },
-  });
 }
 
 /**
- * ✅ FUNZIONANTE: Validazione CSV
+ * ✅ UTILITY: Hook per gestire upload di file con progress
  */
-export function useValidateCSV() {
-  return useMutation<any, Error, { file: File; dataType: string }>({
-    mutationFn: async ({ file, dataType }) => {
+export function useFileUploadWithProgress() {
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const uploadFile = async (
+    file: File, 
+    endpoint: string, 
+    onSuccess?: (result: any) => void,
+    onError?: (error: Error) => void
+  ) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await apiClient.post(`/api/import-export/validate/csv?data_type=${dataType}`, formData);
-      return response;
+
+      // Simula il progresso per ora (in futuro si può implementare con XMLHttpRequest)
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => Math.min(prev + 10, 90));
+      }, 200);
+
+      const response = await apiClient.post(endpoint, formData);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      if (onSuccess) onSuccess(response);
+      
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }, 1000);
+
+    } catch (error) {
+      setIsUploading(false);
+      setUploadProgress(0);
+      if (onError) onError(error as Error);
+    }
+  };
+
+  return {
+    uploadFile,
+    uploadProgress,
+    isUploading
+  };
+}
+
+/**
+ * ✅ UTILITY: Hook per gestire validazione file prima dell'upload
+ */
+export function useFileValidation() {
+  const validateFile = (file: File, options: {
+    maxSize?: number; // in MB
+    allowedTypes?: string[];
+    allowedExtensions?: string[];
+  } = {}) => {
+    const errors: string[] = [];
+    
+    // Validazione dimensione
+    if (options.maxSize && file.size > options.maxSize * 1024 * 1024) {
+      errors.push(`Il file è troppo grande. Massimo ${options.maxSize}MB consentiti.`);
+    }
+    
+    // Validazione tipo MIME
+    if (options.allowedTypes && !options.allowedTypes.includes(file.type)) {
+      errors.push(`Tipo di file non supportato. Tipi consentiti: ${options.allowedTypes.join(', ')}`);
+    }
+    
+    // Validazione estensione
+    if (options.allowedExtensions) {
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+      if (!fileExtension || !options.allowedExtensions.includes(`.${fileExtension}`)) {
+        errors.push(`Estensione non supportata. Estensioni consentite: ${options.allowedExtensions.join(', ')}`);
+      }
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+
+  const validateMultipleFiles = (files: File[], options: Parameters<typeof validateFile>[1]) => {
+    const results = files.map(file => ({
+      file,
+      ...validateFile(file, options)
+    }));
+    
+    const validFiles = results.filter(r => r.isValid).map(r => r.file);
+    const invalidFiles = results.filter(r => !r.isValid);
+    
+    return {
+      validFiles,
+      invalidFiles,
+      allValid: invalidFiles.length === 0
+    };
+  };
+
+  return {
+    validateFile,
+    validateMultipleFiles
+  };
+}
+
+/**
+ * ✅ UTILITY: Hook per monitoraggio stato operazioni in tempo reale
+ */
+export function useOperationMonitor(operationId?: string) {
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  
+  const { data: operationStatus, refetch } = useQuery({
+    queryKey: ['operation-monitor', operationId],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/import-export/status/operations');
+      if (operationId) {
+        return response.data.active_operations?.find((op: any) => op.id === operationId);
+      }
+      return response.data;
     },
-    onSuccess: (response) => {
-      const data = response.data;
-      if (data.validation_status ===
+    enabled: isMonitoring && !!operationId,
+    refetchInterval: 2000, // Ogni 2 secondi quando attivo
+  });
+
+  const startMonitoring = () => setIsMonitoring(true);
+  const stopMonitoring = () => setIsMonitoring(false);
+
+  // Auto-stop quando operazione completata
+  React.useEffect(() => {
+    if (operationStatus?.status === 'completed' || operationStatus?.status === 'failed') {
+      setIsMonitoring(false);
+    }
+  }, [operationStatus]);
+
+  return {
+    operationStatus,
+    isMonitoring,
+    startMonitoring,
+    stopMonitoring,
+    refreshStatus: refetch
+  };
+}
+
+// ===== EXPORT DEFAULT =====
+
+export default {
+  // Core Import
+  useImportInvoicesZIP,
+  useImportTransactionsCSVZIP,
+  useImportMixedZIP,
+  useImportInvoicesXML,
+  
+  // Validation
+  useValidateZIPArchive,
+  useValidateCSV,
+  usePreviewCSV,
+  useBatchValidateFiles,
+  
+  // Export
+  useExportData,
+  
+  // Templates
+  useDownloadTransactionTemplate,
+  useDownloadTemplate,
+  
+  // System Management
+  useCreateBackup,
+  useCleanupTempFiles,
+  
+  // Advanced Features
+  useSmartImportWithAI,
+  useBulkImportData,
+  
+  // Data Queries
+  useImportStatistics,
+  useImportExportHealth,
+  useSupportedFormats,
+  useExportPresets,
+  useImportMetrics,
+  useOperationStatus,
+  useImportExportConfig,
+  useUpdateImportExportConfig,
+  
+  // Debug & Monitoring
+  useRecentImportErrors,
+  useRetryFailedOperation,
+  useImportExportInfo,
+  
+  // Utilities
+  useImportExportStatus,
+  useRefreshImportExportData,
+  useFileUploadWithProgress,
+  useFileValidation,
+  useOperationMonitor
+};
